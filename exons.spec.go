@@ -4,20 +4,19 @@ import (
 	"regexp"
 
 	"github.com/itsatony/go-exons/execution"
-	"github.com/itsatony/go-exons/genspec"
 	"gopkg.in/yaml.v3"
 )
 
 // Spec is the core configuration type parsed from .exons file frontmatter.
 // It describes what an agent is: identity, execution parameters, tools,
-// skills, constraints, and GenSpec metadata (memory, dispatch, verification).
+// skills, constraints, and metadata (memory, dispatch, verification, registry, safety).
 //
 // Thread safety: Spec instances are safe for concurrent read access once constructed.
 // Concurrent mutation requires external synchronization.
 // Use Clone() to create independent copies when concurrent modification is needed.
 //
 // The Type field determines validation rules:
-//   - "prompt": Simple template, no skills/tools/genspec
+//   - "prompt": Simple template, no skills/tools/metadata
 //   - "skill":  Reusable capability, may have memory/registry/verification
 //   - "agent":  Full agent with all fields available
 type Spec struct {
@@ -43,8 +42,12 @@ type Spec struct {
 	Credentials map[string]*CredentialRef `yaml:"credentials,omitempty" json:"credentials,omitempty"`
 	Credential  string                    `yaml:"credential,omitempty" json:"credential,omitempty"`
 
-	// GenSpec — agent specification metadata
-	GenSpec *genspec.GenSpec `yaml:"genspec,omitempty" json:"genspec,omitempty"`
+	// Metadata — agent specification metadata (flattened from genspec/)
+	Memory        *MemorySpec        `yaml:"memory,omitempty" json:"memory,omitempty"`
+	Dispatch      *DispatchSpec      `yaml:"dispatch,omitempty" json:"dispatch,omitempty"`
+	Verifications []VerificationCase `yaml:"verifications,omitempty" json:"verifications,omitempty"`
+	Registry      *RegistrySpec      `yaml:"registry,omitempty" json:"registry,omitempty"`
+	Safety        *SafetyConfig      `yaml:"safety,omitempty" json:"safety,omitempty"`
 
 	// Extensions — catch-all for unknown YAML keys
 	Extensions map[string]any `yaml:",inline" json:"extensions,omitempty"`
@@ -150,19 +153,60 @@ func (s *Spec) Validate() error {
 		if s.Constraints != nil {
 			return NewSpecValidationError(ErrMsgPromptNoConstraints, s.Name)
 		}
+		// Prompt type does not support memory, dispatch, or registry
+		if s.Memory != nil {
+			return NewSpecValidationError(ErrMsgPromptNoMemory, s.Name)
+		}
+		if s.Dispatch != nil {
+			return NewSpecValidationError(ErrMsgPromptNoDispatch, s.Name)
+		}
+		if s.Registry != nil {
+			return NewSpecValidationError(ErrMsgPromptNoRegistry, s.Name)
+		}
 
 	case DocumentTypeSkill:
 		if len(s.Skills) > 0 {
 			return NewSpecValidationError(ErrMsgSkillNoSkillsAllowed, s.Name)
 		}
+		// Skill type does not support dispatch
+		if s.Dispatch != nil {
+			return NewSpecValidationError(ErrMsgSkillNoDispatch, s.Name)
+		}
 
 	case DocumentTypeAgent:
-		// Agent-specific validation can be added here
+		// Agent supports all fields
 	}
 
 	// Validate execution config if present
 	if s.Execution != nil {
 		if err := s.Execution.Validate(); err != nil {
+			return err
+		}
+	}
+
+	// Validate metadata types if present
+	if s.Memory != nil {
+		if err := s.Memory.Validate(); err != nil {
+			return err
+		}
+	}
+	if s.Dispatch != nil {
+		if err := s.Dispatch.Validate(); err != nil {
+			return err
+		}
+	}
+	for i := range s.Verifications {
+		if err := s.Verifications[i].Validate(); err != nil {
+			return err
+		}
+	}
+	if s.Registry != nil {
+		if err := s.Registry.Validate(); err != nil {
+			return err
+		}
+	}
+	if s.Safety != nil {
+		if err := s.Safety.Validate(); err != nil {
 			return err
 		}
 	}
@@ -219,11 +263,12 @@ func (s *Spec) Clone() *Spec {
 		clone.Execution = s.Execution.Clone()
 	}
 
-	// Clone inputs
+	// Clone inputs (deep-copy Default which is type any)
 	if s.Inputs != nil {
 		clone.Inputs = make(map[string]*InputDef, len(s.Inputs))
 		for k, v := range s.Inputs {
 			inputClone := *v
+			inputClone.Default = deepCopyValue(v.Default)
 			clone.Inputs[k] = &inputClone
 		}
 	}
@@ -273,11 +318,17 @@ func (s *Spec) Clone() *Spec {
 		}
 	}
 
-	// Clone genspec (shallow copy — deep copy would require GenSpec.Clone())
-	if s.GenSpec != nil {
-		genspecCopy := *s.GenSpec
-		clone.GenSpec = &genspecCopy
+	// Clone metadata fields (deep copy via per-type Clone methods)
+	clone.Memory = s.Memory.Clone()
+	clone.Dispatch = s.Dispatch.Clone()
+	if s.Verifications != nil {
+		clone.Verifications = make([]VerificationCase, len(s.Verifications))
+		for i := range s.Verifications {
+			clone.Verifications[i] = s.Verifications[i].Clone()
+		}
 	}
+	clone.Registry = s.Registry.Clone()
+	clone.Safety = s.Safety.Clone()
 
 	// Clone extensions
 	if s.Extensions != nil {
@@ -325,15 +376,19 @@ func (s *Spec) IsAgentSkillsCompatible() bool {
 	}
 	return s.Execution == nil && len(s.Extensions) == 0 && s.Type == "" &&
 		len(s.Skills) == 0 && s.Tools == nil && s.Constraints == nil && len(s.Messages) == 0 &&
-		len(s.Credentials) == 0 && s.Credential == "" && s.GenSpec == nil
+		len(s.Credentials) == 0 && s.Credential == "" &&
+		s.Memory == nil && s.Dispatch == nil && len(s.Verifications) == 0 &&
+		s.Registry == nil && s.Safety == nil
 }
 
-// IsGenSpec returns true if this Spec has GenSpec metadata set.
-func (s *Spec) IsGenSpec() bool {
+// HasMetadata returns true if this Spec has any metadata fields set
+// (memory, dispatch, verifications, registry, safety).
+func (s *Spec) HasMetadata() bool {
 	if s == nil {
 		return false
 	}
-	return s.GenSpec != nil && s.GenSpec.HasContent()
+	return s.Memory != nil || s.Dispatch != nil || len(s.Verifications) > 0 ||
+		s.Registry != nil || s.Safety != nil
 }
 
 // IsAgent returns true if this Spec is of type agent.
@@ -358,34 +413,6 @@ func (s *Spec) IsPrompt() bool {
 		return false
 	}
 	return s.Type == DocumentTypePrompt
-}
-
-// ValidateAsAgent checks that the spec is a valid agent definition.
-// An agent must have:
-//   - Type set to "agent" (or effective type is agent)
-//   - Execution config present
-//   - Either Body or Messages present
-func (s *Spec) ValidateAsAgent() error {
-	if s == nil {
-		return NewAgentValidationError(ErrMsgSpecNil, "")
-	}
-
-	// Check type
-	if s.EffectiveType() != DocumentTypeAgent {
-		return NewAgentValidationError(ErrMsgNotAnAgent, s.Name)
-	}
-
-	// Check execution config
-	if s.Execution == nil {
-		return NewAgentValidationError(ErrMsgNoExecutionConfig, s.Name)
-	}
-
-	// Check body or messages
-	if s.Body == "" && len(s.Messages) == 0 {
-		return NewAgentValidationError(ErrMsgAgentNoBodyOrMessages, s.Name)
-	}
-
-	return nil
 }
 
 // ValidateCredentialRefs validates the credential map, default label, and skill credential labels.
@@ -417,8 +444,7 @@ func (s *Spec) ValidateCredentialRefs() error {
 	for _, skill := range s.Skills {
 		if skill.Credential != "" && len(s.Credentials) > 0 {
 			if _, exists := s.Credentials[skill.Credential]; !exists {
-				return NewCompileSkillError(skill.Slug,
-					NewSpecValidationError(ErrMsgCredentialMissingRef, skill.Credential))
+				return NewSpecValidationError(ErrMsgCredentialMissingRef, skill.Credential)
 			}
 		}
 	}

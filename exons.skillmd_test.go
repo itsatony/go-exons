@@ -177,7 +177,11 @@ func TestStripExtensions_Basic(t *testing.T) {
 	assert.Nil(t, stripped.Extensions)
 	assert.Nil(t, stripped.Credentials)
 	assert.Empty(t, stripped.Credential)
-	assert.Nil(t, stripped.GenSpec)
+	assert.Nil(t, stripped.Memory)
+	assert.Nil(t, stripped.Dispatch)
+	assert.Nil(t, stripped.Verifications)
+	assert.Nil(t, stripped.Registry)
+	assert.Nil(t, stripped.Safety)
 	assert.Nil(t, stripped.Messages)
 }
 

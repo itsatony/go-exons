@@ -74,7 +74,7 @@ func (s *Spec) ExportToSkillMD() ([]byte, error) {
 
 // StripExtensions returns a new Spec containing only standard fields:
 // Name, Description, Inputs, Outputs, Sample, and Body.
-// All agent-specific, execution, extension, credential, and genspec fields
+// All agent-specific, execution, extension, credential, and metadata fields
 // are excluded from the copy. Returns nil if the receiver is nil.
 func (s *Spec) StripExtensions() *Spec {
 	if s == nil {

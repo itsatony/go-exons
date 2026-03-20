@@ -83,7 +83,7 @@ func GetExtensionAs[T any](s *Spec, key string) (T, error) {
 	return result, nil
 }
 
-// GetStandardFields returns a map of only the standard genspec fields
+// GetStandardFields returns a map of only the standard fields
 // that are set on this Spec: name, description, inputs, outputs, sample.
 func (s *Spec) GetStandardFields() map[string]any {
 	if s == nil {
@@ -112,7 +112,8 @@ func (s *Spec) GetStandardFields() map[string]any {
 
 // GetExonsFields returns a map of only the go-exons extension fields
 // that are set on this Spec: type, execution, skills, tools, context,
-// constraints, messages, credentials, credential, genspec.
+// constraints, messages, credentials, credential, memory, dispatch,
+// verifications, registry, safety.
 func (s *Spec) GetExonsFields() map[string]any {
 	if s == nil {
 		return nil
@@ -146,8 +147,20 @@ func (s *Spec) GetExonsFields() map[string]any {
 	if s.Credential != "" {
 		m[SpecFieldCredential] = s.Credential
 	}
-	if s.GenSpec != nil {
-		m[SpecFieldGenSpec] = s.GenSpec
+	if s.Memory != nil {
+		m[SpecFieldMemory] = s.Memory
+	}
+	if s.Dispatch != nil {
+		m[SpecFieldDispatch] = s.Dispatch
+	}
+	if len(s.Verifications) > 0 {
+		m[SpecFieldVerifications] = s.Verifications
+	}
+	if s.Registry != nil {
+		m[SpecFieldRegistry] = s.Registry
+	}
+	if s.Safety != nil {
+		m[SpecFieldSafety] = s.Safety
 	}
 
 	return m

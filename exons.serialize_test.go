@@ -100,7 +100,7 @@ func TestSerialize_DefaultOptions(t *testing.T) {
 	assert.True(t, opts.IncludeAgentFields)
 	assert.True(t, opts.IncludeContext)
 	assert.False(t, opts.IncludeCredentials)
-	assert.True(t, opts.IncludeGenSpec)
+	assert.True(t, opts.IncludeMetadata)
 }
 
 func TestSerialize_IncludeExecutionFalse(t *testing.T) {
@@ -188,7 +188,7 @@ func TestSerialize_AgentSkillsExportOptions(t *testing.T) {
 	assert.False(t, opts.IncludeAgentFields)
 	assert.False(t, opts.IncludeContext)
 	assert.False(t, opts.IncludeCredentials)
-	assert.False(t, opts.IncludeGenSpec)
+	assert.False(t, opts.IncludeMetadata)
 }
 
 func TestSerialize_FullExportWithCredentials(t *testing.T) {
@@ -198,7 +198,7 @@ func TestSerialize_FullExportWithCredentials(t *testing.T) {
 	assert.True(t, opts.IncludeAgentFields)
 	assert.True(t, opts.IncludeContext)
 	assert.True(t, opts.IncludeCredentials)
-	assert.True(t, opts.IncludeGenSpec)
+	assert.True(t, opts.IncludeMetadata)
 }
 
 // =============================================================================
@@ -271,16 +271,32 @@ func TestSerialize_BodyPreserved(t *testing.T) {
 }
 
 // =============================================================================
-// IncludeGenSpec
+// IncludeMetadata
 // =============================================================================
 
-func TestSerialize_IncludeGenSpecFalse(t *testing.T) {
+func TestSerialize_IncludeMetadataFalse(t *testing.T) {
 	spec := &Spec{
 		Name:        "test-spec",
 		Description: "desc",
+		Memory: &MemorySpec{
+			Scope: "agent-memory",
+		},
+		Dispatch: &DispatchSpec{
+			TriggerKeywords: []string{"search"},
+		},
+		Registry: &RegistrySpec{
+			Version: "1.0.0",
+		},
+		Safety: &SafetyConfig{
+			Guardrails: GuardrailsEnabled,
+		},
 	}
-	opts := &SerializeOptions{IncludeGenSpec: false}
+	opts := &SerializeOptions{IncludeMetadata: false}
 	serialized, err := spec.Serialize(opts)
 	require.NoError(t, err)
-	assert.NotContains(t, string(serialized), "genspec:")
+	s := string(serialized)
+	assert.NotContains(t, s, "memory:")
+	assert.NotContains(t, s, "dispatch:")
+	assert.NotContains(t, s, "registry:")
+	assert.NotContains(t, s, "safety:")
 }

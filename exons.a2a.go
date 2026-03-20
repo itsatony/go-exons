@@ -8,6 +8,14 @@ import (
 	"github.com/itsatony/go-exons/a2a"
 )
 
+// A2A metadata keys for safety/dispatch enrichment.
+const (
+	A2AMetaKeySafetyGuardrails    = "safety.guardrails"
+	A2AMetaKeySafetyDenyTools     = "safety.deny_tools"
+	A2AMetaKeySafetyConfirmation  = "safety.require_confirmation_for"
+	A2AMetaKeyDispatchDescription = "dispatch.trigger_description"
+)
+
 // A2ACardOptions configures how a Spec is compiled into an A2A Agent Card.
 type A2ACardOptions struct {
 	// URL is the agent's service endpoint (required — not derivable from Spec)
@@ -16,7 +24,7 @@ type A2ACardOptions struct {
 	ProviderOrganization string
 	// ProviderURL is the organization's website URL
 	ProviderURL string
-	// Version overrides the agent version (defaults to GenSpec registry version, then "1.0.0")
+	// Version overrides the agent version (defaults to registry metadata version, then "1.0.0")
 	Version string
 	// ProtocolVersion overrides the A2A protocol version (defaults to "0.3.0")
 	ProtocolVersion string
@@ -45,15 +53,14 @@ type A2ACardOptions struct {
 // opts.Resolver when available; resolution failures are non-fatal (the skill
 // appears with an empty description, following the same pattern as GenerateSkillsCatalog).
 //
-// GenSpec enrichment:
+// Metadata enrichment:
 //   - dispatch.TriggerKeywords → appended to each A2A skill's Tags
 //   - registry.Version → used as agent card Version (if not overridden by opts)
 //   - safety.Guardrails, safety.DenyTools, safety.RequireConfirmationFor → metadata
-//   - genspec.Version → metadata under "genspec.version"
 //   - dispatch.TriggerDescription → metadata under "dispatch.trigger_description"
 //
-// Metadata key spaces: a2a-prefixed extensions (e.g., "a2a.team") and GenSpec
-// metadata (e.g., "safety.guardrails") use disjoint key namespaces — no collisions.
+// Metadata key spaces: a2a-prefixed extensions (e.g., "a2a.team") and metadata
+// fields (e.g., "safety.guardrails") use disjoint key namespaces — no collisions.
 //
 // Streaming capability is auto-detected from execution.Config.Streaming.Enabled
 // unless overridden via opts.Capabilities.
@@ -79,7 +86,7 @@ func (s *Spec) CompileAgentCard(ctx context.Context, opts *A2ACardOptions) (*a2a
 		ProtocolVersion: A2AProtocolVersionDefault,
 	}
 
-	// Version: opts > GenSpec registry > default
+	// Version: opts > registry metadata > default
 	card.Version = a2aResolveVersion(s, opts)
 
 	// Protocol version override
@@ -102,7 +109,7 @@ func (s *Spec) CompileAgentCard(ctx context.Context, opts *A2ACardOptions) (*a2a
 		card.Capabilities = a2aAutoDetectCapabilities(s)
 	}
 
-	// Skills: map SkillRefs with optional resolver and GenSpec dispatch tags
+	// Skills: map SkillRefs with optional resolver and dispatch tags
 	card.Skills = a2aCompileSkills(ctx, s, opts.Resolver)
 
 	// Input modes: override or auto-detect from Inputs
@@ -123,7 +130,7 @@ func (s *Spec) CompileAgentCard(ctx context.Context, opts *A2ACardOptions) (*a2a
 	card.SecuritySchemes = opts.SecuritySchemes
 	card.Security = opts.Security
 
-	// Metadata: a2a-prefixed extensions + GenSpec safety/version
+	// Metadata: a2a-prefixed extensions + safety/dispatch metadata
 	card.Metadata = a2aBuildMetadata(s)
 
 	return card, nil
@@ -131,13 +138,13 @@ func (s *Spec) CompileAgentCard(ctx context.Context, opts *A2ACardOptions) (*a2a
 
 // --- Internal helpers ---
 
-// a2aResolveVersion determines the agent card version from options, GenSpec registry, or default.
+// a2aResolveVersion determines the agent card version from options, registry metadata, or default.
 func a2aResolveVersion(s *Spec, opts *A2ACardOptions) string {
 	if opts.Version != "" {
 		return opts.Version
 	}
-	if s.GenSpec != nil && s.GenSpec.Registry != nil && s.GenSpec.Registry.Version != "" {
-		return s.GenSpec.Registry.Version
+	if s.Registry != nil && s.Registry.Version != "" {
+		return s.Registry.Version
 	}
 	return A2AVersionDefault
 }
@@ -153,7 +160,7 @@ func a2aAutoDetectCapabilities(s *Spec) *a2a.Capabilities {
 
 // a2aCompileSkills maps SkillRef entries to A2A skills.
 // Descriptions are resolved via SpecResolver (non-fatal on failure).
-// GenSpec dispatch keywords are appended as tags to each skill.
+// Dispatch keywords are appended as tags to each skill.
 func a2aCompileSkills(ctx context.Context, s *Spec, resolver SpecResolver) []a2a.Skill {
 	if len(s.Skills) == 0 {
 		return nil
@@ -161,8 +168,8 @@ func a2aCompileSkills(ctx context.Context, s *Spec, resolver SpecResolver) []a2a
 
 	// Collect dispatch keywords for tag enrichment
 	var dispatchTags []string
-	if s.GenSpec != nil && s.GenSpec.Dispatch != nil && len(s.GenSpec.Dispatch.TriggerKeywords) > 0 {
-		dispatchTags = s.GenSpec.Dispatch.TriggerKeywords
+	if s.Dispatch != nil && len(s.Dispatch.TriggerKeywords) > 0 {
+		dispatchTags = s.Dispatch.TriggerKeywords
 	}
 
 	skills := make([]a2a.Skill, 0, len(s.Skills))
@@ -245,65 +252,42 @@ func a2aInferOutputModes(s *Spec) []string {
 	return []string{mime}
 }
 
-// a2aBuildMetadata merges a2a-prefixed extensions and GenSpec metadata.
-// Extensions with the "a2a." prefix are included first, then GenSpec fields
-// are added under unprefixed keys (e.g., "safety.guardrails", "genspec.version").
+// a2aBuildMetadata merges a2a-prefixed extensions and metadata fields.
+// Extensions with the "a2a." prefix are included first, then metadata fields
+// are added under unprefixed keys (e.g., "safety.guardrails", "dispatch.trigger_description").
 // These key spaces do not overlap: extensions always have the "a2a." prefix,
-// GenSpec keys never do.
+// metadata keys never do.
 func a2aBuildMetadata(s *Spec) map[string]any {
-	var meta map[string]any
+	meta := make(map[string]any)
 
 	// Merge a2a-prefixed extensions
 	for k, v := range s.Extensions {
 		if strings.HasPrefix(k, ExtensionPrefixA2A) {
-			if meta == nil {
-				meta = make(map[string]any)
-			}
 			meta[k] = v
 		}
 	}
 
-	// GenSpec enrichment
-	if s.GenSpec != nil {
-		// GenSpec version
-		if s.GenSpec.Version != "" {
-			if meta == nil {
-				meta = make(map[string]any)
-			}
-			meta[A2AMetaKeyGenSpecVersion] = s.GenSpec.Version
+	// Safety config enrichment
+	if s.Safety != nil {
+		if s.Safety.Guardrails != "" {
+			meta[A2AMetaKeySafetyGuardrails] = s.Safety.Guardrails
 		}
-
-		// Safety config
-		if s.GenSpec.Safety != nil {
-			if s.GenSpec.Safety.Guardrails != "" {
-				if meta == nil {
-					meta = make(map[string]any)
-				}
-				meta[A2AMetaKeySafetyGuardrails] = s.GenSpec.Safety.Guardrails
-			}
-			if len(s.GenSpec.Safety.DenyTools) > 0 {
-				if meta == nil {
-					meta = make(map[string]any)
-				}
-				meta[A2AMetaKeySafetyDenyTools] = s.GenSpec.Safety.DenyTools
-			}
-			if len(s.GenSpec.Safety.RequireConfirmationFor) > 0 {
-				if meta == nil {
-					meta = make(map[string]any)
-				}
-				meta[A2AMetaKeySafetyConfirmation] = s.GenSpec.Safety.RequireConfirmationFor
-			}
+		if len(s.Safety.DenyTools) > 0 {
+			meta[A2AMetaKeySafetyDenyTools] = s.Safety.DenyTools
 		}
-
-		// Dispatch description
-		if s.GenSpec.Dispatch != nil && s.GenSpec.Dispatch.TriggerDescription != "" {
-			if meta == nil {
-				meta = make(map[string]any)
-			}
-			meta[A2AMetaKeyDispatchDescription] = s.GenSpec.Dispatch.TriggerDescription
+		if len(s.Safety.RequireConfirmationFor) > 0 {
+			meta[A2AMetaKeySafetyConfirmation] = s.Safety.RequireConfirmationFor
 		}
 	}
 
+	// Dispatch description enrichment
+	if s.Dispatch != nil && s.Dispatch.TriggerDescription != "" {
+		meta[A2AMetaKeyDispatchDescription] = s.Dispatch.TriggerDescription
+	}
+
+	if len(meta) == 0 {
+		return nil
+	}
 	return meta
 }
 

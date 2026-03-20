@@ -451,6 +451,31 @@ func TestSpec_IsAgentSkillsCompatible(t *testing.T) {
 		s := &Spec{Credential: "main"}
 		assert.False(t, s.IsAgentSkillsCompatible())
 	})
+
+	t.Run("spec with memory is not compatible", func(t *testing.T) {
+		s := &Spec{Memory: &MemorySpec{Scope: "agent-memory"}}
+		assert.False(t, s.IsAgentSkillsCompatible())
+	})
+
+	t.Run("spec with dispatch is not compatible", func(t *testing.T) {
+		s := &Spec{Dispatch: &DispatchSpec{}}
+		assert.False(t, s.IsAgentSkillsCompatible())
+	})
+
+	t.Run("spec with verifications is not compatible", func(t *testing.T) {
+		s := &Spec{Verifications: []VerificationCase{{Name: "test-case", Input: map[string]any{"q": "test"}}}}
+		assert.False(t, s.IsAgentSkillsCompatible())
+	})
+
+	t.Run("spec with registry is not compatible", func(t *testing.T) {
+		s := &Spec{Registry: &RegistrySpec{Version: "1.0"}}
+		assert.False(t, s.IsAgentSkillsCompatible())
+	})
+
+	t.Run("spec with safety is not compatible", func(t *testing.T) {
+		s := &Spec{Safety: &SafetyConfig{Guardrails: GuardrailsEnabled}}
+		assert.False(t, s.IsAgentSkillsCompatible())
+	})
 }
 
 // =============================================================================
@@ -601,12 +626,26 @@ func TestIsValidDocumentType(t *testing.T) {
 }
 
 // =============================================================================
-// IsGenSpec
+// HasMetadata
 // =============================================================================
 
-func TestSpec_IsGenSpec(t *testing.T) {
-	assert.False(t, (*Spec)(nil).IsGenSpec())
-	assert.False(t, (&Spec{}).IsGenSpec())
+func TestSpec_HasMetadata(t *testing.T) {
+	assert.False(t, (*Spec)(nil).HasMetadata())
+	assert.False(t, (&Spec{}).HasMetadata())
+
+	// With metadata fields set, should return true
+	s := &Spec{Memory: &MemorySpec{Scope: "agent-memory"}}
+	assert.True(t, s.HasMetadata())
+
+	// Verify all metadata fields individually trigger HasMetadata
+	assert.True(t, (&Spec{Dispatch: &DispatchSpec{}}).HasMetadata())
+	assert.True(t, (&Spec{Verifications: []VerificationCase{{Name: "test-case", Input: map[string]any{"q": "test"}}}}).HasMetadata())
+	assert.True(t, (&Spec{Registry: &RegistrySpec{Version: "1.0"}}).HasMetadata())
+	assert.True(t, (&Spec{Safety: &SafetyConfig{Guardrails: GuardrailsEnabled}}).HasMetadata())
+
+	// Empty spec
+	assert.False(t, (&Spec{}).HasMetadata())
+	assert.False(t, (*Spec)(nil).HasMetadata())
 }
 
 // =============================================================================

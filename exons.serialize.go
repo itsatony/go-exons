@@ -25,8 +25,8 @@ type SerializeOptions struct {
 	// IncludeCredentials includes credential references in output.
 	// Default is false (safe default -- credentials are sensitive metadata).
 	IncludeCredentials bool
-	// IncludeGenSpec includes the GenSpec metadata in output
-	IncludeGenSpec bool
+	// IncludeMetadata includes the metadata fields (memory, dispatch, verifications, registry, safety) in output
+	IncludeMetadata bool
 }
 
 // DefaultSerializeOptions returns the default serialization options (all included
@@ -37,7 +37,7 @@ func DefaultSerializeOptions() *SerializeOptions {
 		IncludeExtensions:  true,
 		IncludeAgentFields: true,
 		IncludeContext:     true,
-		IncludeGenSpec:     true,
+		IncludeMetadata:    true,
 	}
 }
 
@@ -50,7 +50,7 @@ func AgentSkillsExportOptions() *SerializeOptions {
 		IncludeAgentFields: false,
 		IncludeContext:     false,
 		IncludeCredentials: false,
-		IncludeGenSpec:     false,
+		IncludeMetadata:    false,
 	}
 }
 
@@ -63,7 +63,7 @@ func FullExportWithCredentials() *SerializeOptions {
 		IncludeAgentFields: true,
 		IncludeContext:     true,
 		IncludeCredentials: true,
-		IncludeGenSpec:     true,
+		IncludeMetadata:    true,
 	}
 }
 
@@ -133,7 +133,11 @@ var knownSpecFields = map[string]bool{
 	SpecFieldCredentials:   true,
 	SpecFieldCredential:    true,
 	SpecFieldRequirements:  true,
-	SpecFieldGenSpec:       true,
+	SpecFieldMemory:        true,
+	SpecFieldDispatch:      true,
+	SpecFieldVerifications: true,
+	SpecFieldRegistry:      true,
+	SpecFieldSafety:        true,
 }
 
 // buildSerializeMap creates a map for YAML serialization.
@@ -210,9 +214,23 @@ func (s *Spec) buildSerializeMap(opts *SerializeOptions) map[string]any {
 		}
 	}
 
-	// GenSpec (gated by IncludeGenSpec)
-	if opts.IncludeGenSpec && s.GenSpec != nil {
-		m[SpecFieldGenSpec] = s.GenSpec
+	// Metadata fields (gated by IncludeMetadata)
+	if opts.IncludeMetadata {
+		if s.Memory != nil {
+			m[SpecFieldMemory] = s.Memory
+		}
+		if s.Dispatch != nil {
+			m[SpecFieldDispatch] = s.Dispatch
+		}
+		if len(s.Verifications) > 0 {
+			m[SpecFieldVerifications] = s.Verifications
+		}
+		if s.Registry != nil {
+			m[SpecFieldRegistry] = s.Registry
+		}
+		if s.Safety != nil {
+			m[SpecFieldSafety] = s.Safety
+		}
 	}
 
 	return m

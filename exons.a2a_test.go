@@ -7,7 +7,6 @@ import (
 
 	"github.com/itsatony/go-exons/a2a"
 	"github.com/itsatony/go-exons/execution"
-	"github.com/itsatony/go-exons/genspec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -84,14 +83,12 @@ func TestCompileAgentCard_VersionFromOpts(t *testing.T) {
 	assert.Equal(t, "2.0.0", card.Version)
 }
 
-func TestCompileAgentCard_VersionFromGenSpecRegistry(t *testing.T) {
+func TestCompileAgentCard_VersionFromRegistry(t *testing.T) {
 	s := &Spec{
 		Name:        "test-agent",
 		Description: "test",
-		GenSpec: &genspec.GenSpec{
-			Registry: &genspec.RegistrySpec{
-				Version: "3.1.0",
-			},
+		Registry: &RegistrySpec{
+			Version: "3.1.0",
 		},
 	}
 	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
@@ -101,14 +98,12 @@ func TestCompileAgentCard_VersionFromGenSpecRegistry(t *testing.T) {
 	assert.Equal(t, "3.1.0", card.Version)
 }
 
-func TestCompileAgentCard_VersionOptsOverridesGenSpec(t *testing.T) {
+func TestCompileAgentCard_VersionOptsOverridesRegistry(t *testing.T) {
 	s := &Spec{
 		Name:        "test-agent",
 		Description: "test",
-		GenSpec: &genspec.GenSpec{
-			Registry: &genspec.RegistrySpec{
-				Version: "3.1.0",
-			},
+		Registry: &RegistrySpec{
+			Version: "3.1.0",
 		},
 	}
 	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
@@ -373,7 +368,7 @@ func TestCompileAgentCard_NoSkills(t *testing.T) {
 	assert.Nil(t, card.Skills)
 }
 
-// --- GenSpec dispatch keywords as skill tags ---
+// --- Dispatch keywords as skill tags ---
 
 func TestCompileAgentCard_DispatchKeywordsAsSkillTags(t *testing.T) {
 	s := &Spec{
@@ -383,10 +378,8 @@ func TestCompileAgentCard_DispatchKeywordsAsSkillTags(t *testing.T) {
 			{Slug: "web-search"},
 			{Slug: "summarizer"},
 		},
-		GenSpec: &genspec.GenSpec{
-			Dispatch: &genspec.DispatchSpec{
-				TriggerKeywords: []string{"research", "search", "find"},
-			},
+		Dispatch: &DispatchSpec{
+			TriggerKeywords: []string{"research", "search", "find"},
 		},
 	}
 	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
@@ -665,16 +658,14 @@ func TestCompileAgentCard_MetadataFromA2AExtensions(t *testing.T) {
 	assert.False(t, hasOther)
 }
 
-func TestCompileAgentCard_MetadataFromGenSpecSafety(t *testing.T) {
+func TestCompileAgentCard_MetadataFromSafety(t *testing.T) {
 	s := &Spec{
 		Name:        "test-agent",
 		Description: "test",
-		GenSpec: &genspec.GenSpec{
-			Safety: &genspec.SafetyConfig{
-				Guardrails:             genspec.GuardrailsEnabled,
-				DenyTools:              []string{"delete_all", "drop_table"},
-				RequireConfirmationFor: []string{"send_email"},
-			},
+		Safety: &SafetyConfig{
+			Guardrails:             GuardrailsEnabled,
+			DenyTools:              []string{"delete_all", "drop_table"},
+			RequireConfirmationFor: []string{"send_email"},
 		},
 	}
 	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
@@ -682,35 +673,17 @@ func TestCompileAgentCard_MetadataFromGenSpecSafety(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, card.Metadata)
-	assert.Equal(t, genspec.GuardrailsEnabled, card.Metadata[A2AMetaKeySafetyGuardrails])
+	assert.Equal(t, GuardrailsEnabled, card.Metadata[A2AMetaKeySafetyGuardrails])
 	assert.Equal(t, []string{"delete_all", "drop_table"}, card.Metadata[A2AMetaKeySafetyDenyTools])
 	assert.Equal(t, []string{"send_email"}, card.Metadata[A2AMetaKeySafetyConfirmation])
 }
 
-func TestCompileAgentCard_MetadataFromGenSpecVersion(t *testing.T) {
+func TestCompileAgentCard_MetadataFromDispatchDescription(t *testing.T) {
 	s := &Spec{
 		Name:        "test-agent",
 		Description: "test",
-		GenSpec: &genspec.GenSpec{
-			Version: "1",
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	require.NotNil(t, card.Metadata)
-	assert.Equal(t, "1", card.Metadata[A2AMetaKeyGenSpecVersion])
-}
-
-func TestCompileAgentCard_MetadataFromGenSpecDispatchDescription(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		GenSpec: &genspec.GenSpec{
-			Dispatch: &genspec.DispatchSpec{
-				TriggerDescription: "Route tasks about research and web search",
-			},
+		Dispatch: &DispatchSpec{
+			TriggerDescription: "Route tasks about research and web search",
 		},
 	}
 	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
@@ -726,10 +699,8 @@ func TestCompileAgentCard_MetadataDenyToolsOnly(t *testing.T) {
 	s := &Spec{
 		Name:        "test-agent",
 		Description: "test",
-		GenSpec: &genspec.GenSpec{
-			Safety: &genspec.SafetyConfig{
-				DenyTools: []string{"rm_rf"},
-			},
+		Safety: &SafetyConfig{
+			DenyTools: []string{"rm_rf"},
 		},
 	}
 	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
@@ -746,10 +717,8 @@ func TestCompileAgentCard_MetadataRequireConfirmationOnly(t *testing.T) {
 	s := &Spec{
 		Name:        "test-agent",
 		Description: "test",
-		GenSpec: &genspec.GenSpec{
-			Safety: &genspec.SafetyConfig{
-				RequireConfirmationFor: []string{"send_email", "delete_user"},
-			},
+		Safety: &SafetyConfig{
+			RequireConfirmationFor: []string{"send_email", "delete_user"},
 		},
 	}
 	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
@@ -764,18 +733,15 @@ func TestCompileAgentCard_MetadataRequireConfirmationOnly(t *testing.T) {
 	assert.False(t, hasDenyTools)
 }
 
-func TestCompileAgentCard_MetadataCombinesExtensionsAndGenSpec(t *testing.T) {
+func TestCompileAgentCard_MetadataCombinesExtensionsAndMetadata(t *testing.T) {
 	s := &Spec{
 		Name:        "test-agent",
 		Description: "test",
 		Extensions: map[string]any{
 			"a2a.team": "platform",
 		},
-		GenSpec: &genspec.GenSpec{
-			Version: "1",
-			Safety: &genspec.SafetyConfig{
-				Guardrails: genspec.GuardrailsEnabled,
-			},
+		Safety: &SafetyConfig{
+			Guardrails: GuardrailsEnabled,
 		},
 	}
 	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
@@ -784,11 +750,10 @@ func TestCompileAgentCard_MetadataCombinesExtensionsAndGenSpec(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, card.Metadata)
 	assert.Equal(t, "platform", card.Metadata["a2a.team"])
-	assert.Equal(t, genspec.GuardrailsEnabled, card.Metadata[A2AMetaKeySafetyGuardrails])
-	assert.Equal(t, "1", card.Metadata[A2AMetaKeyGenSpecVersion])
+	assert.Equal(t, GuardrailsEnabled, card.Metadata[A2AMetaKeySafetyGuardrails])
 }
 
-func TestCompileAgentCard_MetadataNilWithNoExtensionsOrGenSpec(t *testing.T) {
+func TestCompileAgentCard_MetadataNilWithNoExtensionsOrMetadata(t *testing.T) {
 	s := &Spec{Name: "test-agent", Description: "test"}
 	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
 		URL: "https://example.com",
@@ -949,20 +914,17 @@ func TestCompileAgentCard_FullIntegration(t *testing.T) {
 			"a2a.version": "beta",
 			"internal":    "ignored",
 		},
-		GenSpec: &genspec.GenSpec{
-			Version: "1",
-			Dispatch: &genspec.DispatchSpec{
-				TriggerKeywords:    []string{"research", "search", "analyze"},
-				TriggerDescription: "Route research and analysis tasks here",
-			},
-			Registry: &genspec.RegistrySpec{
-				Version:   "2.5.0",
-				Namespace: "acme/research",
-			},
-			Safety: &genspec.SafetyConfig{
-				Guardrails: genspec.GuardrailsEnabled,
-				DenyTools:  []string{"delete_all"},
-			},
+		Dispatch: &DispatchSpec{
+			TriggerKeywords:    []string{"research", "search", "analyze"},
+			TriggerDescription: "Route research and analysis tasks here",
+		},
+		Registry: &RegistrySpec{
+			Version:   "2.5.0",
+			Namespace: "acme/research",
+		},
+		Safety: &SafetyConfig{
+			Guardrails: GuardrailsEnabled,
+			DenyTools:  []string{"delete_all"},
 		},
 	}
 
@@ -980,7 +942,7 @@ func TestCompileAgentCard_FullIntegration(t *testing.T) {
 	assert.Equal(t, "AI research assistant with multi-modal capabilities", card.Description)
 	assert.Equal(t, "https://agents.acme.com/research", card.URL)
 
-	// Version from GenSpec registry
+	// Version from registry metadata
 	assert.Equal(t, "2.5.0", card.Version)
 	assert.Equal(t, A2AProtocolVersionDefault, card.ProtocolVersion)
 
@@ -1016,9 +978,8 @@ func TestCompileAgentCard_FullIntegration(t *testing.T) {
 	assert.Equal(t, "beta", card.Metadata["a2a.version"])
 	_, hasInternal := card.Metadata["internal"]
 	assert.False(t, hasInternal)
-	assert.Equal(t, genspec.GuardrailsEnabled, card.Metadata[A2AMetaKeySafetyGuardrails])
+	assert.Equal(t, GuardrailsEnabled, card.Metadata[A2AMetaKeySafetyGuardrails])
 	assert.Equal(t, []string{"delete_all"}, card.Metadata[A2AMetaKeySafetyDenyTools])
-	assert.Equal(t, "1", card.Metadata[A2AMetaKeyGenSpecVersion])
 	assert.Equal(t, "Route research and analysis tasks here", card.Metadata[A2AMetaKeyDispatchDescription])
 
 	// JSON output

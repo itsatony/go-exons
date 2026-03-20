@@ -217,15 +217,20 @@ func TestGetExonsFields_NilSpec(t *testing.T) {
 
 func TestGetExonsFields_Populated(t *testing.T) {
 	s := &Spec{
-		Type:        DocumentTypeAgent,
-		Execution:   &execution.Config{Provider: "openai"},
-		Skills:      []SkillRef{{Slug: "s"}},
-		Tools:       &ToolsConfig{},
-		Context:     map[string]any{"k": "v"},
-		Constraints: &ConstraintsConfig{},
-		Messages:    []MessageTemplate{{Role: "user"}},
-		Credentials: map[string]*CredentialRef{"main": {}},
-		Credential:  "main",
+		Type:          DocumentTypeAgent,
+		Execution:     &execution.Config{Provider: "openai"},
+		Skills:        []SkillRef{{Slug: "s"}},
+		Tools:         &ToolsConfig{},
+		Context:       map[string]any{"k": "v"},
+		Constraints:   &ConstraintsConfig{},
+		Messages:      []MessageTemplate{{Role: "user"}},
+		Credentials:   map[string]*CredentialRef{"main": {}},
+		Credential:    "main",
+		Memory:        &MemorySpec{Scope: "agent-memory"},
+		Dispatch:      &DispatchSpec{TriggerKeywords: []string{"search"}},
+		Verifications: []VerificationCase{{Name: "test-case", Input: map[string]any{"q": "test"}}},
+		Registry:      &RegistrySpec{Version: "1.0"},
+		Safety:        &SafetyConfig{Guardrails: GuardrailsEnabled},
 	}
 	m := s.GetExonsFields()
 	assert.Equal(t, string(DocumentTypeAgent), m[SpecFieldType])
@@ -237,6 +242,11 @@ func TestGetExonsFields_Populated(t *testing.T) {
 	assert.NotNil(t, m[SpecFieldMessages])
 	assert.NotNil(t, m[SpecFieldCredentials])
 	assert.Equal(t, "main", m[SpecFieldCredential])
+	assert.NotNil(t, m[SpecFieldMemory])
+	assert.NotNil(t, m[SpecFieldDispatch])
+	assert.NotNil(t, m[SpecFieldVerifications])
+	assert.NotNil(t, m[SpecFieldRegistry])
+	assert.NotNil(t, m[SpecFieldSafety])
 }
 
 func TestGetExonsFields_EmptySpec(t *testing.T) {
@@ -251,20 +261,25 @@ func TestGetExonsFields_EmptySpec(t *testing.T) {
 
 func TestFieldSetsNoOverlap(t *testing.T) {
 	s := &Spec{
-		Name:        "test",
-		Description: "desc",
-		Type:        DocumentTypeAgent,
-		Execution:   &execution.Config{Provider: "openai"},
-		Inputs:      map[string]*InputDef{"q": {Type: "string"}},
-		Outputs:     map[string]*OutputDef{"r": {Type: "string"}},
-		Sample:      map[string]any{"q": "hello"},
-		Skills:      []SkillRef{{Slug: "s"}},
-		Tools:       &ToolsConfig{},
-		Context:     map[string]any{"k": "v"},
-		Constraints: &ConstraintsConfig{},
-		Messages:    []MessageTemplate{{Role: "user"}},
-		Credentials: map[string]*CredentialRef{"main": {}},
-		Credential:  "main",
+		Name:          "test",
+		Description:   "desc",
+		Type:          DocumentTypeAgent,
+		Execution:     &execution.Config{Provider: "openai"},
+		Inputs:        map[string]*InputDef{"q": {Type: "string"}},
+		Outputs:       map[string]*OutputDef{"r": {Type: "string"}},
+		Sample:        map[string]any{"q": "hello"},
+		Skills:        []SkillRef{{Slug: "s"}},
+		Tools:         &ToolsConfig{},
+		Context:       map[string]any{"k": "v"},
+		Constraints:   &ConstraintsConfig{},
+		Messages:      []MessageTemplate{{Role: "user"}},
+		Credentials:   map[string]*CredentialRef{"main": {}},
+		Credential:    "main",
+		Memory:        &MemorySpec{Scope: "agent-memory"},
+		Dispatch:      &DispatchSpec{TriggerKeywords: []string{"search"}},
+		Verifications: []VerificationCase{{Name: "test-case", Input: map[string]any{"q": "test"}}},
+		Registry:      &RegistrySpec{Version: "1.0"},
+		Safety:        &SafetyConfig{Guardrails: GuardrailsEnabled},
 	}
 
 	standard := s.GetStandardFields()

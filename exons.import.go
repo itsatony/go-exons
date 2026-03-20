@@ -32,7 +32,21 @@ func Import(data []byte, filename string) (*ImportResult, error) {
 	switch ext {
 	case FileExtensionZip:
 		return ImportDirectory(data)
+	case FileExtensionPrompty, FileExtensionGenSpec:
+		spec, err := ImportPrompty(data)
+		if err != nil {
+			return nil, err
+		}
+		return &ImportResult{Spec: spec, Resources: make(map[string][]byte)}, nil
 	case FileExtensionMarkdown:
+		// Auto-detect prompty content in .md files
+		if isPromptyContent(data) {
+			spec, err := ImportPrompty(data)
+			if err != nil {
+				return nil, err
+			}
+			return &ImportResult{Spec: spec, Resources: make(map[string][]byte)}, nil
+		}
 		return importMarkdown(data)
 	default:
 		// Unknown extension — try as markdown
