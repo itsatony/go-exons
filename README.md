@@ -56,6 +56,7 @@ fmt.Println(spec.Execution.Model)  // "gpt-4o"
 | Agent config scattered across code | Single `.exons` file per agent |
 | Go's `{{}}` templates collide with JSON/XML in prompts | `{~...~}` delimiters never collide |
 | Provider-specific config hardcoded | Multi-provider serialization built in |
+| Manual message assembly per provider | `CompileAgent` → `ToOpenAIMessages()` in one pipeline |
 | No standard for agent metadata | GenSpec: memory, dispatch, verification, safety |
 | Test definitions separate from spec | Verification cases travel with the agent |
 
@@ -131,6 +132,51 @@ result, _ := engine.ExecuteWithCatalogs(ctx, source, data, agentSpec, exons.Cata
 // Or generate catalogs manually
 skillsCatalog, _ := exons.GenerateSkillsCatalog(ctx, skills, resolver, exons.CatalogFormatDetailed)
 toolsCatalog, _ := exons.GenerateToolsCatalog(tools, exons.CatalogFormatFunctionCalling)
+```
+
+### Agent Compilation
+
+Compile an agent spec into provider-ready API payloads:
+
+```go
+// Parse an .exons file
+spec, _ := exons.ParseFile("research-agent.exons")
+
+// Compile into messages + execution config + tools + constraints
+compiled, _ := spec.CompileAgent(ctx, map[string]any{"query": "climate change"}, &exons.CompileOptions{
+    Resolver: resolver, // for skill resolution
+})
+
+// Convert to provider-specific format
+openAIMessages := compiled.ToOpenAIMessages()       // []map[string]any
+anthropicPayload := compiled.ToAnthropicMessages()   // {system, messages}
+geminiContents := compiled.ToGeminiContents()         // {system_instruction, contents}
+
+// Or auto-dispatch by provider name
+payload, _ := compiled.ToProviderMessages("openai")
+```
+
+Activate a specific skill (injects content into system/user messages):
+
+```go
+compiled, _ := spec.ActivateSkill(ctx, "web-search", input, opts)
+```
+
+Validate without executing (dry run):
+
+```go
+result := spec.AgentDryRun(ctx, opts)
+if !result.OK() {
+    fmt.Println(result.String()) // lists all issues
+}
+```
+
+High-level convenience wrapper:
+
+```go
+executor := exons.NewAgentExecutor(exons.WithAgentResolver(resolver))
+compiled, _ := executor.Execute(ctx, source, input)
+compiled, _ := executor.ExecuteFile(ctx, "agent.exons", input)
 ```
 
 ### Import / Export

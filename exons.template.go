@@ -3,7 +3,6 @@ package exons
 import (
 	"context"
 
-	"github.com/itsatony/go-exons/execution"
 	"github.com/itsatony/go-exons/internal"
 )
 
@@ -100,29 +99,24 @@ func (t *Template) HasSpec() bool {
 	return t.spec != nil
 }
 
-// CompiledSpec is the result of compiling an agent spec.
-// This type will be fully implemented in DC-5.
-type CompiledSpec struct {
-	Messages    []Message
-	Execution   *execution.Config
-	Tools       *ToolsConfig
-	Constraints *ConstraintsConfig
-}
-
-// CompileOptions will be implemented in DC-5.
-// For now this is a placeholder struct.
-type CompileOptions struct{}
-
 // Compile compiles the template's spec by executing its body through an engine.
-// Returns an error — compile is not available in this version.
-func (t *Template) Compile(_ context.Context, _ map[string]any, _ *CompileOptions) (string, error) {
-	return "", NewCompileNotAvailableError()
+// If the template has no spec, returns an error.
+// Delegates to Spec.Compile for the actual compilation work.
+func (t *Template) Compile(ctx context.Context, input map[string]any, opts *CompileOptions) (string, error) {
+	if t.spec == nil {
+		return "", NewCompilationError(ErrMsgCompileNotAgent, nil)
+	}
+	return t.spec.Compile(ctx, input, opts)
 }
 
 // CompileAgent compiles the template's agent spec into a compiled result.
-// Returns an error — compile is not available in this version.
-func (t *Template) CompileAgent(_ context.Context, _ map[string]any, _ *CompileOptions) (*CompiledSpec, error) {
-	return nil, NewCompileNotAvailableError()
+// If the template has no spec, returns an error.
+// Delegates to Spec.CompileAgent for the actual compilation work.
+func (t *Template) CompileAgent(ctx context.Context, input map[string]any, opts *CompileOptions) (*CompiledSpec, error) {
+	if t.spec == nil {
+		return nil, NewCompilationError(ErrMsgCompileNotAgent, nil)
+	}
+	return t.spec.CompileAgent(ctx, input, opts)
 }
 
 // ExecuteAndExtractMessages executes the template and extracts structured messages from the output.

@@ -156,6 +156,13 @@ func (e *Engine) Parse(source string) (*Template, error) {
 	// Use template body (without config block) for parsing
 	templateBody := configResult.TemplateBody
 
+	// Sync spec.Body with the extracted template body so that
+	// Compile/CompileAgent can use it without a deferred mutation
+	// (which would be a data race on concurrent calls).
+	if spec != nil && spec.Body == "" && templateBody != "" {
+		spec.Body = templateBody
+	}
+
 	// Create lexer with configured delimiters
 	lexer := internal.NewLexerWithConfig(templateBody, lexerConfig, e.logger)
 

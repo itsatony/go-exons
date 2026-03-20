@@ -248,78 +248,11 @@ func (s *Spec) Clone() *Spec {
 		copy(clone.Skills, s.Skills)
 	}
 
-	// Clone tools
-	if s.Tools != nil {
-		toolsCopy := *s.Tools
-		if s.Tools.Functions != nil {
-			toolsCopy.Functions = make([]*FunctionDef, len(s.Tools.Functions))
-			for i, f := range s.Tools.Functions {
-				fCopy := *f
-				if f.Parameters != nil {
-					fCopy.Parameters = deepCopyMap(f.Parameters)
-				}
-				toolsCopy.Functions[i] = &fCopy
-			}
-		}
-		if s.Tools.MCPServers != nil {
-			toolsCopy.MCPServers = make([]*MCPServer, len(s.Tools.MCPServers))
-			for i, m := range s.Tools.MCPServers {
-				mCopy := *m
-				toolsCopy.MCPServers[i] = &mCopy
-			}
-		}
-		if s.Tools.Allow != nil {
-			toolsCopy.Allow = make([]string, len(s.Tools.Allow))
-			copy(toolsCopy.Allow, s.Tools.Allow)
-		}
-		if s.Tools.ParallelToolCalls != nil {
-			t := *s.Tools.ParallelToolCalls
-			toolsCopy.ParallelToolCalls = &t
-		}
-		clone.Tools = &toolsCopy
-	}
+	// Clone tools (delegates to ToolsConfig.Clone)
+	clone.Tools = s.Tools.Clone()
 
-	// Clone constraints
-	if s.Constraints != nil {
-		constraintsCopy := *s.Constraints
-		if s.Constraints.Behavioral != nil {
-			constraintsCopy.Behavioral = make([]string, len(s.Constraints.Behavioral))
-			copy(constraintsCopy.Behavioral, s.Constraints.Behavioral)
-		}
-		if s.Constraints.Safety != nil {
-			constraintsCopy.Safety = make([]string, len(s.Constraints.Safety))
-			copy(constraintsCopy.Safety, s.Constraints.Safety)
-		}
-		if s.Constraints.Operational != nil {
-			opCopy := *s.Constraints.Operational
-			if s.Constraints.Operational.MaxTurns != nil {
-				t := *s.Constraints.Operational.MaxTurns
-				opCopy.MaxTurns = &t
-			}
-			if s.Constraints.Operational.MaxTokensPerTurn != nil {
-				t := *s.Constraints.Operational.MaxTokensPerTurn
-				opCopy.MaxTokensPerTurn = &t
-			}
-			if s.Constraints.Operational.AllowedDomains != nil {
-				opCopy.AllowedDomains = make([]string, len(s.Constraints.Operational.AllowedDomains))
-				copy(opCopy.AllowedDomains, s.Constraints.Operational.AllowedDomains)
-			}
-			if s.Constraints.Operational.BlockedDomains != nil {
-				opCopy.BlockedDomains = make([]string, len(s.Constraints.Operational.BlockedDomains))
-				copy(opCopy.BlockedDomains, s.Constraints.Operational.BlockedDomains)
-			}
-			if s.Constraints.Operational.TimeoutSeconds != nil {
-				t := *s.Constraints.Operational.TimeoutSeconds
-				opCopy.TimeoutSeconds = &t
-			}
-			if s.Constraints.Operational.MaxToolCalls != nil {
-				t := *s.Constraints.Operational.MaxToolCalls
-				opCopy.MaxToolCalls = &t
-			}
-			constraintsCopy.Operational = &opCopy
-		}
-		clone.Constraints = &constraintsCopy
-	}
+	// Clone constraints (delegates to ConstraintsConfig.Clone)
+	clone.Constraints = s.Constraints.Clone()
 
 	// Clone messages
 	if s.Messages != nil {
@@ -332,16 +265,11 @@ func (s *Spec) Clone() *Spec {
 		clone.Context = deepCopyMap(s.Context)
 	}
 
-	// Clone credentials
+	// Clone credentials (delegates to CredentialRef.Clone)
 	if s.Credentials != nil {
 		clone.Credentials = make(map[string]*CredentialRef, len(s.Credentials))
 		for k, v := range s.Credentials {
-			credCopy := *v
-			if v.Scopes != nil {
-				credCopy.Scopes = make([]string, len(v.Scopes))
-				copy(credCopy.Scopes, v.Scopes)
-			}
-			clone.Credentials[k] = &credCopy
+			clone.Credentials[k] = v.Clone()
 		}
 	}
 
@@ -455,6 +383,44 @@ func (s *Spec) ValidateAsAgent() error {
 	// Check body or messages
 	if s.Body == "" && len(s.Messages) == 0 {
 		return NewAgentValidationError(ErrMsgAgentNoBodyOrMessages, s.Name)
+	}
+
+	return nil
+}
+
+// ValidateCredentialRefs validates the credential map, default label, and skill credential labels.
+// Returns an error if the default credential label doesn't exist in the map, or if any
+// credential ref fails validation, or if any skill references a credential label not in the map.
+func (s *Spec) ValidateCredentialRefs() error {
+	if s == nil {
+		return nil
+	}
+
+	// Validate each credential ref
+	for label, cred := range s.Credentials {
+		if cred == nil {
+			continue
+		}
+		if err := cred.Validate(); err != nil {
+			return NewCredentialValidationError(label, err)
+		}
+	}
+
+	// Validate default credential label resolves
+	if s.Credential != "" && len(s.Credentials) > 0 {
+		if _, exists := s.Credentials[s.Credential]; !exists {
+			return NewSpecValidationError(ErrMsgCredentialMissingRef, s.Credential)
+		}
+	}
+
+	// Validate skill credential labels
+	for _, skill := range s.Skills {
+		if skill.Credential != "" && len(s.Credentials) > 0 {
+			if _, exists := s.Credentials[skill.Credential]; !exists {
+				return NewCompileSkillError(skill.Slug,
+					NewSpecValidationError(ErrMsgCredentialMissingRef, skill.Credential))
+			}
+		}
 	}
 
 	return nil

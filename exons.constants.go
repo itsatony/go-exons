@@ -3,7 +3,7 @@ package exons
 import "time"
 
 // Version is the current library version. Loaded from versions.yaml at build time.
-const Version = "0.5.0"
+const Version = "0.6.0"
 
 // File extension for exons specification files.
 const FileExtensionExons = ".exons"
@@ -559,6 +559,21 @@ const (
 	ContextKeySelfBody    = "_selfBody"
 )
 
+// Constraints context map keys (used in buildCompileContext)
+const (
+	ConstraintsKeyBehavioral = "behavioral"
+	ConstraintsKeySafety     = "safety"
+)
+
+// Default input keys for automatic user message detection in buildDefaultMessages
+const (
+	DefaultInputKeyQuery   = "query"
+	DefaultInputKeyMessage = "message"
+)
+
+// SystemMessageSeparator is used to join multiple system messages (Anthropic/Gemini)
+const SystemMessageSeparator = "\n\n"
+
 // Skill injection markers
 const (
 	SkillInjectionMarkerStart = "<!-- SKILL_START:"
@@ -883,3 +898,54 @@ const MaxImportResourceSize = 50 * 1024 * 1024 // 50MB
 
 // Import error for multiple document files in archive.
 const ErrMsgImportMultipleDocuments = "multiple document files found in archive"
+
+// Compile error messages
+const (
+	ErrMsgCompileNotAgent       = "cannot compile non-agent document as agent"
+	ErrMsgCompileBodyFailed     = "failed to compile body template"
+	ErrMsgCompileMessageFailed  = "failed to compile message template"
+	ErrMsgCompileSkillFailed    = "failed to compile skill for activation"
+	ErrMsgActivateSkillNotFound = "skill not found in agent for activation"
+	ErrMsgAgentDryRunNilSpec    = "spec is nil for dry run"
+	ErrMsgAgentExecNilSpec      = "spec cannot be nil"
+	ErrMsgAgentExecReadFile     = "failed to read agent file"
+	ErrMsgAgentExecParseFailed  = "failed to parse agent source"
+	ErrMsgCredentialMissingRef  = "credential default label not found in credentials map"
+)
+
+// AgentDryRun category constants
+const (
+	AgentDryRunCategoryValidation = "validation"
+	AgentDryRunCategoryResolver   = "resolver"
+	AgentDryRunCategoryTemplate   = "template"
+	AgentDryRunCategoryCredential = "credential"
+)
+
+// AgentDryRun summary format strings
+const (
+	AgentDryRunSummaryOK     = "agent dry run OK: %d skills resolved, %d tools defined, %d messages"
+	AgentDryRunSummaryIssues = "agent dry run found %d issue(s):\n"
+	AgentDryRunIssueFormat   = "  [%s] %s: %s\n"
+)
+
+// AgentDryRun location constants
+const (
+	DryRunLocationSpec          = "spec"
+	DryRunLocationBody          = "body"
+	DryRunLocationCredentials   = "credentials"
+	DryRunLocationSkillPrefix   = "skill:"
+	DryRunLocationMessagePrefix = "message["
+	DryRunLocationMessageSuffix = "]"
+)
+
+// Provider message serialization keys
+const (
+	ProviderMsgKeyContent           = "content"
+	ProviderMsgKeyMessages          = "messages"
+	ProviderMsgKeySystem            = "system"
+	ProviderMsgKeyParts             = "parts"
+	ProviderMsgKeyText              = "text"
+	ProviderMsgKeySystemInstruction = "system_instruction"
+	ProviderMsgKeyContents          = "contents"
+	ProviderMsgKeyModelRole         = "model"
+)

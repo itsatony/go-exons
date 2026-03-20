@@ -244,8 +244,6 @@ const (
 	ErrMsgDescriptionTooLong      = "description exceeds maximum length"
 	ErrMsgSpecNil                 = "spec is nil"
 	ErrMsgYAMLUnmarshalFailed     = "YAML unmarshal failed"
-	ErrMsgCompileNotAvailable     = "compile not available in this version"
-
 	// Reference resolution messages
 	ErrMsgRefNotFound      = "referenced spec not found"
 	ErrMsgRefCircular      = "circular reference detected"
@@ -681,9 +679,49 @@ func NewRefInvalidSlugError(slug string) error {
 		WithMetadata(MetaKeySpecSlug, slug)
 }
 
-// NewCompileNotAvailableError creates an error for compile methods that are not yet available.
-func NewCompileNotAvailableError() error {
-	return cuserr.NewValidationError(ErrCodeCompile, ErrMsgCompileNotAvailable)
+// NewCompilationError creates an error for agent compilation failures.
+func NewCompilationError(msg string, cause error) error {
+	if cause != nil {
+		return cuserr.WrapStdError(cause, ErrCodeCompile, msg)
+	}
+	return cuserr.NewValidationError(ErrCodeCompile, msg)
+}
+
+// NewCompileMessageError creates an error for message compilation failures with index and role context.
+func NewCompileMessageError(messageIndex int, role string, cause error) error {
+	return cuserr.WrapStdError(cause, ErrCodeCompile, ErrMsgCompileMessageFailed).
+		WithMetadata(MetaKeyMessageIndex, strconv.Itoa(messageIndex)).
+		WithMetadata(MetaKeyMessageRole, role)
+}
+
+// NewCompileSkillError creates an error for skill compilation failures with slug context.
+func NewCompileSkillError(skillSlug string, cause error) error {
+	return cuserr.WrapStdError(cause, ErrCodeCompile, ErrMsgCompileSkillFailed).
+		WithMetadata(MetaKeySkillSlug, skillSlug)
+}
+
+// NewCompileBodyError creates an error for body compilation failures.
+func NewCompileBodyError(cause error) error {
+	return cuserr.WrapStdError(cause, ErrCodeCompile, ErrMsgCompileBodyFailed).
+		WithMetadata(MetaKeyCompileStage, DryRunLocationBody)
+}
+
+// NewProviderMessageError creates an error for unsupported provider message serialization.
+func NewProviderMessageError(provider string) error {
+	return cuserr.NewValidationError(ErrCodeCompile, ErrMsgUnsupportedMsgProvider).
+		WithMetadata(MetaKeyProvider, provider)
+}
+
+// NewSkillNotFoundError creates an error for skill not found during activation.
+func NewSkillNotFoundError(slug string) error {
+	return cuserr.NewNotFoundError(ErrCodeCompile, ErrMsgActivateSkillNotFound).
+		WithMetadata(MetaKeySkillSlug, slug)
+}
+
+// NewCredentialValidationError creates an error for credential validation failures with label context.
+func NewCredentialValidationError(label string, cause error) error {
+	return cuserr.WrapStdError(cause, ErrCodeCredential, ErrMsgCredentialMissingProvider).
+		WithMetadata(MetaKeyCredentialLabel, label)
 }
 
 // NewSerializeError creates an error for serialization failures.

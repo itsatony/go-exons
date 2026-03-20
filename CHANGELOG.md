@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0-dc5] - 2026-03-20
+
+### Added
+- Full agent compilation pipeline: `Spec.CompileAgent()` produces `CompiledSpec` with messages, execution, tools, constraints (DC-5)
+- `Spec.Compile()` — simple body compilation through template engine
+- `Spec.ActivateSkill()` — skill activation with injection into system_prompt, user_context, or none
+- `Spec.AgentDryRun()` — 6-step validation collecting ALL issues without stopping at first error
+- `CompiledMessage` type — compilation output (distinct from `Message` for template output extraction)
+- `CompileOptions` with functional options: `WithResolver`, `WithCompileEngine`, `WithSkillsCatalogFormat`, `WithToolsCatalogFormat`
+- Provider message serialization: `CompiledSpec.ToOpenAIMessages()`, `ToAnthropicMessages()`, `ToGeminiContents()`, `ToProviderMessages(provider)`
+- `AgentExecutor` convenience wrapper: `Execute`, `ExecuteFile`, `ExecuteSpec`, `ActivateSkill`
+- `AgentDryRunResult` with `OK()`, `HasErrors()`, `String()` methods
+- Clone methods on types: `ToolsConfig.Clone()`, `ConstraintsConfig.Clone()`, `OperationalConstraints.Clone()`, `CredentialRef.Clone()`, `CredentialRef.Validate()`
+- `Spec.ValidateCredentialRefs()` — validates credential map, default label, and skill credential labels
+- Error constructors: `NewCompilationError`, `NewCompileMessageError`, `NewCompileSkillError`, `NewCompileBodyError`, `NewProviderMessageError`, `NewSkillNotFoundError`
+- 25+ compile/DryRun/provider constants
+- 130+ new test functions across 4 test files
+- Root coverage: 89.5%, internal: 91.1%, execution: 92.1%
+
+### Changed
+- `Template.Compile()` and `Template.CompileAgent()` now delegate to `Spec` methods (stubs removed)
+- `Spec.Clone()` now delegates to standalone `ToolsConfig.Clone()`, `ConstraintsConfig.Clone()`, `CredentialRef.Clone()`
+
+### Removed
+- `ErrMsgCompileNotAvailable` constant and `NewCompileNotAvailableError()` — replaced by real compilation
+- `CompiledSpec` and `CompileOptions` placeholder definitions from `exons.template.go` — moved to `exons.compile.go`
+
 ## [0.5.0-dc4] - 2026-03-20
 
 ### Added

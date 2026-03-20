@@ -608,3 +608,405 @@ func TestSpec_IsGenSpec(t *testing.T) {
 	assert.False(t, (*Spec)(nil).IsGenSpec())
 	assert.False(t, (&Spec{}).IsGenSpec())
 }
+
+// =============================================================================
+// ToolsConfig.Clone
+// =============================================================================
+
+func TestToolsConfig_Clone(t *testing.T) {
+	t.Run("nil_returns_nil", func(t *testing.T) {
+		var tc *ToolsConfig
+		assert.Nil(t, tc.Clone())
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		tc := &ToolsConfig{}
+		clone := tc.Clone()
+		require.NotNil(t, clone)
+		assert.Empty(t, clone.Functions)
+		assert.Empty(t, clone.MCPServers)
+		assert.Empty(t, clone.Allow)
+		assert.Nil(t, clone.ParallelToolCalls)
+		assert.Empty(t, clone.ToolChoice)
+	})
+
+	t.Run("full_deep_copy", func(t *testing.T) {
+		ptc := true
+		tc := &ToolsConfig{
+			Functions: []*FunctionDef{
+				{
+					Name:        "search",
+					Description: "Search the web",
+					Parameters: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"query": map[string]any{"type": "string"},
+						},
+					},
+				},
+				{
+					Name:        "calc",
+					Description: "Calculate",
+					Parameters:  map[string]any{"type": "number"},
+				},
+			},
+			MCPServers: []*MCPServer{
+				{Name: "server1", URL: "http://example.com"},
+			},
+			ToolChoice:        "auto",
+			ParallelToolCalls: &ptc,
+			Allow:             []string{"search", "calc"},
+		}
+
+		clone := tc.Clone()
+		require.NotNil(t, clone)
+
+		// Verify all fields match
+		require.Len(t, clone.Functions, 2)
+		assert.Equal(t, "search", clone.Functions[0].Name)
+		assert.Equal(t, "Search the web", clone.Functions[0].Description)
+		assert.Equal(t, "calc", clone.Functions[1].Name)
+		require.Len(t, clone.MCPServers, 1)
+		assert.Equal(t, "server1", clone.MCPServers[0].Name)
+		assert.Equal(t, "http://example.com", clone.MCPServers[0].URL)
+		assert.Equal(t, "auto", clone.ToolChoice)
+		require.NotNil(t, clone.ParallelToolCalls)
+		assert.True(t, *clone.ParallelToolCalls)
+		assert.Equal(t, []string{"search", "calc"}, clone.Allow)
+
+		// Mutate clone and verify original unchanged
+		clone.Functions[0].Name = "modified"
+		clone.MCPServers[0].Name = "modified"
+		clone.Allow[0] = "modified"
+		*clone.ParallelToolCalls = false
+		clone.ToolChoice = "none"
+
+		assert.Equal(t, "search", tc.Functions[0].Name)
+		assert.Equal(t, "server1", tc.MCPServers[0].Name)
+		assert.Equal(t, "search", tc.Allow[0])
+		assert.True(t, *tc.ParallelToolCalls)
+		assert.Equal(t, "auto", tc.ToolChoice)
+	})
+
+	t.Run("functions_deep_copy", func(t *testing.T) {
+		tc := &ToolsConfig{
+			Functions: []*FunctionDef{
+				{
+					Name: "fn1",
+					Parameters: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"name": map[string]any{"type": "string"},
+						},
+					},
+				},
+			},
+		}
+
+		clone := tc.Clone()
+
+		// Modify cloned function's Parameters map
+		clonedProps := clone.Functions[0].Parameters["properties"].(map[string]any)
+		clonedProps["name"] = map[string]any{"type": "integer"}
+
+		// Original should be unchanged
+		origProps := tc.Functions[0].Parameters["properties"].(map[string]any)
+		origName := origProps["name"].(map[string]any)
+		assert.Equal(t, "string", origName["type"])
+	})
+
+	t.Run("parallel_tool_calls_deep_copy", func(t *testing.T) {
+		val := true
+		tc := &ToolsConfig{
+			ParallelToolCalls: &val,
+		}
+
+		clone := tc.Clone()
+		require.NotNil(t, clone.ParallelToolCalls)
+		assert.True(t, *clone.ParallelToolCalls)
+
+		// Modify cloned pointer
+		*clone.ParallelToolCalls = false
+
+		// Original should be unchanged
+		assert.True(t, *tc.ParallelToolCalls)
+	})
+}
+
+// =============================================================================
+// ConstraintsConfig.Clone
+// =============================================================================
+
+func TestConstraintsConfig_Clone(t *testing.T) {
+	t.Run("nil_returns_nil", func(t *testing.T) {
+		var cc *ConstraintsConfig
+		assert.Nil(t, cc.Clone())
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		cc := &ConstraintsConfig{}
+		clone := cc.Clone()
+		require.NotNil(t, clone)
+		assert.Empty(t, clone.Behavioral)
+		assert.Empty(t, clone.Safety)
+		assert.Nil(t, clone.Operational)
+	})
+
+	t.Run("full_deep_copy", func(t *testing.T) {
+		maxTurns := 10
+		timeout := 30
+		cc := &ConstraintsConfig{
+			Behavioral: []string{"be polite", "cite sources"},
+			Safety:     []string{"no harmful content", "no PII"},
+			Operational: &OperationalConstraints{
+				MaxTurns:       &maxTurns,
+				TimeoutSeconds: &timeout,
+			},
+		}
+
+		clone := cc.Clone()
+		require.NotNil(t, clone)
+
+		// Verify all fields match
+		assert.Equal(t, []string{"be polite", "cite sources"}, clone.Behavioral)
+		assert.Equal(t, []string{"no harmful content", "no PII"}, clone.Safety)
+		require.NotNil(t, clone.Operational)
+		require.NotNil(t, clone.Operational.MaxTurns)
+		assert.Equal(t, 10, *clone.Operational.MaxTurns)
+		require.NotNil(t, clone.Operational.TimeoutSeconds)
+		assert.Equal(t, 30, *clone.Operational.TimeoutSeconds)
+
+		// Mutate clone and verify original unchanged
+		clone.Behavioral[0] = "modified"
+		clone.Safety[0] = "modified"
+		*clone.Operational.MaxTurns = 99
+
+		assert.Equal(t, "be polite", cc.Behavioral[0])
+		assert.Equal(t, "no harmful content", cc.Safety[0])
+		assert.Equal(t, 10, *cc.Operational.MaxTurns)
+	})
+
+	t.Run("operational_deep_copy", func(t *testing.T) {
+		maxTurns := 5
+		cc := &ConstraintsConfig{
+			Operational: &OperationalConstraints{
+				MaxTurns:       &maxTurns,
+				AllowedDomains: []string{"example.com"},
+			},
+		}
+
+		clone := cc.Clone()
+		require.NotNil(t, clone.Operational)
+
+		// Modify cloned Operational fields
+		*clone.Operational.MaxTurns = 100
+		clone.Operational.AllowedDomains[0] = "modified.com"
+
+		// Original should be unchanged
+		assert.Equal(t, 5, *cc.Operational.MaxTurns)
+		assert.Equal(t, "example.com", cc.Operational.AllowedDomains[0])
+	})
+}
+
+// =============================================================================
+// OperationalConstraints.Clone
+// =============================================================================
+
+func TestOperationalConstraints_Clone(t *testing.T) {
+	t.Run("nil_returns_nil", func(t *testing.T) {
+		var oc *OperationalConstraints
+		assert.Nil(t, oc.Clone())
+	})
+
+	t.Run("full_deep_copy", func(t *testing.T) {
+		maxTurns := 10
+		maxTokens := 4096
+		timeout := 60
+		maxToolCalls := 50
+
+		oc := &OperationalConstraints{
+			MaxTurns:         &maxTurns,
+			MaxTokensPerTurn: &maxTokens,
+			TimeoutSeconds:   &timeout,
+			MaxToolCalls:     &maxToolCalls,
+			AllowedDomains:   []string{"example.com", "api.example.com"},
+			BlockedDomains:   []string{"evil.com"},
+		}
+
+		clone := oc.Clone()
+		require.NotNil(t, clone)
+
+		// Verify all fields match
+		require.NotNil(t, clone.MaxTurns)
+		assert.Equal(t, 10, *clone.MaxTurns)
+		require.NotNil(t, clone.MaxTokensPerTurn)
+		assert.Equal(t, 4096, *clone.MaxTokensPerTurn)
+		require.NotNil(t, clone.TimeoutSeconds)
+		assert.Equal(t, 60, *clone.TimeoutSeconds)
+		require.NotNil(t, clone.MaxToolCalls)
+		assert.Equal(t, 50, *clone.MaxToolCalls)
+		assert.Equal(t, []string{"example.com", "api.example.com"}, clone.AllowedDomains)
+		assert.Equal(t, []string{"evil.com"}, clone.BlockedDomains)
+
+		// Mutate clone and verify original unchanged
+		*clone.MaxTurns = 99
+		*clone.MaxTokensPerTurn = 1
+		*clone.TimeoutSeconds = 1
+		*clone.MaxToolCalls = 1
+		clone.AllowedDomains[0] = "modified.com"
+		clone.BlockedDomains[0] = "modified.com"
+
+		assert.Equal(t, 10, *oc.MaxTurns)
+		assert.Equal(t, 4096, *oc.MaxTokensPerTurn)
+		assert.Equal(t, 60, *oc.TimeoutSeconds)
+		assert.Equal(t, 50, *oc.MaxToolCalls)
+		assert.Equal(t, "example.com", oc.AllowedDomains[0])
+		assert.Equal(t, "evil.com", oc.BlockedDomains[0])
+	})
+}
+
+// =============================================================================
+// CredentialRef.Validate
+// =============================================================================
+
+func TestCredentialRef_Validate(t *testing.T) {
+	t.Run("nil_returns_nil", func(t *testing.T) {
+		var cr *CredentialRef
+		assert.NoError(t, cr.Validate())
+	})
+
+	t.Run("missing_provider_returns_error", func(t *testing.T) {
+		cr := &CredentialRef{
+			Label: "my-cred",
+			Ref:   "${API_KEY}",
+		}
+		err := cr.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), ErrMsgCredentialMissingProvider)
+	})
+
+	t.Run("valid", func(t *testing.T) {
+		cr := &CredentialRef{
+			Provider: "openai",
+			Label:    "main",
+			Ref:      "${OPENAI_KEY}",
+			Scopes:   []string{"chat", "images"},
+		}
+		assert.NoError(t, cr.Validate())
+	})
+}
+
+// =============================================================================
+// CredentialRef.Clone
+// =============================================================================
+
+func TestCredentialRef_Clone(t *testing.T) {
+	t.Run("nil_returns_nil", func(t *testing.T) {
+		var cr *CredentialRef
+		assert.Nil(t, cr.Clone())
+	})
+
+	t.Run("full_deep_copy", func(t *testing.T) {
+		cr := &CredentialRef{
+			Provider: "anthropic",
+			Label:    "main-cred",
+			Ref:      "${ANTHROPIC_KEY}",
+			Scopes:   []string{"chat", "completion"},
+		}
+
+		clone := cr.Clone()
+		require.NotNil(t, clone)
+
+		// Verify all fields match
+		assert.Equal(t, "anthropic", clone.Provider)
+		assert.Equal(t, "main-cred", clone.Label)
+		assert.Equal(t, "${ANTHROPIC_KEY}", clone.Ref)
+		assert.Equal(t, []string{"chat", "completion"}, clone.Scopes)
+
+		// Mutate clone Scopes and verify original unchanged
+		clone.Scopes[0] = "modified"
+		clone.Provider = "modified"
+
+		assert.Equal(t, "chat", cr.Scopes[0])
+		assert.Equal(t, "anthropic", cr.Provider)
+	})
+}
+
+// =============================================================================
+// Spec.ValidateCredentialRefs
+// =============================================================================
+
+func TestSpec_ValidateCredentialRefs(t *testing.T) {
+	t.Run("nil_spec_returns_nil", func(t *testing.T) {
+		var s *Spec
+		assert.NoError(t, s.ValidateCredentialRefs())
+	})
+
+	t.Run("empty_credentials_returns_nil", func(t *testing.T) {
+		s := &Spec{}
+		assert.NoError(t, s.ValidateCredentialRefs())
+	})
+
+	t.Run("valid_credentials", func(t *testing.T) {
+		s := &Spec{
+			Credentials: map[string]*CredentialRef{
+				"main": {Provider: "openai", Ref: "${OPENAI_KEY}"},
+				"alt":  {Provider: "anthropic", Ref: "${ANTHROPIC_KEY}"},
+			},
+			Credential: "main",
+		}
+		assert.NoError(t, s.ValidateCredentialRefs())
+	})
+
+	t.Run("credential_missing_provider", func(t *testing.T) {
+		s := &Spec{
+			Credentials: map[string]*CredentialRef{
+				"bad-cred": {Ref: "${API_KEY}"},
+			},
+		}
+		err := s.ValidateCredentialRefs()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), ErrMsgCredentialMissingProvider)
+	})
+
+	t.Run("default_label_not_in_map", func(t *testing.T) {
+		s := &Spec{
+			Credentials: map[string]*CredentialRef{
+				"main": {Provider: "openai", Ref: "${KEY}"},
+			},
+			Credential: "nonexistent",
+		}
+		err := s.ValidateCredentialRefs()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), ErrMsgCredentialMissingRef)
+	})
+
+	t.Run("skill_credential_not_in_map", func(t *testing.T) {
+		s := &Spec{
+			Credentials: map[string]*CredentialRef{
+				"main": {Provider: "openai", Ref: "${KEY}"},
+			},
+			Skills: []SkillRef{
+				{Slug: "image-gen", Credential: "missing-label"},
+			},
+		}
+		err := s.ValidateCredentialRefs()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), ErrMsgCredentialMissingRef)
+	})
+
+	t.Run("valid_with_skills", func(t *testing.T) {
+		s := &Spec{
+			Credentials: map[string]*CredentialRef{
+				"main":   {Provider: "openai", Ref: "${OPENAI_KEY}"},
+				"images": {Provider: "openai", Ref: "${IMAGES_KEY}", Scopes: []string{"images"}},
+			},
+			Credential: "main",
+			Skills: []SkillRef{
+				{Slug: "image-gen", Credential: "images"},
+				{Slug: "chat", Credential: "main"},
+			},
+		}
+		assert.NoError(t, s.ValidateCredentialRefs())
+	})
+}

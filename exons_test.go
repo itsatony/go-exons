@@ -956,24 +956,35 @@ func TestEngine_Parse(t *testing.T) {
 }
 
 // =============================================================================
-// Template Compile stubs
+// Template Compile delegation
 // =============================================================================
 
 func TestTemplate_Compile(t *testing.T) {
 	engine := MustNew()
-	tmpl, err := engine.Parse("Hello")
-	require.NoError(t, err)
 
-	t.Run("Compile returns not available", func(t *testing.T) {
-		_, err := tmpl.Compile(context.Background(), nil, nil)
+	t.Run("Compile without spec returns error", func(t *testing.T) {
+		tmpl, err := engine.Parse("Hello")
+		require.NoError(t, err)
+		_, err = tmpl.Compile(context.Background(), nil, nil)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), ErrMsgCompileNotAvailable)
+		assert.Contains(t, err.Error(), ErrMsgCompileNotAgent)
 	})
 
-	t.Run("CompileAgent returns not available", func(t *testing.T) {
-		_, err := tmpl.CompileAgent(context.Background(), nil, nil)
+	t.Run("CompileAgent without spec returns error", func(t *testing.T) {
+		tmpl, err := engine.Parse("Hello")
+		require.NoError(t, err)
+		_, err = tmpl.CompileAgent(context.Background(), nil, nil)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), ErrMsgCompileNotAvailable)
+		assert.Contains(t, err.Error(), ErrMsgCompileNotAgent)
+	})
+
+	t.Run("Compile with spec delegates to Spec.Compile", func(t *testing.T) {
+		source := "---\nname: test-compile\ndescription: A test\ntype: skill\n---\nHello {~exons.var name=\"name\" default=\"World\" /~}"
+		tmpl, err := engine.Parse(source)
+		require.NoError(t, err)
+		result, err := tmpl.Compile(context.Background(), map[string]any{"name": "Alice"}, nil)
+		require.NoError(t, err)
+		assert.Contains(t, result, "Alice")
 	})
 }
 
@@ -1297,9 +1308,34 @@ func TestErrorTypes(t *testing.T) {
 		assert.Contains(t, err.Error(), ErrMsgReservedTemplateName)
 	})
 
-	t.Run("compileNotAvailableError", func(t *testing.T) {
-		err := NewCompileNotAvailableError()
-		assert.Contains(t, err.Error(), ErrMsgCompileNotAvailable)
+	t.Run("compilationError", func(t *testing.T) {
+		err := NewCompilationError(ErrMsgCompilationFailed, nil)
+		assert.Contains(t, err.Error(), ErrMsgCompilationFailed)
+	})
+
+	t.Run("compileMessageError", func(t *testing.T) {
+		err := NewCompileMessageError(0, RoleSystem, fmt.Errorf("test"))
+		assert.Contains(t, err.Error(), ErrMsgCompileMessageFailed)
+	})
+
+	t.Run("compileSkillError", func(t *testing.T) {
+		err := NewCompileSkillError("web-search", fmt.Errorf("test"))
+		assert.Contains(t, err.Error(), ErrMsgCompileSkillFailed)
+	})
+
+	t.Run("compileBodyError", func(t *testing.T) {
+		err := NewCompileBodyError(fmt.Errorf("test"))
+		assert.Contains(t, err.Error(), ErrMsgCompileBodyFailed)
+	})
+
+	t.Run("providerMessageError", func(t *testing.T) {
+		err := NewProviderMessageError("unknown")
+		assert.Contains(t, err.Error(), ErrMsgUnsupportedMsgProvider)
+	})
+
+	t.Run("skillNotFoundError", func(t *testing.T) {
+		err := NewSkillNotFoundError("missing-skill")
+		assert.Contains(t, err.Error(), ErrMsgActivateSkillNotFound)
 	})
 
 	t.Run("funcRegistrationError", func(t *testing.T) {
@@ -1308,6 +1344,12 @@ func TestErrorTypes(t *testing.T) {
 
 		err2 := NewFuncRegistrationError("test error", "")
 		assert.Contains(t, err2.Error(), "test error")
+	})
+
+	t.Run("credentialValidationError", func(t *testing.T) {
+		cause := fmt.Errorf("provider missing")
+		err := NewCredentialValidationError("my-label", cause)
+		assert.Contains(t, err.Error(), ErrMsgCredentialMissingProvider)
 	})
 }
 
