@@ -99,26 +99,6 @@ func (t *Template) HasSpec() bool {
 	return t.spec != nil
 }
 
-// Compile compiles the template's spec by executing its body through an engine.
-// If the template has no spec, returns an error.
-// Delegates to Spec.Compile for the actual compilation work.
-func (t *Template) Compile(ctx context.Context, input map[string]any, opts *CompileOptions) (string, error) {
-	if t.spec == nil {
-		return "", NewCompilationError(ErrMsgCompileNotAgent, nil)
-	}
-	return t.spec.Compile(ctx, input, opts)
-}
-
-// CompileAgent compiles the template's agent spec into a compiled result.
-// If the template has no spec, returns an error.
-// Delegates to Spec.CompileAgent for the actual compilation work.
-func (t *Template) CompileAgent(ctx context.Context, input map[string]any, opts *CompileOptions) (*CompiledSpec, error) {
-	if t.spec == nil {
-		return nil, NewCompilationError(ErrMsgCompileNotAgent, nil)
-	}
-	return t.spec.CompileAgent(ctx, input, opts)
-}
-
 // ExecuteAndExtractMessages executes the template and extracts structured messages from the output.
 // This is useful for chat/conversation templates that use {~exons.message~} tags.
 // Returns the messages array and any error from execution.

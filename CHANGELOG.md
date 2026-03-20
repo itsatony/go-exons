@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0-dc8] - 2026-03-20
+
+### Removed
+
+#### BREAKING: Compilation Layer Removed
+- **BREAKING**: Removed `CompileAgent()` — agent compilation is the runtime's responsibility
+- **BREAKING**: Removed `CompiledSpec` type and `CompiledMessage` type
+- **BREAKING**: Removed `Compile()` on Spec and Template
+- **BREAKING**: Removed `ActivateSkill()` — skill injection belongs in the runtime
+- **BREAKING**: Removed `AgentDryRun()` and `AgentDryRunResult` — validation without compilation is the consumer's job
+- **BREAKING**: Removed `AgentExecutor` wrapper (`Execute`, `ExecuteFile`, `ExecuteSpec`)
+- **BREAKING**: Removed `CompileOptions` type and functional option constructors (`WithResolver`, `WithCompileEngine`, etc.)
+- **BREAKING**: Removed `ToOpenAIMessages()`, `ToAnthropicMessages()`, `ToGeminiContents()`, `ToProviderMessages()` — provider message formatting belongs in the runtime
+- **BREAKING**: Removed `Template.Compile()` and `Template.CompileAgent()` delegation methods
+- **BREAKING**: Removed `ValidateAsAgent()` method on Spec
+- **BREAKING**: Removed error constructors: `NewCompilationError`, `NewCompileMessageError`, `NewCompileSkillError`, `NewCompileBodyError`, `NewProviderMessageError`, `NewSkillNotFoundError`
+- **BREAKING**: Removed `ErrCodeCompile` error code
+- **BREAKING**: Removed ~30 compilation-only constants (error messages, dry run categories, provider message keys, injection markers)
+
+#### Files Deleted
+- `exons.compile.go` (467 lines)
+- `exons.compile.messages.go` (123 lines)
+- `exons.compile.dryrun.go` (156 lines)
+- `exons.agent.executor.go` (111 lines)
+- `exons.compile_test.go` (1,372 lines)
+- `exons.compile.integration_test.go` (1,082 lines)
+- `exons.compile.messages_test.go` (371 lines)
+- `exons.compile.dryrun_test.go` (473 lines)
+- `exons.spec.agent_test.go`
+
+### Changed
+- README.md rewritten — focuses on parse/validate/serialize/execute flow, no compilation references
+- CLAUDE.md updated — removed compilation section and files from package structure
+- `ValidateCredentialRefs()` simplified — no longer wraps errors with compilation-specific constructors
+- Internal catalog resolver comments updated to remove CompileAgent references
+- Internal hint updated: `CompileOptions.Resolver` reference replaced with `Engine.SetSpecResolver()`
+
+### Retained
+- Template engine (`Engine.Parse`, `Engine.Execute`, `ExecuteAndExtractMessages`)
+- Spec parsing, validation, serialization, clone
+- `execution.Config` with all 32+ fields and 6 provider serializers
+- A2A Agent Card generation (`CompileAgentCard`)
+- Catalog generation (`GenerateSkillsCatalog`, `GenerateToolsCatalog`)
+- Import/Export (`.md`, `.zip`, `.prompty`, `.genspec`)
+- All metadata types (memory, dispatch, verifications, registry, safety)
+- SkillRef, ToolsConfig, ConstraintsConfig types (YAML spec format)
+- SkillInjection type and constants (part of SkillRef YAML field)
+- Role constants, context key constants (used by template engine)
+- Root coverage: 90.6%, internal: 91.1%, execution: 92.1%
+
+## [0.8.0-dc7] - 2026-03-20
+
+### Changed
+
+#### Part A: Flatten GenSpec into Spec (BREAKING)
+- **BREAKING**: Removed `genspec/` sub-package entirely — all types moved to root `exons` package
+- **BREAKING**: Replaced `GenSpec *genspec.GenSpec` field on `Spec` with 5 flat fields:
+  - `Memory *MemorySpec` (yaml: `memory:`)
+  - `Dispatch *DispatchSpec` (yaml: `dispatch:`)
+  - `Verifications []VerificationCase` (yaml: `verifications:`)
+  - `Registry *RegistrySpec` (yaml: `registry:`)
+  - `Safety *SafetyConfig` (yaml: `safety:`)
+- **BREAKING**: YAML format changed from nested `genspec:` wrapper to flat top-level fields
+- **BREAKING**: Removed `GenSpecVersion` constant, `SpecFieldGenSpec` constant, `A2AMetaKeyGenSpecVersion` constant
+- **BREAKING**: `SerializeOptions.IncludeGenSpec` renamed to `IncludeMetadata`
+- **BREAKING**: `ErrCodeGenSpec` renamed to `ErrCodeMetadata`
+- Added `HasMetadata()` method on Spec — replaces `IsGenSpec()` conceptually
+- `IsGenSpec()` kept as deprecated alias for `HasMetadata()`
+- Added proper `Clone()` methods on all metadata types (fixes shallow-copy defect)
+- Origin constants (`OriginInternal`, `OriginExternal`, `OriginUnknown`) and guardrails constants (`GuardrailsEnabled`, `GuardrailsDisabled`) now in root package
+- A2A metadata: `genspec.version` key removed from agent card metadata; safety/dispatch enrichment unchanged
+- New spec field constants: `SpecFieldMemory`, `SpecFieldDispatch`, `SpecFieldVerifications`, `SpecFieldRegistry`, `SpecFieldSafety`
+
+#### Part B: Prompty Auto-Import
+- `ImportPrompty(data)` converts `.prompty` files to valid `Spec` instances
+- Tag namespace conversion: `{~prompty.` → `{~exons.` (opening and closing tags)
+- YAML field remapping: `delegation` → `dispatch`, `tests` → `verifications`, `plugin` → `registry` (with `trust_level` → `origin`)
+- `genspec:` wrapper auto-flattened to top-level fields
+- Extra prompty fields (`license`, `compatibility`, `allowed_tools`, `metadata`, `requirements`) moved to `extensions`
+- `.prompty` and `.genspec` file extensions recognized by `Import()`
+- `isPromptyContent()` auto-detection helper for content with `{~prompty.` tags
+
 ## [0.7.0-dc6] - 2026-03-20
 
 ### Added

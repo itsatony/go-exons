@@ -4,7 +4,7 @@ package internal
 const (
 	HintVarNotFound      = "Hint: Use default=\"value\" to provide a fallback, or onerror=\"default:value\" for error handling"
 	HintTemplateNotFound = "Hint: Register the template with engine.RegisterTemplate() or engine.MustRegisterTemplate()"
-	HintRefNoResolver    = "Hint: Pass a DocumentResolver via CompileOptions.Resolver to resolve spec references"
+	HintRefNoResolver    = "Hint: Configure a SpecResolver via Engine.SetSpecResolver() to resolve spec references"
 	HintRefNotFound      = "Hint: Ensure the slug exists in your DocumentResolver and check for typos"
 	HintSeparator        = "\n"
 )

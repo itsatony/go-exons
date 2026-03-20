@@ -22,14 +22,13 @@ const (
 	ErrCodeSchema     = "EXONS_SCHEMA"
 	ErrCodeSpec       = "EXONS_SPEC"       // Spec validation errors
 	ErrCodeRef        = "EXONS_REF"        // Reference resolution errors
-	ErrCodeCompile    = "EXONS_COMPILE"    // Compilation errors
 	ErrCodeExecution  = "EXONS_EXECUTION"  // Execution errors
 	ErrCodeStorage    = "EXONS_STORAGE"    // Storage errors
 	ErrCodeCredential = "EXONS_CREDENTIAL" // Credential validation errors
 	ErrCodeManifest   = "EXONS_MANIFEST"   // Execution manifest errors
 	ErrCodeA2A        = "EXONS_A2A"        // A2A Agent Card errors
 	ErrCodeVersioning = "EXONS_VERSIONING" // Versioning operation errors
-	ErrCodeGenSpec    = "EXONS_GENSPEC"    // GenSpec errors
+	ErrCodeMetadata   = "EXONS_METADATA"   // Metadata errors (memory, dispatch, etc.)
 	ErrCodeAgent      = "EXONS_AGENT"      // Agent errors
 	ErrCodeCatalog    = "EXONS_CATALOG"    // Catalog errors
 	ErrCodeSerialize  = "EXONS_SERIALIZE"  // Serialization errors
@@ -242,7 +241,6 @@ const (
 	ErrMsgMissingExecution        = "execution configuration is required"
 	ErrMsgNameTooLong             = "name exceeds maximum length"
 	ErrMsgDescriptionTooLong      = "description exceeds maximum length"
-	ErrMsgSpecNil                 = "spec is nil"
 	ErrMsgYAMLUnmarshalFailed     = "YAML unmarshal failed"
 	// Reference resolution messages
 	ErrMsgRefNotFound      = "referenced spec not found"
@@ -251,20 +249,14 @@ const (
 	ErrMsgRefMissingSlug   = "exons.ref requires slug attribute"
 	ErrMsgRefInvalidSlug   = "invalid spec slug format"
 
-	// Agent/compilation messages
-	ErrMsgNotAnAgent              = "document is not an agent type"
+	// Agent/spec validation messages
 	ErrMsgSkillNotFound           = "skill not found"
 	ErrMsgSkillRefEmpty           = "skill reference slug is empty"
 	ErrMsgSkillRefAmbiguous       = "skill reference is ambiguous"
-	ErrMsgNoExecutionConfig       = "execution configuration is required"
-	ErrMsgNoProvider              = "provider is required in execution config"
-	ErrMsgNoModel                 = "model is required in execution config"
-	ErrMsgCompilationFailed       = "agent compilation failed"
 	ErrMsgInvalidDocumentType     = "invalid document type"
 	ErrMsgPromptNoSkillsAllowed   = "prompt type does not support skills"
 	ErrMsgPromptNoToolsAllowed    = "prompt type does not support tools"
 	ErrMsgPromptNoConstraints     = "prompt type does not support constraints"
-	ErrMsgAgentMessagesInvalid    = "agent messages must include system or user role"
 	ErrMsgSkillRefInvalidVersion  = "invalid skill reference version"
 	ErrMsgCatalogGenerationFailed = "catalog generation failed"
 	ErrMsgSkillNoSkillsAllowed    = "skill type does not support nested skills"
@@ -273,29 +265,29 @@ const (
 	ErrMsgMCPServerURLEmpty       = "MCP server URL is empty"
 	ErrMsgMessageTemplateNoRole   = "message template requires a role"
 	ErrMsgMessageTemplateNoBody   = "message template requires content"
-	ErrMsgInlineSkillNoSlug       = "inline skill requires a slug"
-	ErrMsgInlineSkillNoBody       = "inline skill requires a body"
-	ErrMsgAgentNoBodyOrMessages   = "agent requires body or messages"
-	ErrMsgUnsupportedMsgProvider  = "unsupported provider for message serialization"
 	ErrMsgNoDocumentResolver      = "no document resolver configured"
 
-	// GenSpec error messages
-	ErrMsgPromptNoMemory      = "prompt type does not support memory configuration"
-	ErrMsgPromptNoDispatch    = "prompt type does not support dispatch rules"
-	ErrMsgPromptNoRegistry    = "prompt type does not support registry metadata"
-	ErrMsgSkillNoDispatch     = "skill type does not support dispatch rules"
-	ErrMsgMemoryInvalidScope  = "memory scope must match slug pattern"
-	ErrMsgDispatchMaxTurns    = "dispatch max_turns must be between 1 and 1000"
-	ErrMsgDispatchCostLimit   = "dispatch cost_limit_usd must be between 0 and 1000"
-	ErrMsgVerifyNameRequired  = "verification name is required"
-	ErrMsgVerifyNameInvalid   = "verification name must match slug pattern"
-	ErrMsgVerifyNoAssertions  = "verification expect must have at least one assertion"
-	ErrMsgVerifyTimeout       = "verification timeout_seconds must be between 1 and 600"
-	ErrMsgRegistryNamespace   = "registry namespace must match slug pattern"
-	ErrMsgRegistryOrigin      = "registry origin must be: internal, external, or unknown"
-	ErrMsgSafetyGuardrails    = "safety guardrails must be: enabled or disabled"
-	ErrMsgTimeoutInvalid      = "timeout_seconds must be between 1 and 3600"
-	ErrMsgMaxToolCallsInvalid = "max_tool_calls must be between 1 and 10000"
+	// Metadata error messages
+	ErrMsgPromptNoMemory         = "prompt type does not support memory configuration"
+	ErrMsgPromptNoDispatch       = "prompt type does not support dispatch rules"
+	ErrMsgPromptNoRegistry       = "prompt type does not support registry metadata"
+	ErrMsgSkillNoDispatch        = "skill type does not support dispatch rules"
+	ErrMsgMemoryInvalidScope     = "memory scope must match slug pattern"
+	ErrMsgDispatchMaxTurns       = "dispatch max_turns must be between 1 and 1000"
+	ErrMsgDispatchCostLimit      = "dispatch cost_limit_usd must be between 0 and 1000"
+	ErrMsgVerifyNameRequired     = "verification name is required"
+	ErrMsgVerifyNameInvalid      = "verification name must match slug pattern"
+	ErrMsgVerifyNoAssertions     = "verification expect must have at least one assertion"
+	ErrMsgVerifyTimeout          = "verification timeout_seconds must be between 1 and 600"
+	ErrMsgRegistryNamespace      = "registry namespace must match slug pattern"
+	ErrMsgRegistryOrigin         = "registry origin must be: internal, external, or unknown"
+	ErrMsgSafetyGuardrails       = "safety guardrails must be: enabled or disabled"
+	ErrMsgVerifyRefAndExpect     = "verification cannot have both ref and expect"
+	ErrMsgVerifyRegexInvalid     = "verification output_matches_regex is not a valid regex"
+	ErrMsgMemoryReadScopeInvalid = "memory read_scopes entry must match slug pattern"
+	ErrMsgDispatchKeywordEmpty   = "dispatch trigger_keywords entry must not be empty"
+	ErrMsgTimeoutInvalid         = "timeout_seconds must be between 1 and 3600"
+	ErrMsgMaxToolCallsInvalid    = "max_tool_calls must be between 1 and 10000"
 
 	// Additional validation messages
 	ErrMsgInvalidSkopeSlug      = "invalid slug format"
@@ -679,45 +671,6 @@ func NewRefInvalidSlugError(slug string) error {
 		WithMetadata(MetaKeySpecSlug, slug)
 }
 
-// NewCompilationError creates an error for agent compilation failures.
-func NewCompilationError(msg string, cause error) error {
-	if cause != nil {
-		return cuserr.WrapStdError(cause, ErrCodeCompile, msg)
-	}
-	return cuserr.NewValidationError(ErrCodeCompile, msg)
-}
-
-// NewCompileMessageError creates an error for message compilation failures with index and role context.
-func NewCompileMessageError(messageIndex int, role string, cause error) error {
-	return cuserr.WrapStdError(cause, ErrCodeCompile, ErrMsgCompileMessageFailed).
-		WithMetadata(MetaKeyMessageIndex, strconv.Itoa(messageIndex)).
-		WithMetadata(MetaKeyMessageRole, role)
-}
-
-// NewCompileSkillError creates an error for skill compilation failures with slug context.
-func NewCompileSkillError(skillSlug string, cause error) error {
-	return cuserr.WrapStdError(cause, ErrCodeCompile, ErrMsgCompileSkillFailed).
-		WithMetadata(MetaKeySkillSlug, skillSlug)
-}
-
-// NewCompileBodyError creates an error for body compilation failures.
-func NewCompileBodyError(cause error) error {
-	return cuserr.WrapStdError(cause, ErrCodeCompile, ErrMsgCompileBodyFailed).
-		WithMetadata(MetaKeyCompileStage, DryRunLocationBody)
-}
-
-// NewProviderMessageError creates an error for unsupported provider message serialization.
-func NewProviderMessageError(provider string) error {
-	return cuserr.NewValidationError(ErrCodeCompile, ErrMsgUnsupportedMsgProvider).
-		WithMetadata(MetaKeyProvider, provider)
-}
-
-// NewSkillNotFoundError creates an error for skill not found during activation.
-func NewSkillNotFoundError(slug string) error {
-	return cuserr.NewNotFoundError(ErrCodeCompile, ErrMsgActivateSkillNotFound).
-		WithMetadata(MetaKeySkillSlug, slug)
-}
-
 // NewCredentialValidationError creates an error for credential validation failures with label context.
 func NewCredentialValidationError(label string, cause error) error {
 	return cuserr.WrapStdError(cause, ErrCodeCredential, ErrMsgCredentialMissingProvider).
@@ -769,6 +722,13 @@ func NewImportError(msg string, cause error) error {
 func NewAgentValidationError(msg string, specName string) error {
 	return cuserr.NewValidationError(ErrCodeAgent, msg).
 		WithMetadata(MetaKeySpecName, specName)
+}
+
+// NewMetadataValidationError creates an error for metadata field validation failures
+// (memory, dispatch, verifications, registry, safety).
+func NewMetadataValidationError(msg string, value string) error {
+	return cuserr.NewValidationError(ErrCodeMetadata, msg).
+		WithMetadata(MetaKeyValue, value)
 }
 
 // NewA2AError creates an error for A2A Agent Card compilation failures.

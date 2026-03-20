@@ -3,7 +3,7 @@ package exons
 import "time"
 
 // Version is the current library version. Loaded from versions.yaml at build time.
-const Version = "0.7.0"
+const Version = "0.9.0"
 
 // File extension for exons specification files.
 const FileExtensionExons = ".exons"
@@ -436,8 +436,12 @@ const (
 	SpecFieldCredential   = "credential"
 	SpecFieldRequirements = "requirements"
 
-	// GenSpec field
-	SpecFieldGenSpec = "genspec"
+	// Metadata fields (flattened from genspec/)
+	SpecFieldMemory        = "memory"
+	SpecFieldDispatch      = "dispatch"
+	SpecFieldVerifications = "verifications"
+	SpecFieldRegistry      = "registry"
+	SpecFieldSafety        = "safety"
 )
 
 // DocumentType identifies the kind of document (prompt, skill, agent).
@@ -548,7 +552,7 @@ const (
 	TemplateNameSelf = "self"
 )
 
-// Context keys used during agent compilation
+// Context keys used by template execution and catalog resolvers
 const (
 	ContextKeyInput       = "input"
 	ContextKeyMeta        = "meta"
@@ -556,29 +560,6 @@ const (
 	ContextKeyConstraints = "constraints"
 	ContextKeySkills      = "skills"
 	ContextKeyTools       = "tools"
-	ContextKeySelfBody    = "_selfBody"
-)
-
-// Constraints context map keys (used in buildCompileContext)
-const (
-	ConstraintsKeyBehavioral = "behavioral"
-	ConstraintsKeySafety     = "safety"
-)
-
-// Default input keys for automatic user message detection in buildDefaultMessages
-const (
-	DefaultInputKeyQuery   = "query"
-	DefaultInputKeyMessage = "message"
-)
-
-// SystemMessageSeparator is used to join multiple system messages (Anthropic/Gemini)
-const SystemMessageSeparator = "\n\n"
-
-// Skill injection markers
-const (
-	SkillInjectionMarkerStart = "<!-- SKILL_START:"
-	SkillInjectionMarkerEnd   = "<!-- SKILL_END:"
-	SkillInjectionMarkerClose = " -->"
 )
 
 // Field constraints
@@ -786,14 +767,7 @@ const (
 	ExtensionPrefixA2A = "a2a."
 )
 
-// A2A metadata keys for GenSpec enrichment
-const (
-	A2AMetaKeySafetyGuardrails    = "safety.guardrails"
-	A2AMetaKeySafetyDenyTools     = "safety.deny_tools"
-	A2AMetaKeySafetyConfirmation  = "safety.require_confirmation_for"
-	A2AMetaKeyGenSpecVersion      = "genspec.version"
-	A2AMetaKeyDispatchDescription = "dispatch.trigger_description"
-)
+// A2A metadata keys for safety/dispatch enrichment are defined in exons.a2a.go.
 
 // JSON formatting constants
 const (
@@ -830,9 +804,6 @@ const (
 	EmbeddingMaxDimensions = 65536
 )
 
-// GenSpec version.
-const GenSpecVersion = "1"
-
 // Document export/import constants
 const (
 	DocumentFilenameAgent  = "AGENT.md"
@@ -848,9 +819,6 @@ const (
 	MetaKeySkillSlug     = "skill_slug"
 	MetaKeyInjectionMode = "injection_mode"
 	MetaKeySkillVersion  = "skill_version"
-	MetaKeyMessageIndex  = "message_index"
-	MetaKeyMessageRole   = "message_role"
-	MetaKeyCompileStage  = "compile_stage"
 )
 
 // Versioning error messages
@@ -908,53 +876,7 @@ const MaxImportResourceSize = 50 * 1024 * 1024 // 50MB
 // Import error for multiple document files in archive.
 const ErrMsgImportMultipleDocuments = "multiple document files found in archive"
 
-// Compile error messages
+// Credential validation error messages
 const (
-	ErrMsgCompileNotAgent       = "cannot compile non-agent document as agent"
-	ErrMsgCompileBodyFailed     = "failed to compile body template"
-	ErrMsgCompileMessageFailed  = "failed to compile message template"
-	ErrMsgCompileSkillFailed    = "failed to compile skill for activation"
-	ErrMsgActivateSkillNotFound = "skill not found in agent for activation"
-	ErrMsgAgentDryRunNilSpec    = "spec is nil for dry run"
-	ErrMsgAgentExecNilSpec      = "spec cannot be nil"
-	ErrMsgAgentExecReadFile     = "failed to read agent file"
-	ErrMsgAgentExecParseFailed  = "failed to parse agent source"
-	ErrMsgCredentialMissingRef  = "credential default label not found in credentials map"
-)
-
-// AgentDryRun category constants
-const (
-	AgentDryRunCategoryValidation = "validation"
-	AgentDryRunCategoryResolver   = "resolver"
-	AgentDryRunCategoryTemplate   = "template"
-	AgentDryRunCategoryCredential = "credential"
-)
-
-// AgentDryRun summary format strings
-const (
-	AgentDryRunSummaryOK     = "agent dry run OK: %d skills resolved, %d tools defined, %d messages"
-	AgentDryRunSummaryIssues = "agent dry run found %d issue(s):\n"
-	AgentDryRunIssueFormat   = "  [%s] %s: %s\n"
-)
-
-// AgentDryRun location constants
-const (
-	DryRunLocationSpec          = "spec"
-	DryRunLocationBody          = "body"
-	DryRunLocationCredentials   = "credentials"
-	DryRunLocationSkillPrefix   = "skill:"
-	DryRunLocationMessagePrefix = "message["
-	DryRunLocationMessageSuffix = "]"
-)
-
-// Provider message serialization keys
-const (
-	ProviderMsgKeyContent           = "content"
-	ProviderMsgKeyMessages          = "messages"
-	ProviderMsgKeySystem            = "system"
-	ProviderMsgKeyParts             = "parts"
-	ProviderMsgKeyText              = "text"
-	ProviderMsgKeySystemInstruction = "system_instruction"
-	ProviderMsgKeyContents          = "contents"
-	ProviderMsgKeyModelRole         = "model"
+	ErrMsgCredentialMissingRef = "credential default label not found in credentials map"
 )

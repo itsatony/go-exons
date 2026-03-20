@@ -157,8 +157,7 @@ func (e *Engine) Parse(source string) (*Template, error) {
 	templateBody := configResult.TemplateBody
 
 	// Sync spec.Body with the extracted template body so that
-	// Compile/CompileAgent can use it without a deferred mutation
-	// (which would be a data race on concurrent calls).
+	// downstream consumers can access it without a deferred mutation.
 	if spec != nil && spec.Body == "" && templateBody != "" {
 		spec.Body = templateBody
 	}

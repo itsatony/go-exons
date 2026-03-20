@@ -25,7 +25,7 @@ func (r *SkillsCatalogResolver) Resolve(ctx context.Context, execCtx interface{}
 		return "", NewBuiltinError(ErrMsgInvalidContext, TagNameSkillsCatalog)
 	}
 
-	// Read from context key where CompileAgent stores the catalog
+	// Read from context key where the catalog was injected
 	val, found := accessor.Get(ContextKeySkills)
 	if !found {
 		return "", nil
@@ -64,7 +64,7 @@ func (r *ToolsCatalogResolver) Resolve(ctx context.Context, execCtx interface{},
 		return "", NewBuiltinError(ErrMsgInvalidContext, TagNameToolsCatalog)
 	}
 
-	// Read from context key where CompileAgent stores the catalog
+	// Read from context key where the catalog was injected
 	val, found := accessor.Get(ContextKeyTools)
 	if !found {
 		return "", nil

@@ -1,8 +1,10 @@
 # go-exons
 
-**Exons define what agents do.** The functional coding regions of an agent's DNA.
+Declarative agent specification format for Go.
 
-go-exons is a declarative agent specification format for Go. An `.exons` file describes a complete agent: identity, execution parameters, tools, memory, dispatch rules, verification cases, and more — using YAML frontmatter and a content-resistant `{~...~}` template syntax.
+An `.exons` file describes a complete agent: identity, execution parameters, tools, memory, dispatch rules, safety constraints, and verification cases — using YAML frontmatter and a content-resistant `{~...~}` template syntax.
+
+go-exons parses, validates, and serializes these specs. It does **not** execute against LLMs — that's the runtime's job.
 
 ```
 go get github.com/itsatony/go-exons
@@ -15,6 +17,7 @@ go get github.com/itsatony/go-exons
 ```yaml
 ---
 name: greeter
+description: A friendly greeter agent
 type: agent
 execution:
   provider: openai
@@ -30,202 +33,339 @@ Say hello to {~exons.var name="user_name" default="World" /~}
 {~/exons.message~}
 ```
 
-**2. Parse and execute**:
+**2. Parse and use**:
 
 ```go
 engine := exons.MustNew()
-tmpl, _ := engine.Parse(source) // source is the .exons content above
+tmpl, _ := engine.Parse(source)
 
-// Execute and extract structured messages for LLM API calls
+// Execute template and extract structured messages
 messages, _ := tmpl.ExecuteAndExtractMessages(ctx, map[string]any{
     "user_name": "Alice",
 })
-// messages → [{Role: "system", Content: "You are a friendly greeter."},
-//             {Role: "user", Content: "Say hello to Alice"}]
+// messages[0] → {Role: "system", Content: "You are a friendly greeter."}
+// messages[1] → {Role: "user",   Content: "Say hello to Alice"}
 
-// Access the parsed spec (frontmatter)
+// Access the parsed spec
 spec := tmpl.Spec()
-fmt.Println(spec.Name)             // "greeter"
-fmt.Println(spec.Execution.Model)  // "gpt-4o"
+fmt.Println(spec.Name)            // "greeter"
+fmt.Println(spec.Execution.Model) // "gpt-4o"
 ```
-
-## What Problem Does This Solve?
-
-| Without go-exons | With go-exons |
-|---|---|
-| Agent config scattered across code | Single `.exons` file per agent |
-| Go's `{{}}` templates collide with JSON/XML in prompts | `{~...~}` delimiters never collide |
-| Provider-specific config hardcoded | Multi-provider serialization built in |
-| Manual message assembly per provider | `CompileAgent` → `ToOpenAIMessages()` in one pipeline |
-| No standard for agent metadata | GenSpec: memory, dispatch, verification, safety |
-| Test definitions separate from spec | Verification cases travel with the agent |
 
 ## The `.exons` Format
 
-An `.exons` file has two parts: YAML frontmatter (configuration) and a template body (the prompt).
+An `.exons` file has two parts: **YAML frontmatter** (configuration) and a **template body** (the prompt).
 
 ### Document Types
 
 | Type | Description |
 |---|---|
-| `prompt` | Simple template — variables, conditionals, loops |
-| `skill` | Reusable capability with inputs/outputs |
-| `agent` | Full agent with tools, skills, constraints, GenSpec |
+| `prompt` | Simple template — variables, conditionals, loops. No skills/tools/constraints. |
+| `skill` | Reusable capability with inputs/outputs. May have memory, registry, verification. |
+| `agent` | Full agent with tools, skills, constraints, metadata. All fields available. |
 
-### GenSpec — Agent Specification Metadata
-
-GenSpec fields describe *what an agent is*, not just *what it says*:
+### Annotated Example
 
 ```yaml
-genspec:
-  memory:
-    scope: my-agent
-    auto_recall: true
-  dispatch:
-    trigger_keywords: [dns, domain]
-    trigger_description: Route DNS tasks to this agent
-  verifications:
-    - name: basic-check
-      prompt: "List all records"
-      expect:
-        tool_calls: [list_records]
-  registry:
-    namespace: my-agent
-    origin: internal
-    version: 1.0.0
+---
+name: dns-specialist
+description: Deep DNS expert for Cloudflare zone management
+type: agent
+
+execution:
+  provider: anthropic
+  model: claude-sonnet-4-6
+  temperature: 0.2
+  max_tokens: 4096
+
+inputs:
+  zone_id:
+    type: string
+    description: Cloudflare zone ID
+    required: true
+
+tools:
+  allow: [dns_list_records, dns_create_record, dns_update_record, dns_delete_record]
+  functions:
+    - name: check_propagation
+      description: Check DNS propagation status worldwide
+      parameters:
+        type: object
+        properties:
+          domain: { type: string }
+          record_type: { type: string, enum: [A, AAAA, CNAME, MX, TXT] }
+        required: [domain]
+
+memory:
+  scope: dns-manager
+  auto_recall: true
+  auto_record: true
+
+dispatch:
+  trigger_keywords: [dns, domain, nameserver, propagation]
+  trigger_description: Route DNS tasks to this agent
+  cost_limit_usd: 0.50
+
+verifications:
+  - name: can-list-records
+    prompt: "List all DNS records for the test zone"
+    input: { zone_id: "test-zone-id" }
+    expect:
+      tool_calls: [dns_list_records]
+      output_contains: "records"
+    timeout_seconds: 30
+
+registry:
+  namespace: dns-manager
+  origin: internal
+  version: 1.2.0
+
+safety:
+  guardrails: enabled
+  require_confirmation_for: [dns_delete_record]
+  deny_tools: [write_file]
+
+constraints:
+  behavioral:
+    - Always verify current state before making changes
   safety:
-    guardrails: enabled
-    deny_tools: [dangerous_tool]
+    - Never delete SOA or NS records
+  operational:
+    max_turns: 15
+    timeout_seconds: 120
+---
+{~exons.message role="system"~}
+You are a DNS specialist agent. When given a DNS task:
+1. Read the current state before making changes.
+2. Explain what you plan to change and why.
+3. After changes, verify propagation.
+{~/exons.message~}
+
+{~exons.message role="user"~}
+{~exons.var name="input.query" default="What DNS records exist?" /~}
+{~/exons.message~}
 ```
 
-### Template Syntax
+## Template Syntax Reference
 
-```
-Variable:       {~exons.var name="user.name" default="Guest" /~}
-Conditional:    {~exons.if eval="user.isAdmin"~}...{~exons.else~}...{~/exons.if~}
-Loop:           {~exons.for item="x" in="items"~}...{~/exons.for~}
-Include:        {~exons.include template="header" /~}
-Message:        {~exons.message role="system"~}...{~/exons.message~}
-Ref:            {~exons.ref slug="my-skill" /~}
-Switch:         {~exons.switch eval="x"~}{~exons.case value="a"~}...{~/exons.case~}{~/exons.switch~}
-Skills Catalog: {~exons.skills_catalog /~}
-Tools Catalog:  {~exons.tools_catalog /~}
-Env:            {~exons.env name="API_KEY" default="none" /~}
-Extends:        {~exons.extends template="parent"~}
-Block:          {~exons.block name="content"~}...{~/exons.block~}
-Raw:            {~exons.raw~}not parsed{~/exons.raw~}
-Comment:        {~exons.comment~}removed{~/exons.comment~}
-Escape:         \{~ produces literal {~
+The `{~...~}` delimiter was chosen to never collide with prompt content (JSON, XML, Go templates, etc.).
+
+| Tag | Example |
+|---|---|
+| Variable | `{~exons.var name="user.name" default="Guest" /~}` |
+| Conditional | `{~exons.if eval="user.isAdmin"~}...{~exons.else~}...{~/exons.if~}` |
+| Loop | `{~exons.for item="x" index="i" in="items"~}...{~/exons.for~}` |
+| Include | `{~exons.include template="header" /~}` |
+| Message | `{~exons.message role="system"~}...{~/exons.message~}` |
+| Ref | `{~exons.ref slug="my-skill" /~}` |
+| Switch | `{~exons.switch eval="x"~}{~exons.case value="a"~}...{~/exons.case~}{~/exons.switch~}` |
+| Skills Catalog | `{~exons.skills_catalog /~}` |
+| Tools Catalog | `{~exons.tools_catalog /~}` |
+| Env | `{~exons.env name="API_KEY" default="none" /~}` |
+| Extends | `{~exons.extends template="parent"~}` |
+| Block | `{~exons.block name="content"~}...{~/exons.block~}` |
+| Raw | `{~exons.raw~}not parsed{~/exons.raw~}` |
+| Comment | `{~exons.comment~}removed from output{~/exons.comment~}` |
+| Escape | `\{~` produces literal `{~` |
+
+## Metadata Fields
+
+Metadata describes agent behavior beyond prompts. These fields live at the YAML top level:
+
+| Field | Allowed On | Purpose |
+|---|---|---|
+| `memory` | skill, agent | Scope, auto-recall, auto-record, read scopes |
+| `dispatch` | agent | Trigger keywords, description, cost limits |
+| `verifications` | all | Test cases with expected tool calls and outputs |
+| `registry` | skill, agent | Namespace, origin (internal/external/unknown), version |
+| `safety` | all | Guardrails, deny-tools, require-confirmation lists |
+
+Go types: `MemorySpec`, `DispatchSpec`, `VerificationCase`, `RegistrySpec`, `SafetyConfig` — all with `Clone()` and `Validate()`.
+
+## Execution Config
+
+Provider-agnostic LLM parameters (32+ fields). Defined in the `execution/` package.
+
+```yaml
+execution:
+  provider: openai
+  model: gpt-4o
+  temperature: 0.7
+  max_tokens: 4096
+  response_format:
+    type: json_schema
+    json_schema:
+      name: result
+      schema: { type: object, properties: { answer: { type: string } } }
 ```
 
-### Catalog Generation & Spec Resolution
+Serializes to provider-specific formats:
 
 ```go
-// Register specs for cross-referencing
+exec := spec.Execution
+openAI, _ := exec.ProviderFormat("openai")
+anthropic, _ := exec.ProviderFormat("anthropic")
+gemini, _ := exec.ProviderFormat("gemini")
+```
+
+Supported providers: OpenAI, Anthropic, Gemini, vLLM, Mistral, Cohere.
+
+## Working with Specs
+
+### Parse & Validate
+
+```go
+// Parse from string
+spec, _ := exons.Parse(source)
+
+// Parse from file
+spec, _ := exons.ParseFile("agent.exons")
+
+// Validate
+err := spec.Validate()
+
+// Validate credential references
+err := spec.ValidateCredentialRefs()
+```
+
+### Serialize & Export
+
+```go
+// Serialize to YAML+body string
+output, _ := spec.Serialize(exons.DefaultSerializeOptions())
+
+// Full export including credentials
+output, _ := spec.Serialize(exons.FullExportWithCredentials())
+
+// Agent Skills compatible export
+output, _ := spec.ExportToSkillMD()
+```
+
+### Import
+
+```go
+// Import from .md, .zip, .prompty, or .genspec files
+result, _ := exons.Import(data, "agent.zip")
+spec := result.Spec
+
+// Import a .prompty file (auto-converts {~prompty.~} tags to {~exons.~})
+spec, _ := exons.ImportPrompty(promptyData)
+
+// Import from SKILL.md format
+spec, _ := exons.ImportFromSkillMD(content)
+```
+
+### Clone
+
+```go
+copy := spec.Clone() // Deep copy of all fields
+```
+
+## Template Engine
+
+### Basics
+
+```go
+engine := exons.MustNew()
+
+// Parse and execute
+tmpl, _ := engine.Parse(source)
+output, _ := tmpl.Execute(ctx, data)
+
+// Register reusable templates
+engine.MustRegisterTemplate("header", "Welcome to {~exons.var name=\"site\" /~}")
+```
+
+### Custom Resolvers
+
+```go
+type MyResolver struct{}
+func (r *MyResolver) TagName() string { return "MyTag" }
+func (r *MyResolver) Resolve(ctx context.Context, execCtx *exons.Context, attrs exons.Attributes) (string, error) {
+    return "resolved", nil
+}
+func (r *MyResolver) Validate(attrs exons.Attributes) error { return nil }
+
+engine.RegisterResolver(&MyResolver{})
+```
+
+### Custom Functions
+
+```go
+engine.RegisterFunc("shout", func(args ...any) (any, error) {
+    return strings.ToUpper(fmt.Sprint(args[0])), nil
+})
+// Use in templates: {~exons.var name="x" /~} → shout(x)
+```
+
+### Message Extraction
+
+```go
+messages, _ := tmpl.ExecuteAndExtractMessages(ctx, data)
+// Returns []Message with Role and Content fields
+```
+
+### Spec Resolution
+
+```go
 resolver := exons.NewMapSpecResolver()
 resolver.Add("web-search", searchSpec, searchBody)
 engine.SetSpecResolver(resolver)
 
-// Auto-generate skill/tool catalogs and inject into template
-result, _ := engine.ExecuteWithCatalogs(ctx, source, data, agentSpec, exons.CatalogFormatDefault)
+// Now {~exons.ref slug="web-search" /~} resolves automatically
+```
 
-// Or generate catalogs manually
+## Catalogs
+
+```go
+// Generate skill/tool catalogs for prompt injection
 skillsCatalog, _ := exons.GenerateSkillsCatalog(ctx, skills, resolver, exons.CatalogFormatDetailed)
 toolsCatalog, _ := exons.GenerateToolsCatalog(tools, exons.CatalogFormatFunctionCalling)
+
+// Or auto-generate and inject into template
+result, _ := engine.ExecuteWithCatalogs(ctx, source, data, spec, exons.CatalogFormatDefault)
 ```
 
-### Agent Compilation
+Formats: `default` (markdown), `detailed`, `compact`, `function_calling` (JSON schema).
 
-Compile an agent spec into provider-ready API payloads:
+## A2A Agent Cards
 
-```go
-// Parse an .exons file
-spec, _ := exons.ParseFile("research-agent.exons")
-
-// Compile into messages + execution config + tools + constraints
-compiled, _ := spec.CompileAgent(ctx, map[string]any{"query": "climate change"}, &exons.CompileOptions{
-    Resolver: resolver, // for skill resolution
-})
-
-// Convert to provider-specific format
-openAIMessages := compiled.ToOpenAIMessages()       // []map[string]any
-anthropicPayload := compiled.ToAnthropicMessages()   // {system, messages}
-geminiContents := compiled.ToGeminiContents()         // {system_instruction, contents}
-
-// Or auto-dispatch by provider name
-payload, _ := compiled.ToProviderMessages("openai")
-```
-
-Activate a specific skill (injects content into system/user messages):
-
-```go
-compiled, _ := spec.ActivateSkill(ctx, "web-search", input, opts)
-```
-
-Validate without executing (dry run):
-
-```go
-result := spec.AgentDryRun(ctx, opts)
-if !result.OK() {
-    fmt.Println(result.String()) // lists all issues
-}
-```
-
-High-level convenience wrapper:
-
-```go
-executor := exons.NewAgentExecutor(exons.WithAgentResolver(resolver))
-compiled, _ := executor.Execute(ctx, source, input)
-compiled, _ := executor.ExecuteFile(ctx, "agent.exons", input)
-```
-
-### Import / Export
-
-```go
-// Import from .md or .zip
-result, _ := exons.Import(data, "agent.zip")
-spec := result.Spec
-
-// Export to zip archive
-zipData, _ := exons.ExportDirectory(spec, resources)
-
-// SKILL.md format (Agent Skills compatible)
-spec, _ := exons.ImportFromSkillMD(content)
-data, _ := spec.ExportToSkillMD()
-```
-
-## Multi-Provider Support
-
-ExecutionConfig serializes to provider-specific formats:
-
-- **OpenAI** / Azure
-- **Anthropic** (Claude)
-- **Gemini** (Google)
-- **vLLM**
-- **Mistral**
-- **Cohere**
-
-## A2A Agent Card Generation
-
-go-exons can generate [Google A2A protocol](https://github.com/google/a2a-spec) Agent Cards from Spec configuration. Pure metadata transformation — no template execution or network communication.
+Generate [Google A2A protocol](https://github.com/google/a2a-spec) Agent Cards from Spec metadata. Pure metadata transformation — no template execution or network calls.
 
 ```go
 card, _ := spec.CompileAgentCard(ctx, &exons.A2ACardOptions{
-    URL:                  "https://agents.example.com/research",
+    URL:                  "https://agents.example.com/dns",
     ProviderOrganization: "Acme Corp",
     Resolver:             myResolver,
 })
 jsonBytes, _ := card.ToJSONPretty()
 ```
 
-GenSpec metadata enriches Agent Cards beyond basic A2A:
-- Dispatch keywords become skill tags for routing
-- Registry version becomes the agent card version
-- Safety guardrails appear in card metadata
+Metadata enriches Agent Cards: dispatch keywords become skill tags, registry version becomes the card version, safety config appears in card metadata.
+
+## Token Estimation
+
+```go
+estimate, _ := exons.EstimateTokens(source, data)
+// estimate.InputTokens, estimate.OutputTokens, estimate.TotalTokens
+```
+
+## Debug & Validation
+
+```go
+// AST validation (checks for unknown tags, missing attributes)
+result := engine.Validate(source)
+
+// Dry run (static analysis without execution)
+dryRun, _ := tmpl.DryRun()
+
+// Human-readable execution walkthrough
+explanation, _ := tmpl.Explain(ctx, data)
+```
 
 ## Editor Support
 
-VS Code syntax highlighting is included in `editor/vscode/`. See the [editor README](editor/vscode/) for installation.
+VS Code syntax highlighting for `.exons` files is included in `editor/vscode/`.
 
 ## Lineage
 
