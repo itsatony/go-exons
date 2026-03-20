@@ -3,6 +3,7 @@ package exons
 import (
 	"context"
 
+	"github.com/itsatony/go-exons/execution"
 	"github.com/itsatony/go-exons/internal"
 )
 
@@ -103,9 +104,9 @@ func (t *Template) HasSpec() bool {
 // This type will be fully implemented in DC-5.
 type CompiledSpec struct {
 	Messages    []Message
-	Execution   any
-	Tools       any
-	Constraints any
+	Execution   *execution.Config
+	Tools       *ToolsConfig
+	Constraints *ConstraintsConfig
 }
 
 // CompileOptions will be implemented in DC-5.

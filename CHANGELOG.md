@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0-dc3] - 2026-03-20
+
+### Added
+- Full `execution.Config` with 32 fields covering all major LLM providers (DC-3)
+- Provider serialization: `ToOpenAI()`, `ToAnthropic()`, `ToGemini()`, `ToVLLM()`, `ToMistral()`, `ToCohere()`
+- `Config.Validate()` — validates all field ranges and delegates to sub-type validators
+- `Config.Clone()` — deep copy of all pointer/slice/map/nested config fields
+- `Config.Merge()` — 3-layer precedence merge (other wins for non-nil fields)
+- `GetEffectiveProvider()` — auto-detect provider from model name and config shape
+- Get/Has pairs for all ~30 optional config fields
+- `ProviderFormat(provider)` — dispatch to provider-specific response format
+- `Config.JSON()` / `Config.YAML()` — convenience serialization methods
+- Sub-types: `ThinkingConfig`, `ResponseFormat`, `JSONSchemaSpec`, `EnumConstraint`, `GuidedDecoding`
+- Media types: `ImageConfig` (11 fields), `AudioConfig` (6), `EmbeddingConfig` (7), `StreamingConfig`, `AsyncConfig`
+- Schema helpers: `GeminiTaskType()`, `CohereUpperCase()`, `ensureAdditionalPropertiesFalse()`
+- Model detection: `isOpenAIModel`, `isAnthropicModel`, `isGeminiModel`, `isMistralModel`, `isCohereModel`
+- `Spec.Serialize(opts)` — YAML frontmatter + body export with configurable field inclusion
+- `SerializeOptions` with `IncludeExecution`, `IncludeExtensions`, `IncludeAgentFields`, `IncludeContext`, `IncludeCredentials`, `IncludeGenSpec`
+- Factory functions: `DefaultSerializeOptions()`, `AgentSkillsExportOptions()`, `FullExportWithCredentials()`
+- `Parse(data)` / `ParseFile(path)` / `MustParse(data)` — standalone `.exons` file parsing
+- Extension helpers: `GetExtension`, `SetExtension`, `RemoveExtension`, `GetExtensionAs[T]`
+- `GetStandardFields()` / `GetExonsFields()` — field classification helpers
+- `CompiledSpec` fields typed: `Execution *execution.Config`, `Tools *ToolsConfig`, `Constraints *ConstraintsConfig`
+- `Spec.Clone()` delegates to `Config.Clone()` (replaces 25 lines of manual copying)
+- `Spec.Validate()` delegates to `Config.Validate()` for execution config validation
+- execution/ package: 92.1% coverage, root package: 88.3% coverage
+
+### Changed
+- **BREAKING**: `execution.Config.Stop` renamed to `StopSequences` (yaml: `stop_sequences`)
+- Version bumped to 0.4.0
+
 ## [0.3.0-dc2] - 2026-03-20
 
 ### Added

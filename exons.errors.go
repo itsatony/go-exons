@@ -32,6 +32,7 @@ const (
 	ErrCodeGenSpec    = "EXONS_GENSPEC"    // GenSpec errors
 	ErrCodeAgent      = "EXONS_AGENT"      // Agent errors
 	ErrCodeCatalog    = "EXONS_CATALOG"    // Catalog errors
+	ErrCodeSerialize  = "EXONS_SERIALIZE"  // Serialization errors
 )
 
 // Error message constants — ALL error messages must be constants (NO MAGIC STRINGS)
@@ -670,4 +671,12 @@ func NewRefInvalidSlugError(slug string) error {
 // NewCompileNotAvailableError creates an error for compile methods that are not yet available.
 func NewCompileNotAvailableError() error {
 	return cuserr.NewValidationError(ErrCodeCompile, ErrMsgCompileNotAvailable)
+}
+
+// NewSerializeError creates an error for serialization failures.
+func NewSerializeError(msg string, cause error) error {
+	if cause != nil {
+		return cuserr.WrapStdError(cause, ErrCodeSerialize, msg)
+	}
+	return cuserr.NewValidationError(ErrCodeSerialize, msg)
 }

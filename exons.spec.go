@@ -160,6 +160,13 @@ func (s *Spec) Validate() error {
 		// Agent-specific validation can be added here
 	}
 
+	// Validate execution config if present
+	if s.Execution != nil {
+		if err := s.Execution.Validate(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -207,32 +214,9 @@ func (s *Spec) Clone() *Spec {
 		Body:        s.Body,
 	}
 
-	// Clone execution
+	// Clone execution (delegates to Config.Clone)
 	if s.Execution != nil {
-		execCopy := *s.Execution
-		// Deep copy pointer fields
-		if s.Execution.Temperature != nil {
-			t := *s.Execution.Temperature
-			execCopy.Temperature = &t
-		}
-		if s.Execution.TopP != nil {
-			t := *s.Execution.TopP
-			execCopy.TopP = &t
-		}
-		if s.Execution.MaxTokens != nil {
-			t := *s.Execution.MaxTokens
-			execCopy.MaxTokens = &t
-		}
-		if s.Execution.TopK != nil {
-			t := *s.Execution.TopK
-			execCopy.TopK = &t
-		}
-		// Deep copy slices
-		if s.Execution.Stop != nil {
-			execCopy.Stop = make([]string, len(s.Execution.Stop))
-			copy(execCopy.Stop, s.Execution.Stop)
-		}
-		clone.Execution = &execCopy
+		clone.Execution = s.Execution.Clone()
 	}
 
 	// Clone inputs

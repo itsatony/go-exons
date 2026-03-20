@@ -3,7 +3,7 @@ package exons
 import "time"
 
 // Version is the current library version. Loaded from versions.yaml at build time.
-const Version = "0.3.0"
+const Version = "0.4.0"
 
 // File extension for exons specification files.
 const FileExtensionExons = ".exons"
@@ -435,6 +435,9 @@ const (
 	SpecFieldCredentials  = "credentials"
 	SpecFieldCredential   = "credential"
 	SpecFieldRequirements = "requirements"
+
+	// GenSpec field
+	SpecFieldGenSpec = "genspec"
 )
 
 // DocumentType identifies the kind of document (prompt, skill, agent).
