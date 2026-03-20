@@ -770,3 +770,11 @@ func NewAgentValidationError(msg string, specName string) error {
 	return cuserr.NewValidationError(ErrCodeAgent, msg).
 		WithMetadata(MetaKeySpecName, specName)
 }
+
+// NewA2AError creates an error for A2A Agent Card compilation failures.
+func NewA2AError(msg string, cause error) error {
+	if cause != nil {
+		return cuserr.WrapStdError(cause, ErrCodeA2A, msg)
+	}
+	return cuserr.NewValidationError(ErrCodeA2A, msg)
+}

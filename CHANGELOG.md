@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0-dc6] - 2026-03-20
+
+### Added
+
+#### A2A Agent Card Generation
+- `Spec.CompileAgentCard(ctx, opts)` — generates Google A2A protocol Agent Cards from Spec configuration (DC-6)
+- Pure metadata transformation — no template execution or network communication
+- `A2ACardOptions` struct — URL, provider info, version, capabilities, security, resolver
+
+#### `a2a/` Package Types
+- `a2a.AgentCard` — full Agent Card (v0.3 spec) with name, URL, skills, capabilities, security, metadata
+- `a2a.Provider` — organization identification
+- `a2a.Capabilities` — streaming and push notification support
+- `a2a.Skill` — skill advertisement with ID, name, description, tags, input/output modes
+- `AgentCard.ToJSON()` and `AgentCard.ToJSONPretty()` — JSON serialization
+
+#### Auto-Detection
+- Skills mapped from `SkillRef` entries; descriptions resolved via `SpecResolver` (non-fatal fallback)
+- Streaming capability detected from `execution.Config.Streaming.Enabled`
+- Input modes inferred from `Spec.Inputs` types (string→"text/plain", object→"application/json")
+- Output modes inferred from execution modality (text→"text/plain", image→"image/png", audio→"audio/mpeg")
+- A2A-prefixed extensions (`a2a.*`) merged into card metadata
+
+#### GenSpec Enrichment (unique to go-exons)
+- `dispatch.TriggerKeywords` → appended to each A2A skill's Tags
+- `registry.Version` → used as agent card Version (fallback after opts)
+- `safety.Guardrails`, `safety.DenyTools`, `safety.RequireConfirmationFor` → card metadata
+- `genspec.Version` → card metadata under `genspec.version`
+- `dispatch.TriggerDescription` → card metadata under `dispatch.trigger_description`
+
+#### Constants and Errors
+- A2A metadata key constants: `A2AMetaKeySafetyGuardrails`, `A2AMetaKeySafetyDenyTools`, `A2AMetaKeySafetyConfirmation`, `A2AMetaKeyGenSpecVersion`, `A2AMetaKeyDispatchDescription`
+- `NewA2AError()` constructor wrapping cuserr with `ErrCodeA2A`
+- Helper functions: `modalityToMIME`, `inputTypeToMIME`, `sortedStringKeys`
+
+#### Testing
+- 40+ test functions in `exons.a2a_test.go` covering all paths
+- Root coverage: 91.1%, total: 90.7%
+
 ## [0.6.0-dc5] - 2026-03-20
 
 ### Added

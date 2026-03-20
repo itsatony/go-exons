@@ -205,6 +205,24 @@ ExecutionConfig serializes to provider-specific formats:
 - **Mistral**
 - **Cohere**
 
+## A2A Agent Card Generation
+
+go-exons can generate [Google A2A protocol](https://github.com/google/a2a-spec) Agent Cards from Spec configuration. Pure metadata transformation — no template execution or network communication.
+
+```go
+card, _ := spec.CompileAgentCard(ctx, &exons.A2ACardOptions{
+    URL:                  "https://agents.example.com/research",
+    ProviderOrganization: "Acme Corp",
+    Resolver:             myResolver,
+})
+jsonBytes, _ := card.ToJSONPretty()
+```
+
+GenSpec metadata enriches Agent Cards beyond basic A2A:
+- Dispatch keywords become skill tags for routing
+- Registry version becomes the agent card version
+- Safety guardrails appear in card metadata
+
 ## Editor Support
 
 VS Code syntax highlighting is included in `editor/vscode/`. See the [editor README](editor/vscode/) for installation.

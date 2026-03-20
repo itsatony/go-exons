@@ -3,7 +3,7 @@ package exons
 import "time"
 
 // Version is the current library version. Loaded from versions.yaml at build time.
-const Version = "0.6.0"
+const Version = "0.7.0"
 
 // File extension for exons specification files.
 const FileExtensionExons = ".exons"
@@ -784,6 +784,15 @@ const (
 // A2A extension key prefix
 const (
 	ExtensionPrefixA2A = "a2a."
+)
+
+// A2A metadata keys for GenSpec enrichment
+const (
+	A2AMetaKeySafetyGuardrails    = "safety.guardrails"
+	A2AMetaKeySafetyDenyTools     = "safety.deny_tools"
+	A2AMetaKeySafetyConfirmation  = "safety.require_confirmation_for"
+	A2AMetaKeyGenSpecVersion      = "genspec.version"
+	A2AMetaKeyDispatchDescription = "dispatch.trigger_description"
 )
 
 // JSON formatting constants
