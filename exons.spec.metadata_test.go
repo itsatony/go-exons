@@ -93,7 +93,7 @@ func TestDispatchSpec_GetCostLimitUSD(t *testing.T) {
 	assert.False(t, ok)
 	assert.Equal(t, 0.0, val)
 
-	val, ok = (&DispatchSpec{}).GetCostLimitUSD()
+	_, ok = (&DispatchSpec{}).GetCostLimitUSD()
 	assert.False(t, ok)
 
 	cost := 0.50

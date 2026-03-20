@@ -2,6 +2,7 @@ package exons
 
 import (
 	"context"
+	"math"
 	"reflect"
 	"strings"
 	"sync"
@@ -498,7 +499,11 @@ func (c *Context) GetInt(path string) (int, bool) {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return int(rv.Int()), true
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return int(rv.Uint()), true
+		u := rv.Uint()
+		if u > uint64(math.MaxInt) {
+			return 0, false
+		}
+		return int(u), true
 	case reflect.Float32, reflect.Float64:
 		return int(rv.Float()), true
 	}

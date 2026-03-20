@@ -546,7 +546,7 @@ func TestParser_LongTextTruncation(t *testing.T) {
 }
 
 func TestParser_NilAttributesMethods(t *testing.T) {
-	var attrs Attributes = nil
+	var attrs Attributes
 
 	// Get returns empty and false
 	val, ok := attrs.Get("key")

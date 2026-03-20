@@ -4,9 +4,9 @@
 test:
 	go test -v -race ./...
 
-# Run linter
+# Run linter (matches CI exactly)
 lint:
-	golangci-lint run
+	golangci-lint run ./...
 
 # Run tests with coverage report
 cover:

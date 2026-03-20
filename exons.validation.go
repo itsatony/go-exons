@@ -88,26 +88,26 @@ func (e *Engine) Validate(source string) (*ValidationResult, error) {
 	lexer := internal.NewLexerWithConfig(source, lexerConfig, e.logger)
 
 	// Tokenize
-	tokens, err := lexer.Tokenize()
-	if err != nil {
+	tokens, tokenErr := lexer.Tokenize()
+	if tokenErr != nil {
 		result.issues = append(result.issues, ValidationIssue{
 			Severity: SeverityError,
-			Message:  ErrMsgParseFailed + ": " + err.Error(),
+			Message:  ErrMsgParseFailed + ": " + tokenErr.Error(),
 			Position: Position{},
 		})
-		return result, nil
+		return result, nil //nolint:nilerr // intentional: collect parse errors as validation issues
 	}
 
 	// Parse with source for validation
 	parser := internal.NewParserWithSource(tokens, source, e.logger)
-	ast, err := parser.Parse()
-	if err != nil {
+	ast, parseErr := parser.Parse()
+	if parseErr != nil {
 		result.issues = append(result.issues, ValidationIssue{
 			Severity: SeverityError,
-			Message:  ErrMsgParseFailed + ": " + err.Error(),
+			Message:  ErrMsgParseFailed + ": " + parseErr.Error(),
 			Position: Position{},
 		})
-		return result, nil
+		return result, nil //nolint:nilerr // intentional: collect parse errors as validation issues
 	}
 
 	// Validate AST nodes

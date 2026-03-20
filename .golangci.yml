@@ -17,7 +17,7 @@ linters:
     - misspell
     - nilerr
     - bodyclose
-    - exportloopref
+    - copyloopvar
 
 linters-settings:
   goconst:
@@ -36,6 +36,10 @@ linters-settings:
   gosec:
     excludes:
       - G104 # unhandled errors on deferred close — too noisy
+      - G101 # false positives on constants containing "credential" or "token"
+  misspell:
+    ignore-words:
+      - prompty # proper noun — the go-prompty project
 
 issues:
   exclude-rules:
@@ -44,5 +48,10 @@ issues:
         - gosec
         - goconst
         - errcheck
+    # internal.InternalResolver stutters but renaming would break the adapter pattern
+    - path: internal/exons\.resolver\.registry\.go
+      linters:
+        - revive
+      text: "stutters"
   max-issues-per-linter: 50
   max-same-issues: 5
