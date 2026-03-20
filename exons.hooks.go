@@ -170,7 +170,9 @@ func (r *HookRegistry) ClearAll() {
 // For "after" hooks, all hooks are executed and errors are collected.
 func (r *HookRegistry) Run(ctx context.Context, point HookPoint, data *HookData) error {
 	r.mu.RLock()
-	hooks := r.hooks[point]
+	src := r.hooks[point]
+	hooks := make([]Hook, len(src))
+	copy(hooks, src)
 	r.mu.RUnlock()
 
 	if len(hooks) == 0 {
@@ -197,7 +199,9 @@ func (r *HookRegistry) Run(ctx context.Context, point HookPoint, data *HookData)
 // Useful for after hooks where you want to know all errors.
 func (r *HookRegistry) RunWithErrors(ctx context.Context, point HookPoint, data *HookData) []error {
 	r.mu.RLock()
-	hooks := r.hooks[point]
+	src := r.hooks[point]
+	hooks := make([]Hook, len(src))
+	copy(hooks, src)
 	r.mu.RUnlock()
 
 	if len(hooks) == 0 {

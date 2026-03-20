@@ -2,7 +2,6 @@ package exons
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
@@ -84,7 +83,7 @@ func (e *Engine) Parse(source string) (*Template, error) {
 				Column: configErr.Position.Column,
 			}
 		}
-		return nil, newConfigBlockError(ErrMsgConfigBlockExtract, pos, err)
+		return nil, NewConfigBlockError(ErrMsgConfigBlockExtract, pos, err)
 	}
 
 	// Parse frontmatter if present
@@ -120,14 +119,14 @@ func (e *Engine) Parse(source string) (*Template, error) {
 	// Tokenize
 	tokens, err := lexer.Tokenize()
 	if err != nil {
-		return nil, newParseError(ErrMsgParseFailed, Position{}, err)
+		return nil, NewParseError(ErrMsgParseFailed, Position{}, err)
 	}
 
 	// Parse with source for raw text extraction (keepRaw strategy)
 	parser := internal.NewParserWithSource(tokens, templateBody, e.logger)
 	ast, err := parser.Parse()
 	if err != nil {
-		return nil, newParseError(ErrMsgParseFailed, Position{}, err)
+		return nil, NewParseError(ErrMsgParseFailed, Position{}, err)
 	}
 
 	return newTemplateWithConfig(source, templateBody, ast, e.executor, e.config, e, spec), nil
@@ -149,7 +148,7 @@ func (e *Engine) resolveConfigEnvVars(yamlContent string) (string, error) {
 	ctx := context.Background()
 	result, err := e.Execute(ctx, yamlContent, nil)
 	if err != nil {
-		return "", newFrontmatterError(ErrMsgFrontmatterParse, Position{}, err)
+		return "", NewFrontmatterError(ErrMsgFrontmatterParse, Position{}, err)
 	}
 
 	return result, nil
@@ -214,10 +213,10 @@ func (e *Engine) ResolverCount() int {
 func (e *Engine) RegisterTemplate(name string, source string) error {
 	// Validate template name
 	if name == "" {
-		return newEmptyTemplateNameError()
+		return NewEmptyTemplateNameError()
 	}
 	if strings.HasPrefix(name, TagNamespacePrefix) {
-		return newReservedTemplateNameError(name)
+		return NewReservedTemplateNameError(name)
 	}
 
 	// Check for existing template
@@ -225,7 +224,7 @@ func (e *Engine) RegisterTemplate(name string, source string) error {
 	defer e.tmplMu.Unlock()
 
 	if _, exists := e.templates[name]; exists {
-		return newTemplateExistsError(name)
+		return NewTemplateExistsError(name)
 	}
 
 	// Parse the template
@@ -319,7 +318,7 @@ func (e *Engine) TemplateCount() int {
 func (e *Engine) ExecuteTemplate(ctx context.Context, name string, data map[string]any) (string, error) {
 	tmpl, ok := e.GetTemplate(name)
 	if !ok {
-		return "", newTemplateNotFoundError(name)
+		return "", NewTemplateNotFoundError(name)
 	}
 
 	// Extract parent depth if provided and create clean data copy
@@ -367,7 +366,7 @@ func (a *resolverAdapter) Resolve(ctx context.Context, execCtx interface{}, attr
 	// Convert execCtx to *Context
 	exonsCtx, ok := execCtx.(*Context)
 	if !ok {
-		return "", newExecutionError(ErrMsgInvalidContextType, a.TagName(), Position{}, nil)
+		return "", NewExecutionError(ErrMsgInvalidContextType, a.TagName(), Position{}, nil)
 	}
 
 	// Wrap internal.Attributes to satisfy public Attributes interface
@@ -380,138 +379,3 @@ func (a *resolverAdapter) Validate(attrs internal.Attributes) error {
 	return a.resolver.Validate(wrappedAttrs)
 }
 
-// --- Error constructors ---
-
-// configBlockError represents an error during config block extraction.
-type configBlockError struct {
-	message  string
-	position Position
-	cause    error
-}
-
-func newConfigBlockError(message string, pos Position, cause error) *configBlockError {
-	return &configBlockError{message: message, position: pos, cause: cause}
-}
-
-func (e *configBlockError) Error() string {
-	if e.position.Line > 0 {
-		return fmt.Sprintf("%s at line %d, column %d", e.message, e.position.Line, e.position.Column)
-	}
-	if e.cause != nil {
-		return e.message + ": " + e.cause.Error()
-	}
-	return e.message
-}
-
-func (e *configBlockError) Unwrap() error { return e.cause }
-
-// parseError represents a template parse error.
-type parseError struct {
-	message  string
-	position Position
-	cause    error
-}
-
-func newParseError(message string, pos Position, cause error) *parseError {
-	return &parseError{message: message, position: pos, cause: cause}
-}
-
-func (e *parseError) Error() string {
-	if e.cause != nil {
-		return e.message + ": " + e.cause.Error()
-	}
-	return e.message
-}
-
-func (e *parseError) Unwrap() error { return e.cause }
-
-// frontmatterError represents a frontmatter parsing error.
-type frontmatterError struct {
-	message  string
-	position Position
-	cause    error
-}
-
-func newFrontmatterError(message string, pos Position, cause error) *frontmatterError {
-	return &frontmatterError{message: message, position: pos, cause: cause}
-}
-
-func (e *frontmatterError) Error() string {
-	if e.cause != nil {
-		return e.message + ": " + e.cause.Error()
-	}
-	return e.message
-}
-
-func (e *frontmatterError) Unwrap() error { return e.cause }
-
-// executionError represents a template execution error.
-type executionError struct {
-	message  string
-	tagName  string
-	position Position
-	cause    error
-}
-
-func newExecutionError(message, tagName string, pos Position, cause error) *executionError {
-	return &executionError{message: message, tagName: tagName, position: pos, cause: cause}
-}
-
-func (e *executionError) Error() string {
-	if e.tagName != "" {
-		return fmt.Sprintf("%s [%s]", e.message, e.tagName)
-	}
-	return e.message
-}
-
-func (e *executionError) Unwrap() error { return e.cause }
-
-// templateNotFoundError represents a missing template error.
-type templateNotFoundError struct {
-	name string
-}
-
-func newTemplateNotFoundError(name string) *templateNotFoundError {
-	return &templateNotFoundError{name: name}
-}
-
-func (e *templateNotFoundError) Error() string {
-	return ErrMsgTemplateNotFound + ": " + e.name
-}
-
-// templateExistsError represents a duplicate template error.
-type templateExistsError struct {
-	name string
-}
-
-func newTemplateExistsError(name string) *templateExistsError {
-	return &templateExistsError{name: name}
-}
-
-func (e *templateExistsError) Error() string {
-	return ErrMsgTemplateAlreadyExists + ": " + e.name
-}
-
-// emptyTemplateNameError is returned when a template name is empty.
-type emptyTemplateNameError struct{}
-
-func newEmptyTemplateNameError() *emptyTemplateNameError {
-	return &emptyTemplateNameError{}
-}
-
-func (e *emptyTemplateNameError) Error() string {
-	return ErrMsgEmptyTemplateName
-}
-
-// reservedTemplateNameError is returned when a template name uses reserved namespace.
-type reservedTemplateNameError struct {
-	name string
-}
-
-func newReservedTemplateNameError(name string) *reservedTemplateNameError {
-	return &reservedTemplateNameError{name: name}
-}
-
-func (e *reservedTemplateNameError) Error() string {
-	return ErrMsgReservedTemplateName + ": " + e.name
-}

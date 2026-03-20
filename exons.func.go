@@ -40,10 +40,10 @@ type Func struct {
 //	{~exons.if eval="double(count) > 10"~}...{~/exons.if~}
 func (e *Engine) RegisterFunc(f *Func) error {
 	if f == nil {
-		return newFuncRegistrationError(ErrMsgFuncNilFunc, "")
+		return NewFuncRegistrationError(ErrMsgFuncNilFunc, "")
 	}
 	if f.Name == "" {
-		return newFuncRegistrationError(ErrMsgFuncEmptyName, "")
+		return NewFuncRegistrationError(ErrMsgFuncEmptyName, "")
 	}
 
 	// Convert to internal Func
@@ -79,24 +79,3 @@ func (e *Engine) FuncCount() int {
 	return e.executor.FuncCount()
 }
 
-// funcRegistrationError represents a function registration error.
-type funcRegistrationError struct {
-	message  string
-	funcName string
-}
-
-// newFuncRegistrationError creates a new function registration error.
-func newFuncRegistrationError(message, funcName string) *funcRegistrationError {
-	return &funcRegistrationError{
-		message:  message,
-		funcName: funcName,
-	}
-}
-
-// Error implements the error interface.
-func (e *funcRegistrationError) Error() string {
-	if e.funcName != "" {
-		return e.message + ": " + e.funcName
-	}
-	return e.message
-}

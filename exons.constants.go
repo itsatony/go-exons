@@ -328,6 +328,12 @@ const (
 	ErrFmtTypeMismatch = "expected %s, got %s"
 )
 
+// Error format string constants
+const (
+	FmtPosition      = "line %d, column %d"
+	RefChainSeparator = " -> "
+)
+
 // LLM Provider names for structured output handling
 const (
 	ProviderOpenAI    = "openai"

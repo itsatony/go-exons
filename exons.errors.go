@@ -317,7 +317,7 @@ type Position struct {
 
 // String returns a human-readable position string
 func (p Position) String() string {
-	return fmt.Sprintf("line %d, column %d", p.Line, p.Column)
+	return fmt.Sprintf(FmtPosition, p.Line, p.Column)
 }
 
 // NewParseError creates a parse error with position context
@@ -373,7 +373,7 @@ func NewExecutionError(msg string, tagName string, pos Position, cause error) er
 	if cause != nil {
 		err = cuserr.WrapStdError(cause, ErrCodeExec, msg)
 	} else {
-		err = cuserr.NewInternalError(ErrCodeExec, nil)
+		err = cuserr.NewValidationError(ErrCodeExec, msg)
 	}
 	return err.
 		WithMetadata(MetaKeyTag, tagName).
@@ -639,7 +639,7 @@ func NewRefCircularError(slug string, chain []string) error {
 	chainStr := ""
 	for i, s := range chain {
 		if i > 0 {
-			chainStr += " -> "
+			chainStr += RefChainSeparator
 		}
 		chainStr += s
 	}
@@ -665,4 +665,9 @@ func NewRefMissingSlugError() error {
 func NewRefInvalidSlugError(slug string) error {
 	return cuserr.NewValidationError(ErrCodeRef, ErrMsgRefInvalidSlug).
 		WithMetadata(MetaKeySpecSlug, slug)
+}
+
+// NewCompileNotAvailableError creates an error for compile methods that are not yet available.
+func NewCompileNotAvailableError() error {
+	return cuserr.NewValidationError(ErrCodeCompile, ErrMsgCompileNotAvailable)
 }

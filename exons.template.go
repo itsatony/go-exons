@@ -99,6 +99,15 @@ func (t *Template) HasSpec() bool {
 	return t.spec != nil
 }
 
+// CompiledSpec is the result of compiling an agent spec.
+// This type will be fully implemented in DC-5.
+type CompiledSpec struct {
+	Messages    []Message
+	Execution   any
+	Tools       any
+	Constraints any
+}
+
 // CompileOptions will be implemented in DC-5.
 // For now this is a placeholder struct.
 type CompileOptions struct{}
@@ -106,13 +115,13 @@ type CompileOptions struct{}
 // Compile compiles the template's spec by executing its body through an engine.
 // Returns an error — compile is not available in this version.
 func (t *Template) Compile(_ context.Context, _ map[string]any, _ *CompileOptions) (string, error) {
-	return "", newCompileNotAvailableError()
+	return "", NewCompileNotAvailableError()
 }
 
 // CompileAgent compiles the template's agent spec into a compiled result.
 // Returns an error — compile is not available in this version.
-func (t *Template) CompileAgent(_ context.Context, _ map[string]any, _ *CompileOptions) (any, error) {
-	return nil, newCompileNotAvailableError()
+func (t *Template) CompileAgent(_ context.Context, _ map[string]any, _ *CompileOptions) (*CompiledSpec, error) {
+	return nil, NewCompileNotAvailableError()
 }
 
 // ExecuteAndExtractMessages executes the template and extracts structured messages from the output.
@@ -180,19 +189,6 @@ func (a *internalAttributesAdapter) Keys() []string {
 
 func (a *internalAttributesAdapter) Map() map[string]string {
 	return a.attrs.Map()
-}
-
-// --- Error constructors ---
-
-// compileNotAvailableError is returned when compile methods are called.
-type compileNotAvailableError struct{}
-
-func newCompileNotAvailableError() *compileNotAvailableError {
-	return &compileNotAvailableError{}
-}
-
-func (e *compileNotAvailableError) Error() string {
-	return ErrMsgCompileNotAvailable
 }
 
 // Position.String() is defined in exons.errors.go.

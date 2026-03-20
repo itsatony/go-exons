@@ -94,7 +94,7 @@ func (c *Context) getPath(path string) (any, bool) {
 			if !ok {
 				// Try parent context if not found
 				if c.parent != nil {
-					return c.parent.getPath(path)
+					return c.parent.Get(path)
 				}
 				return nil, false
 			}
@@ -103,7 +103,7 @@ func (c *Context) getPath(path string) (any, bool) {
 			val, ok := v[part]
 			if !ok {
 				if c.parent != nil {
-					return c.parent.getPath(path)
+					return c.parent.Get(path)
 				}
 				return nil, false
 			}
@@ -111,7 +111,7 @@ func (c *Context) getPath(path string) (any, bool) {
 		default:
 			// Can't traverse further
 			if c.parent != nil {
-				return c.parent.getPath(path)
+				return c.parent.Get(path)
 			}
 			return nil, false
 		}
@@ -220,22 +220,17 @@ func (c *Context) Keys() []string {
 // Keys from this context take precedence over parent keys.
 func (c *Context) AllKeys() []string {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	keySet := make(map[string]bool)
-
-	// Collect keys from this context
+	keySet := make(map[string]bool, len(c.data))
 	for k := range c.data {
 		keySet[k] = true
 	}
+	c.mu.RUnlock()
 
-	// Collect keys from parent chain (only add if not already present)
+	// Walk parent chain — each parent locks itself via Keys()
 	for parent := c.parent; parent != nil; parent = parent.parent {
-		parent.mu.RLock()
-		for k := range parent.data {
+		for _, k := range parent.Keys() {
 			keySet[k] = true
 		}
-		parent.mu.RUnlock()
 	}
 
 	keys := make([]string, 0, len(keySet))

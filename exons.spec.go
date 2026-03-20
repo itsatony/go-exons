@@ -210,6 +210,28 @@ func (s *Spec) Clone() *Spec {
 	// Clone execution
 	if s.Execution != nil {
 		execCopy := *s.Execution
+		// Deep copy pointer fields
+		if s.Execution.Temperature != nil {
+			t := *s.Execution.Temperature
+			execCopy.Temperature = &t
+		}
+		if s.Execution.TopP != nil {
+			t := *s.Execution.TopP
+			execCopy.TopP = &t
+		}
+		if s.Execution.MaxTokens != nil {
+			t := *s.Execution.MaxTokens
+			execCopy.MaxTokens = &t
+		}
+		if s.Execution.TopK != nil {
+			t := *s.Execution.TopK
+			execCopy.TopK = &t
+		}
+		// Deep copy slices
+		if s.Execution.Stop != nil {
+			execCopy.Stop = make([]string, len(s.Execution.Stop))
+			copy(execCopy.Stop, s.Execution.Stop)
+		}
 		clone.Execution = &execCopy
 	}
 
@@ -233,10 +255,7 @@ func (s *Spec) Clone() *Spec {
 
 	// Clone sample
 	if s.Sample != nil {
-		clone.Sample = make(map[string]any, len(s.Sample))
-		for k, v := range s.Sample {
-			clone.Sample[k] = v
-		}
+		clone.Sample = deepCopyMap(s.Sample)
 	}
 
 	// Clone skills
@@ -252,6 +271,9 @@ func (s *Spec) Clone() *Spec {
 			toolsCopy.Functions = make([]*FunctionDef, len(s.Tools.Functions))
 			for i, f := range s.Tools.Functions {
 				fCopy := *f
+				if f.Parameters != nil {
+					fCopy.Parameters = deepCopyMap(f.Parameters)
+				}
 				toolsCopy.Functions[i] = &fCopy
 			}
 		}
@@ -261,6 +283,14 @@ func (s *Spec) Clone() *Spec {
 				mCopy := *m
 				toolsCopy.MCPServers[i] = &mCopy
 			}
+		}
+		if s.Tools.Allow != nil {
+			toolsCopy.Allow = make([]string, len(s.Tools.Allow))
+			copy(toolsCopy.Allow, s.Tools.Allow)
+		}
+		if s.Tools.ParallelToolCalls != nil {
+			t := *s.Tools.ParallelToolCalls
+			toolsCopy.ParallelToolCalls = &t
 		}
 		clone.Tools = &toolsCopy
 	}
@@ -278,6 +308,30 @@ func (s *Spec) Clone() *Spec {
 		}
 		if s.Constraints.Operational != nil {
 			opCopy := *s.Constraints.Operational
+			if s.Constraints.Operational.MaxTurns != nil {
+				t := *s.Constraints.Operational.MaxTurns
+				opCopy.MaxTurns = &t
+			}
+			if s.Constraints.Operational.MaxTokensPerTurn != nil {
+				t := *s.Constraints.Operational.MaxTokensPerTurn
+				opCopy.MaxTokensPerTurn = &t
+			}
+			if s.Constraints.Operational.AllowedDomains != nil {
+				opCopy.AllowedDomains = make([]string, len(s.Constraints.Operational.AllowedDomains))
+				copy(opCopy.AllowedDomains, s.Constraints.Operational.AllowedDomains)
+			}
+			if s.Constraints.Operational.BlockedDomains != nil {
+				opCopy.BlockedDomains = make([]string, len(s.Constraints.Operational.BlockedDomains))
+				copy(opCopy.BlockedDomains, s.Constraints.Operational.BlockedDomains)
+			}
+			if s.Constraints.Operational.TimeoutSeconds != nil {
+				t := *s.Constraints.Operational.TimeoutSeconds
+				opCopy.TimeoutSeconds = &t
+			}
+			if s.Constraints.Operational.MaxToolCalls != nil {
+				t := *s.Constraints.Operational.MaxToolCalls
+				opCopy.MaxToolCalls = &t
+			}
 			constraintsCopy.Operational = &opCopy
 		}
 		clone.Constraints = &constraintsCopy
@@ -291,10 +345,7 @@ func (s *Spec) Clone() *Spec {
 
 	// Clone context
 	if s.Context != nil {
-		clone.Context = make(map[string]any, len(s.Context))
-		for k, v := range s.Context {
-			clone.Context[k] = v
-		}
+		clone.Context = deepCopyMap(s.Context)
 	}
 
 	// Clone credentials
@@ -302,6 +353,10 @@ func (s *Spec) Clone() *Spec {
 		clone.Credentials = make(map[string]*CredentialRef, len(s.Credentials))
 		for k, v := range s.Credentials {
 			credCopy := *v
+			if v.Scopes != nil {
+				credCopy.Scopes = make([]string, len(v.Scopes))
+				copy(credCopy.Scopes, v.Scopes)
+			}
 			clone.Credentials[k] = &credCopy
 		}
 	}

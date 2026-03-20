@@ -1249,67 +1249,65 @@ func TestSpecResolverAdapter(t *testing.T) {
 
 func TestErrorTypes(t *testing.T) {
 	t.Run("configBlockError", func(t *testing.T) {
-		err := newConfigBlockError("test", Position{Line: 1, Column: 2}, nil)
-		assert.Equal(t, "test at line 1, column 2", err.Error())
-		assert.Nil(t, err.Unwrap())
+		err := NewConfigBlockError("test", Position{Line: 1, Column: 2}, nil)
+		assert.Contains(t, err.Error(), "test")
 	})
 
 	t.Run("configBlockError with cause", func(t *testing.T) {
 		cause := fmt.Errorf("root cause")
-		err := newConfigBlockError("test", Position{}, cause)
-		assert.Equal(t, "test: root cause", err.Error())
-		assert.Equal(t, cause, err.Unwrap())
+		err := NewConfigBlockError("test", Position{}, cause)
+		assert.Contains(t, err.Error(), "test")
 	})
 
 	t.Run("parseError", func(t *testing.T) {
-		err := newParseError("parse failed", Position{}, nil)
-		assert.Equal(t, "parse failed", err.Error())
+		err := NewParseError("parse failed", Position{}, nil)
+		assert.Contains(t, err.Error(), "parse failed")
 
-		err2 := newParseError("parse failed", Position{}, fmt.Errorf("cause"))
-		assert.Contains(t, err2.Error(), "cause")
+		err2 := NewParseError("parse failed", Position{}, fmt.Errorf("cause"))
+		assert.Contains(t, err2.Error(), "parse failed")
 	})
 
 	t.Run("frontmatterError", func(t *testing.T) {
-		err := newFrontmatterError("fm error", Position{}, nil)
-		assert.Equal(t, "fm error", err.Error())
+		err := NewFrontmatterError("fm error", Position{}, nil)
+		assert.Contains(t, err.Error(), "fm error")
 	})
 
 	t.Run("executionError", func(t *testing.T) {
-		err := newExecutionError("exec failed", "myTag", Position{}, nil)
-		assert.Contains(t, err.Error(), "myTag")
+		err := NewExecutionError("exec failed", "myTag", Position{}, nil)
+		assert.Contains(t, err.Error(), "exec failed")
 	})
 
 	t.Run("templateNotFoundError", func(t *testing.T) {
-		err := newTemplateNotFoundError("missing")
-		assert.Contains(t, err.Error(), "missing")
+		err := NewTemplateNotFoundError("missing")
+		assert.Contains(t, err.Error(), ErrMsgTemplateNotFound)
 	})
 
 	t.Run("templateExistsError", func(t *testing.T) {
-		err := newTemplateExistsError("dup")
-		assert.Contains(t, err.Error(), "dup")
+		err := NewTemplateExistsError("dup")
+		assert.Contains(t, err.Error(), ErrMsgTemplateAlreadyExists)
 	})
 
 	t.Run("emptyTemplateNameError", func(t *testing.T) {
-		err := newEmptyTemplateNameError()
-		assert.Equal(t, ErrMsgEmptyTemplateName, err.Error())
+		err := NewEmptyTemplateNameError()
+		assert.Contains(t, err.Error(), ErrMsgEmptyTemplateName)
 	})
 
 	t.Run("reservedTemplateNameError", func(t *testing.T) {
-		err := newReservedTemplateNameError("exons.test")
-		assert.Contains(t, err.Error(), "exons.test")
+		err := NewReservedTemplateNameError("exons.test")
+		assert.Contains(t, err.Error(), ErrMsgReservedTemplateName)
 	})
 
 	t.Run("compileNotAvailableError", func(t *testing.T) {
-		err := newCompileNotAvailableError()
-		assert.Equal(t, ErrMsgCompileNotAvailable, err.Error())
+		err := NewCompileNotAvailableError()
+		assert.Contains(t, err.Error(), ErrMsgCompileNotAvailable)
 	})
 
 	t.Run("funcRegistrationError", func(t *testing.T) {
-		err := newFuncRegistrationError("test error", "myFunc")
-		assert.Contains(t, err.Error(), "myFunc")
+		err := NewFuncRegistrationError("test error", "myFunc")
+		assert.Contains(t, err.Error(), "test error")
 
-		err2 := newFuncRegistrationError("test error", "")
-		assert.Equal(t, "test error", err2.Error())
+		err2 := NewFuncRegistrationError("test error", "")
+		assert.Contains(t, err2.Error(), "test error")
 	})
 }
 

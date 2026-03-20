@@ -30,15 +30,23 @@ Say hello to {~exons.var name="user_name" default="World" /~}
 {~/exons.message~}
 ```
 
-**2. Parse and compile**:
+**2. Parse and execute**:
 
 ```go
-spec, _ := exons.ParseFile("hello.exons")
-compiled, _ := spec.CompileAgent(ctx, map[string]any{
+engine := exons.MustNew()
+tmpl, _ := engine.Parse(source) // source is the .exons content above
+
+// Execute and extract structured messages for LLM API calls
+messages, _ := tmpl.ExecuteAndExtractMessages(ctx, map[string]any{
     "user_name": "Alice",
 })
-// compiled.Messages → [{Role: "system", Content: "You are a friendly greeter."},
-//                       {Role: "user", Content: "Say hello to Alice"}]
+// messages → [{Role: "system", Content: "You are a friendly greeter."},
+//             {Role: "user", Content: "Say hello to Alice"}]
+
+// Access the parsed spec (frontmatter)
+spec := tmpl.Spec()
+fmt.Println(spec.Name)             // "greeter"
+fmt.Println(spec.Execution.Model)  // "gpt-4o"
 ```
 
 ## What Problem Does This Solve?
