@@ -7,18 +7,54 @@
 // The template syntax uses content-resistant {~...~} delimiters that work with
 // any prompt content including code, XML, and JSON.
 //
-// File format:
+// # Quick Start
 //
-//	---
-//	name: my-agent
-//	type: agent
+// Create an engine and execute a template:
+//
+//	engine := exons.MustNew()
+//	result, err := engine.Execute(ctx, `Hello {~exons.var name="user" /~}!`, map[string]any{
+//	    "user": "World",
+//	})
+//	// result: "Hello World!"
+//
+// # Parsing with YAML Frontmatter
+//
+// Templates can include YAML frontmatter that is parsed into a Spec:
+//
+//	source := `---
+//	name: greeting
+//	type: prompt
 //	execution:
-//	  provider: anthropic
-//	  model: claude-sonnet-4-6
+//	  provider: openai
+//	  model: gpt-4o
 //	---
-//	{~exons.message role="system"~}
-//	You are a helpful assistant.
-//	{~/exons.message~}
+//	{~exons.message role="user"~}
+//	Hello {~exons.var name="name" /~}
+//	{~/exons.message~}`
+//
+//	tmpl, err := engine.Parse(source)
+//	spec := tmpl.Spec() // Access parsed frontmatter
+//
+// # Custom Resolvers
+//
+// Register custom tag handlers:
+//
+//	engine.Register(exons.NewResolverFunc("MyTag",
+//	    func(ctx context.Context, execCtx *exons.Context, attrs exons.Attributes) (string, error) {
+//	        name, _ := attrs.Get("name")
+//	        return "Hello " + name, nil
+//	    },
+//	    nil,
+//	))
+//
+// # Message Extraction
+//
+// Extract structured messages for LLM API calls:
+//
+//	messages, err := tmpl.ExecuteAndExtractMessages(ctx, data)
+//	for _, msg := range messages {
+//	    fmt.Printf("[%s] %s\n", msg.Role, msg.Content)
+//	}
 //
 // For more information, visit https://exons.ai
 package exons
