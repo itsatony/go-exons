@@ -1,0 +1,33 @@
+{
+  "name": "exons",
+  "displayName": "Exons — Agent Specification Language",
+  "description": "Syntax highlighting for .exons agent specification files",
+  "version": "0.1.0",
+  "publisher": "itsatony",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/itsatony/go-exons"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "exons",
+        "aliases": ["Exons", "exons"],
+        "extensions": [".exons"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "exons",
+        "scopeName": "source.exons",
+        "path": "./syntaxes/exons.tmLanguage.json"
+      }
+    ]
+  }
+}

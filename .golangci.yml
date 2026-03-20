@@ -1,0 +1,48 @@
+run:
+  timeout: 5m
+  go: "1.24"
+
+linters:
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - gosimple
+    - ineffassign
+    - unused
+    - revive
+    - gosec
+    - goconst
+    - unconvert
+    - misspell
+    - nilerr
+    - bodyclose
+    - exportloopref
+
+linters-settings:
+  goconst:
+    min-len: 3
+    min-occurrences: 2
+  revive:
+    rules:
+      - name: exported
+        arguments:
+          - "checkPrivateReceivers"
+      - name: blank-imports
+      - name: context-as-argument
+      - name: error-return
+      - name: increment-decrement
+      - name: var-declaration
+  gosec:
+    excludes:
+      - G104 # unhandled errors on deferred close — too noisy
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - goconst
+        - errcheck
+  max-issues-per-linter: 50
+  max-same-issues: 5

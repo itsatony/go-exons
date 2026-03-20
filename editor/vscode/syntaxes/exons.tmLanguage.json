@@ -1,0 +1,121 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Exons",
+  "scopeName": "source.exons",
+  "patterns": [
+    { "include": "#frontmatter" },
+    { "include": "#comment-tag" },
+    { "include": "#raw-tag" },
+    { "include": "#closing-tag" },
+    { "include": "#self-closing-tag" },
+    { "include": "#opening-tag" },
+    { "include": "#escaped-delimiter" },
+    { "include": "#markdown" }
+  ],
+  "repository": {
+    "frontmatter": {
+      "name": "meta.frontmatter.exons",
+      "begin": "\\A(---)",
+      "end": "^(---)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.frontmatter.begin.exons" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.frontmatter.end.exons" }
+      },
+      "patterns": [
+        { "include": "#frontmatter-tag" },
+        { "include": "source.yaml" }
+      ]
+    },
+    "frontmatter-tag": {
+      "name": "meta.tag.template.exons",
+      "match": "(\\{~)(exons\\.[a-zA-Z_.]+)((?:\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*=\\s*\"[^\"]*\")*\\s*)(/~\\}|~\\})",
+      "captures": {
+        "1": { "name": "punctuation.definition.tag.begin.exons" },
+        "2": { "name": "entity.name.tag.exons" },
+        "3": { "name": "meta.attribute-list.exons" },
+        "4": { "name": "punctuation.definition.tag.end.exons" }
+      }
+    },
+    "comment-tag": {
+      "name": "comment.block.exons",
+      "begin": "\\{~exons\\.comment~\\}",
+      "end": "\\{~/exons\\.comment~\\}",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.comment.begin.exons" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.comment.end.exons" }
+      }
+    },
+    "raw-tag": {
+      "name": "string.unquoted.raw.exons",
+      "begin": "\\{~exons\\.raw~\\}",
+      "end": "\\{~/exons\\.raw~\\}",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.raw.begin.exons" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.raw.end.exons" }
+      }
+    },
+    "self-closing-tag": {
+      "name": "meta.tag.template.exons",
+      "match": "(\\{~)([a-zA-Z_][a-zA-Z0-9_.]*)((?:\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*=\\s*\"[^\"]*\")*\\s*)(/~\\})",
+      "captures": {
+        "1": { "name": "punctuation.definition.tag.begin.exons" },
+        "2": { "name": "entity.name.tag.exons" },
+        "3": { "name": "meta.attribute-list.exons" },
+        "4": { "name": "punctuation.definition.tag.end.exons" }
+      }
+    },
+    "opening-tag": {
+      "name": "meta.tag.template.exons",
+      "match": "(\\{~)([a-zA-Z_][a-zA-Z0-9_.]*)((?:\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*=\\s*\"[^\"]*\")*\\s*)(~\\})",
+      "captures": {
+        "1": { "name": "punctuation.definition.tag.begin.exons" },
+        "2": { "name": "entity.name.tag.exons" },
+        "3": { "name": "meta.attribute-list.exons" },
+        "4": { "name": "punctuation.definition.tag.end.exons" }
+      }
+    },
+    "closing-tag": {
+      "name": "meta.tag.template.exons",
+      "match": "(\\{~/)([a-zA-Z_][a-zA-Z0-9_.]*)(~\\})",
+      "captures": {
+        "1": { "name": "punctuation.definition.tag.begin.exons" },
+        "2": { "name": "entity.name.tag.exons" },
+        "3": { "name": "punctuation.definition.tag.end.exons" }
+      }
+    },
+    "escaped-delimiter": {
+      "name": "constant.character.escape.exons",
+      "match": "\\\\\\{~"
+    },
+    "markdown": {
+      "patterns": [
+        {
+          "name": "markup.heading.exons",
+          "match": "^#{1,6}\\s+.*$"
+        },
+        {
+          "name": "markup.bold.exons",
+          "match": "\\*\\*[^*]+\\*\\*"
+        },
+        {
+          "name": "markup.italic.exons",
+          "match": "\\*[^*]+\\*"
+        },
+        {
+          "name": "markup.list.unnumbered.exons",
+          "match": "^\\s*[-*+]\\s+"
+        },
+        {
+          "name": "markup.list.numbered.exons",
+          "match": "^\\s*\\d+\\.\\s+"
+        }
+      ]
+    }
+  }
+}
