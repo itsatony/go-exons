@@ -178,15 +178,16 @@ func (c *Context) Child(data map[string]any) interface{} {
 	if data == nil {
 		data = make(map[string]any)
 	}
+	_, _, errStrat, eng, depth, specRes, refD, refC := c.readState()
 	return &Context{
 		data:         data,
 		parent:       c,
-		errorStrat:   c.errorStrat,
-		engine:       c.engine,
-		depth:        c.depth,
-		specResolver: c.specResolver,
-		refDepth:     c.refDepth,
-		refChain:     c.refChain,
+		errorStrat:   errStrat,
+		engine:       eng,
+		depth:        depth,
+		specResolver: specRes,
+		refDepth:     refD,
+		refChain:     refC,
 	}
 }
 
@@ -265,103 +266,86 @@ func (c *Context) Depth() int {
 	return c.depth
 }
 
+// readState reads all fields under RLock. The returned data map is a reference,
+// NOT a deep copy — callers must deep-copy it outside the lock.
+func (c *Context) readState() (data map[string]any, parent *Context, errorStrat ErrorStrategy, engine TemplateExecutor, depth int, specResolver SpecBodyResolver, refDepth int, refChain []string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.data, c.parent, c.errorStrat, c.engine, c.depth, c.specResolver, c.refDepth, c.refChain
+}
+
 // WithEngine returns a new context with the given engine reference.
 // This is typically called by the engine when starting template execution.
 // The returned context has a deep copy of the data map for thread safety.
 func (c *Context) WithEngine(engine TemplateExecutor) *Context {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// Deep copy the data map to avoid race conditions
-	// when parent and child contexts are accessed concurrently.
-	dataCopy := deepCopyMap(c.data)
-
-	newCtx := &Context{
-		data:         dataCopy,
-		parent:       c.parent,
-		errorStrat:   c.errorStrat,
+	data, parent, errStrat, _, depth, specRes, refD, refC := c.readState()
+	return &Context{
+		data:         deepCopyMap(data),
+		parent:       parent,
+		errorStrat:   errStrat,
 		engine:       engine,
-		depth:        c.depth,
-		specResolver: c.specResolver,
-		refDepth:     c.refDepth,
-		refChain:     c.refChain,
+		depth:        depth,
+		specResolver: specRes,
+		refDepth:     refD,
+		refChain:     refC,
 	}
-	return newCtx
 }
 
 // WithDepth returns a new context with the given depth.
 // This is used when executing nested templates to track inclusion depth.
 // The returned context has a deep copy of the data map for thread safety.
 func (c *Context) WithDepth(depth int) *Context {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	dataCopy := deepCopyMap(c.data)
-
-	newCtx := &Context{
-		data:         dataCopy,
-		parent:       c.parent,
-		errorStrat:   c.errorStrat,
-		engine:       c.engine,
+	data, parent, errStrat, eng, _, specRes, refD, refC := c.readState()
+	return &Context{
+		data:         deepCopyMap(data),
+		parent:       parent,
+		errorStrat:   errStrat,
+		engine:       eng,
 		depth:        depth,
-		specResolver: c.specResolver,
-		refDepth:     c.refDepth,
-		refChain:     c.refChain,
+		specResolver: specRes,
+		refDepth:     refD,
+		refChain:     refC,
 	}
-	return newCtx
 }
 
 // WithSpecResolver returns a new context with the given spec resolver.
 // This enables {~exons.ref~} tag functionality for spec composition.
 // The returned context has a deep copy of the data map for thread safety.
 func (c *Context) WithSpecResolver(resolver SpecBodyResolver) *Context {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	dataCopy := deepCopyMap(c.data)
-
-	newCtx := &Context{
-		data:         dataCopy,
-		parent:       c.parent,
-		errorStrat:   c.errorStrat,
-		engine:       c.engine,
-		depth:        c.depth,
+	data, parent, errStrat, eng, depth, _, refD, refC := c.readState()
+	return &Context{
+		data:         deepCopyMap(data),
+		parent:       parent,
+		errorStrat:   errStrat,
+		engine:       eng,
+		depth:        depth,
 		specResolver: resolver,
-		refDepth:     c.refDepth,
-		refChain:     c.refChain,
+		refDepth:     refD,
+		refChain:     refC,
 	}
-	return newCtx
 }
 
 // WithRefDepth returns a new context with the given reference depth.
 // This is used internally when resolving nested spec references.
 func (c *Context) WithRefDepth(depth int) *Context {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	dataCopy := deepCopyMap(c.data)
-
-	newCtx := &Context{
-		data:         dataCopy,
-		parent:       c.parent,
-		errorStrat:   c.errorStrat,
-		engine:       c.engine,
-		depth:        c.depth,
-		specResolver: c.specResolver,
+	data, parent, errStrat, eng, d, specRes, _, refC := c.readState()
+	return &Context{
+		data:         deepCopyMap(data),
+		parent:       parent,
+		errorStrat:   errStrat,
+		engine:       eng,
+		depth:        d,
+		specResolver: specRes,
 		refDepth:     depth,
-		refChain:     c.refChain,
+		refChain:     refC,
 	}
-	return newCtx
 }
 
 // WithRefChain returns a new context with the given reference chain.
 // This is used internally to track the chain of referenced spec slugs
 // for circular reference detection.
 func (c *Context) WithRefChain(chain []string) *Context {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	dataCopy := deepCopyMap(c.data)
+	data, parent, errStrat, eng, d, specRes, refD, _ := c.readState()
 
 	// Deep copy the chain to prevent modification
 	var chainCopy []string
@@ -370,17 +354,16 @@ func (c *Context) WithRefChain(chain []string) *Context {
 		copy(chainCopy, chain)
 	}
 
-	newCtx := &Context{
-		data:         dataCopy,
-		parent:       c.parent,
-		errorStrat:   c.errorStrat,
-		engine:       c.engine,
-		depth:        c.depth,
-		specResolver: c.specResolver,
-		refDepth:     c.refDepth,
+	return &Context{
+		data:         deepCopyMap(data),
+		parent:       parent,
+		errorStrat:   errStrat,
+		engine:       eng,
+		depth:        d,
+		specResolver: specRes,
+		refDepth:     refD,
 		refChain:     chainCopy,
 	}
-	return newCtx
 }
 
 // SpecResolver returns the spec body resolver for reference resolution.

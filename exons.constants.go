@@ -2,9 +2,6 @@ package exons
 
 import "time"
 
-// Version is the current library version. Loaded from versions.yaml at build time.
-const Version = "0.9.0"
-
 // File extension for exons specification files.
 const FileExtensionExons = ".exons"
 
@@ -246,6 +243,7 @@ const (
 	MetaKeyVersion      = "version"         // Version number
 	MetaKeyStatus       = "status"          // Deployment status value
 	MetaKeyProvider     = "provider"        // LLM provider name
+	MetaKeyMaxLength    = "max_length"      // Maximum allowed length for field validation
 )
 
 // Escape sequence constants
@@ -408,16 +406,12 @@ const (
 )
 
 // Spec field name constants for YAML/JSON serialization keys.
-// Used in buildSerializeMap, GetStandardFields, GetExonsFields, and extension key filtering.
+// Used in buildSerializeMap and extension key filtering.
 const (
 	// Standard fields
-	SpecFieldName          = "name"
-	SpecFieldDescription   = "description"
-	SpecFieldLicense       = "license"
-	SpecFieldCompatibility = "compatibility"
-	SpecFieldAllowedTools  = "allowed_tools"
-	SpecFieldMetadata      = "metadata"
-	SpecFieldInputs        = "inputs"
+	SpecFieldName        = "name"
+	SpecFieldDescription = "description"
+	SpecFieldInputs      = "inputs"
 	SpecFieldOutputs       = "outputs"
 	SpecFieldSample        = "sample"
 
@@ -431,10 +425,9 @@ const (
 	SpecFieldConstraints = "constraints"
 	SpecFieldMessages    = "messages"
 
-	// Credential/requirements fields
-	SpecFieldCredentials  = "credentials"
-	SpecFieldCredential   = "credential"
-	SpecFieldRequirements = "requirements"
+	// Credential fields
+	SpecFieldCredentials = "credentials"
+	SpecFieldCredential  = "credential"
 
 	// Metadata fields (flattened from genspec/)
 	SpecFieldMemory        = "memory"

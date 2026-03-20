@@ -29,7 +29,6 @@ const (
 	ErrCodeA2A        = "EXONS_A2A"        // A2A Agent Card errors
 	ErrCodeVersioning = "EXONS_VERSIONING" // Versioning operation errors
 	ErrCodeMetadata   = "EXONS_METADATA"   // Metadata errors (memory, dispatch, etc.)
-	ErrCodeAgent      = "EXONS_AGENT"      // Agent errors
 	ErrCodeCatalog    = "EXONS_CATALOG"    // Catalog errors
 	ErrCodeSerialize  = "EXONS_SERIALIZE"  // Serialization errors
 )
@@ -75,7 +74,6 @@ const (
 	ErrMsgInvalidTemplateName   = "invalid template name"
 	ErrMsgEmptyTemplateName     = "template name cannot be empty"
 	ErrMsgMissingTemplateAttr   = "missing required 'template' attribute"
-	ErrMsgEngineNotAvailable    = "engine not available for nested template resolution"
 	ErrMsgReservedTemplateName  = "template name uses reserved exons.* namespace"
 
 	// Error strategy messages
@@ -222,11 +220,12 @@ const (
 	ErrMsgA2ACardMissingName = "agent card requires a spec name"
 
 	// Credential and manifest validation messages
-	ErrMsgCredentialNotFound        = "credential label not found in credentials map"
-	ErrMsgCredentialMissingProvider = "credential must specify a provider"
-	ErrMsgInvalidProviderBinding    = "provider binding must be required, preferred, or any"
-	ErrMsgEstimatedLatencyNegative  = "estimated latency must be non-negative"
-	ErrMsgManifestNilSpec           = "cannot compile manifest from nil spec"
+	ErrMsgCredentialNotFound         = "credential label not found in credentials map"
+	ErrMsgCredentialMissingProvider  = "credential must specify a provider"
+	ErrMsgCredentialValidationFailed = "credential validation failed"
+	ErrMsgInvalidProviderBinding     = "provider binding must be required, preferred, or any"
+	ErrMsgEstimatedLatencyNegative   = "estimated latency must be non-negative"
+	ErrMsgManifestNilSpec            = "cannot compile manifest from nil spec"
 
 	// Spec validation messages
 	ErrMsgSpecNameRequired        = "spec name is required"
@@ -250,22 +249,16 @@ const (
 	ErrMsgRefInvalidSlug   = "invalid spec slug format"
 
 	// Agent/spec validation messages
-	ErrMsgSkillNotFound           = "skill not found"
 	ErrMsgSkillRefEmpty           = "skill reference slug is empty"
-	ErrMsgSkillRefAmbiguous       = "skill reference is ambiguous"
 	ErrMsgInvalidDocumentType     = "invalid document type"
 	ErrMsgPromptNoSkillsAllowed   = "prompt type does not support skills"
 	ErrMsgPromptNoToolsAllowed    = "prompt type does not support tools"
 	ErrMsgPromptNoConstraints     = "prompt type does not support constraints"
-	ErrMsgSkillRefInvalidVersion  = "invalid skill reference version"
 	ErrMsgCatalogGenerationFailed = "catalog generation failed"
 	ErrMsgSkillNoSkillsAllowed    = "skill type does not support nested skills"
-	ErrMsgInvalidSkillInjection   = "invalid skill injection mode"
 	ErrMsgMCPServerNameEmpty      = "MCP server name is empty"
 	ErrMsgMCPServerURLEmpty       = "MCP server URL is empty"
 	ErrMsgMessageTemplateNoRole   = "message template requires a role"
-	ErrMsgMessageTemplateNoBody   = "message template requires content"
-	ErrMsgNoDocumentResolver      = "no document resolver configured"
 
 	// Metadata error messages
 	ErrMsgPromptNoMemory         = "prompt type does not support memory configuration"
@@ -288,11 +281,6 @@ const (
 	ErrMsgDispatchKeywordEmpty   = "dispatch trigger_keywords entry must not be empty"
 	ErrMsgTimeoutInvalid         = "timeout_seconds must be between 1 and 3600"
 	ErrMsgMaxToolCallsInvalid    = "max_tool_calls must be between 1 and 10000"
-
-	// Additional validation messages
-	ErrMsgInvalidSkopeSlug      = "invalid slug format"
-	ErrMsgInvalidVisibility     = "invalid visibility value"
-	ErrMsgVersionNumberNegative = "version number must be non-negative"
 
 	// Import/export error messages
 	ErrMsgImportFailed     = "import failed"
@@ -464,12 +452,6 @@ func NewEmptyTemplateNameError() error {
 	return cuserr.NewValidationError(ErrCodeTemplate, ErrMsgEmptyTemplateName)
 }
 
-// NewEngineNotAvailableError creates an error when engine is not in context
-func NewEngineNotAvailableError() error {
-	return cuserr.NewInternalError(ErrCodeTemplate, nil).
-		WithMetadata(MetaKeyTag, TagNameInclude)
-}
-
 // NewFuncRegistrationError creates an error for function registration failures
 func NewFuncRegistrationError(msg, funcName string) error {
 	err := cuserr.NewValidationError(ErrCodeFunc, msg)
@@ -611,7 +593,7 @@ func NewSpecNameRequiredError() error {
 func NewSpecNameTooLongError(name string, maxLen int) error {
 	return cuserr.NewValidationError(ErrCodeSpec, ErrMsgSpecNameTooLong).
 		WithMetadata(MetaKeySpecName, name).
-		WithMetadata(MetaKeyMaxDepth, strconv.Itoa(maxLen))
+		WithMetadata(MetaKeyMaxLength, strconv.Itoa(maxLen))
 }
 
 // NewSpecNameInvalidFormatError creates an error for invalid spec name format.
@@ -628,7 +610,7 @@ func NewSpecDescriptionRequiredError() error {
 // NewSpecDescriptionTooLongError creates an error for spec description exceeding max length.
 func NewSpecDescriptionTooLongError(maxLen int) error {
 	return cuserr.NewValidationError(ErrCodeSpec, ErrMsgSpecDescriptionTooLong).
-		WithMetadata(MetaKeyMaxDepth, strconv.Itoa(maxLen))
+		WithMetadata(MetaKeyMaxLength, strconv.Itoa(maxLen))
 }
 
 // NewRefNotFoundError creates an error for referenced spec not found.
@@ -673,7 +655,7 @@ func NewRefInvalidSlugError(slug string) error {
 
 // NewCredentialValidationError creates an error for credential validation failures with label context.
 func NewCredentialValidationError(label string, cause error) error {
-	return cuserr.WrapStdError(cause, ErrCodeCredential, ErrMsgCredentialMissingProvider).
+	return cuserr.WrapStdError(cause, ErrCodeCredential, ErrMsgCredentialValidationFailed).
 		WithMetadata(MetaKeyCredentialLabel, label)
 }
 
@@ -716,12 +698,6 @@ func NewImportError(msg string, cause error) error {
 		return cuserr.WrapStdError(cause, ErrCodeSpec, msg)
 	}
 	return cuserr.NewValidationError(ErrCodeSpec, msg)
-}
-
-// NewAgentValidationError creates an error for agent-specific validation failures.
-func NewAgentValidationError(msg string, specName string) error {
-	return cuserr.NewValidationError(ErrCodeAgent, msg).
-		WithMetadata(MetaKeySpecName, specName)
 }
 
 // NewMetadataValidationError creates an error for metadata field validation failures

@@ -868,3 +868,47 @@ func TestContext_ChildPropagation(t *testing.T) {
 	assert.Equal(t, 2, child.RefDepth())
 	assert.Equal(t, []string{"slug1"}, child.RefChain())
 }
+
+// TestContext_WithMethods_ConcurrentAccess verifies that all With* methods
+// are safe for concurrent access with -race. They use RLock (not Lock)
+// so multiple goroutines can create derived contexts simultaneously.
+func TestContext_WithMethods_ConcurrentAccess(t *testing.T) {
+	ctx := NewContext(map[string]any{
+		"key1": "value1",
+		"key2": map[string]any{"nested": "data"},
+	})
+
+	engine := MustNew()
+	var wg sync.WaitGroup
+	const goroutines = 50
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(5)
+		go func() {
+			defer wg.Done()
+			_ = ctx.WithEngine(engine)
+		}()
+		go func() {
+			defer wg.Done()
+			_ = ctx.WithDepth(i)
+		}()
+		go func() {
+			defer wg.Done()
+			_ = ctx.WithSpecResolver(nil)
+		}()
+		go func() {
+			defer wg.Done()
+			_ = ctx.WithRefDepth(i)
+		}()
+		go func() {
+			defer wg.Done()
+			_ = ctx.WithRefChain([]string{"slug1", "slug2"})
+		}()
+	}
+	wg.Wait()
+
+	// Original context should be unmodified
+	val, ok := ctx.Get("key1")
+	assert.True(t, ok)
+	assert.Equal(t, "value1", val)
+}

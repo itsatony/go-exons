@@ -115,10 +115,6 @@ func (s *Spec) ExportFull() ([]byte, error) {
 var knownSpecFields = map[string]bool{
 	SpecFieldName:          true,
 	SpecFieldDescription:   true,
-	SpecFieldLicense:       true,
-	SpecFieldCompatibility: true,
-	SpecFieldAllowedTools:  true,
-	SpecFieldMetadata:      true,
 	SpecFieldInputs:        true,
 	SpecFieldOutputs:       true,
 	SpecFieldSample:        true,
@@ -132,7 +128,6 @@ var knownSpecFields = map[string]bool{
 	SpecFieldMessages:      true,
 	SpecFieldCredentials:   true,
 	SpecFieldCredential:    true,
-	SpecFieldRequirements:  true,
 	SpecFieldMemory:        true,
 	SpecFieldDispatch:      true,
 	SpecFieldVerifications: true,

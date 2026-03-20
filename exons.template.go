@@ -20,8 +20,11 @@ type Template struct {
 
 // newTemplateWithConfig creates a new template with spec configuration (internal use).
 func newTemplateWithConfig(source, templateBody string, ast *internal.RootNode, executor *internal.Executor, config *engineConfig, engine TemplateExecutor, spec *Spec) *Template {
-	// Extract inheritance info from AST
-	inheritanceInfo, _ := internal.ExtractInheritanceInfo(ast)
+	// Extract inheritance info from AST (non-fatal — nil on error preserves fail-safe behavior)
+	inheritanceInfo, err := internal.ExtractInheritanceInfo(ast)
+	if err != nil {
+		inheritanceInfo = nil
+	}
 
 	return &Template{
 		source:          source,

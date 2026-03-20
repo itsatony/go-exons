@@ -666,3 +666,48 @@ func (e *Config) YAML() (string, error) {
 	}
 	return string(data), nil
 }
+
+// GetEffectiveProvider detects the intended provider from configuration.
+// Returns the explicit provider if set, otherwise infers from config shape or model name.
+func (e *Config) GetEffectiveProvider() string {
+	if e == nil {
+		return ""
+	}
+
+	// Explicit provider takes precedence
+	if e.Provider != "" {
+		return e.Provider
+	}
+
+	// Infer from configuration shape
+	if e.GuidedDecoding != nil {
+		return ProviderVLLM
+	}
+	if e.MinP != nil || e.RepetitionPenalty != nil || len(e.StopTokenIDs) > 0 {
+		return ProviderVLLM
+	}
+	if e.Thinking != nil && e.Thinking.Enabled {
+		return ProviderAnthropic
+	}
+
+	// Try to infer from model name
+	if e.Model != "" {
+		if isOpenAIModel(e.Model) {
+			return ProviderOpenAI
+		}
+		if isAnthropicModel(e.Model) {
+			return ProviderAnthropic
+		}
+		if isGeminiModel(e.Model) {
+			return ProviderGemini
+		}
+		if isMistralModel(e.Model) {
+			return ProviderMistral
+		}
+		if isCohereModel(e.Model) {
+			return ProviderCohere
+		}
+	}
+
+	return ""
+}

@@ -318,11 +318,7 @@ engine.SetSpecResolver(resolver)
 ## Catalogs
 
 ```go
-// Generate skill/tool catalogs for prompt injection
-skillsCatalog, _ := exons.GenerateSkillsCatalog(ctx, skills, resolver, exons.CatalogFormatDetailed)
-toolsCatalog, _ := exons.GenerateToolsCatalog(tools, exons.CatalogFormatFunctionCalling)
-
-// Or auto-generate and inject into template
+// Auto-generate skill/tool catalogs and inject into template context
 result, _ := engine.ExecuteWithCatalogs(ctx, source, data, spec, exons.CatalogFormatDefault)
 ```
 

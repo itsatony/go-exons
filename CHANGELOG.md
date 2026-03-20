@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0-dc9] - 2026-03-20
+
+### BREAKING
+- Removed `cmd/exons/` CLI stub (42 LOC, hardcoded stale version, 0% coverage)
+- Removed `provider/` and `storage/` empty package stubs
+- Removed 56 Get*/Has* methods from `execution.Config` (fields are exported — use direct access)
+- Unexported: `GenerateSkillsCatalog`, `GenerateToolsCatalog`, `GetStandardFields`, `GetExonsFields`, `GetExtensionAs`, `StripExtensions`
+
+### Fixed
+- `MetaKeyMaxDepth` misuse in spec length validation errors — now uses `MetaKeyMaxLength`
+- `NewCredentialValidationError` hardcoded wrong message — now uses generic `ErrMsgCredentialValidationFailed`
+- `RegisterTemplate` held write lock during Parse — parse now happens outside lock
+- `Context.With*` methods used write lock for read-only ops — now uses RLock
+- `knownSpecFields` silently swallowed extension data for non-existent Spec fields (license, compatibility, allowed_tools, metadata, requirements)
+- Discarded error in `newTemplateWithConfig` now handled explicitly (nil on error, preserving fail-safe behavior)
+
+### Removed
+- 9 dead error constants (`ErrMsgSkillNotFound`, `ErrMsgSkillRefAmbiguous`, `ErrMsgSkillRefInvalidVersion`, `ErrMsgInvalidSkillInjection`, `ErrMsgMessageTemplateNoBody`, `ErrMsgNoDocumentResolver`, `ErrMsgInvalidSkopeSlug`, `ErrMsgInvalidVisibility`, `ErrMsgVersionNumberNegative`)
+- 1 dead error constant in root package (`ErrMsgEngineNotAvailable` — internal/ has its own)
+- 2 dead error constants (`ErrMsgExtensionNotFound`, `ErrMsgExtensionCastFailed`) — only used by deleted functions
+- 2 dead error constructors (`NewEngineNotAvailableError`, `NewAgentValidationError`)
+- 1 dead error code (`ErrCodeAgent`)
+- 5 dead SpecField constants (`SpecFieldLicense`, `SpecFieldCompatibility`, `SpecFieldAllowedTools`, `SpecFieldMetadata`, `SpecFieldRequirements`)
+- 4 dead functions after API surface reduction: `getExtensionAs[T]`, `getStandardFields`, `getExonsFields`, `stripExtensions` (test-only, zero production callers)
+
 ## [0.9.0-dc8] - 2026-03-20
 
 ### Removed

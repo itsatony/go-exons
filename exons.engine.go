@@ -256,7 +256,7 @@ func (e *Engine) ExecuteWithCatalogs(ctx context.Context, source string, data ma
 	// Generate skills catalog if spec has skills
 	if spec != nil && len(spec.Skills) > 0 {
 		resolver := e.getSpecResolverForCatalog()
-		skillsCatalog, err := GenerateSkillsCatalog(ctx, spec.Skills, resolver, format)
+		skillsCatalog, err := generateSkillsCatalog(ctx, spec.Skills, resolver, format)
 		if err != nil {
 			return "", err
 		}
@@ -267,7 +267,7 @@ func (e *Engine) ExecuteWithCatalogs(ctx context.Context, source string, data ma
 
 	// Generate tools catalog if spec has tools
 	if spec != nil && spec.Tools != nil && spec.Tools.HasTools() {
-		toolsCatalog, err := GenerateToolsCatalog(spec.Tools, format)
+		toolsCatalog, err := generateToolsCatalog(spec.Tools, format)
 		if err != nil {
 			return "", err
 		}
@@ -323,7 +323,7 @@ func (e *Engine) ResolverCount() int {
 // Template names cannot be empty or use the reserved "exons." namespace prefix.
 // Returns an error if a template with the same name already exists.
 func (e *Engine) RegisterTemplate(name string, source string) error {
-	// Validate template name
+	// Validate template name — no lock needed
 	if name == "" {
 		return NewEmptyTemplateNameError()
 	}
@@ -331,18 +331,18 @@ func (e *Engine) RegisterTemplate(name string, source string) error {
 		return NewReservedTemplateNameError(name)
 	}
 
-	// Check for existing template
+	// Parse the template BEFORE acquiring write lock (Parse is expensive)
+	tmpl, err := e.Parse(source)
+	if err != nil {
+		return err
+	}
+
+	// Acquire write lock only for map mutation
 	e.tmplMu.Lock()
 	defer e.tmplMu.Unlock()
 
 	if _, exists := e.templates[name]; exists {
 		return NewTemplateExistsError(name)
-	}
-
-	// Parse the template
-	tmpl, err := e.Parse(source)
-	if err != nil {
-		return err
 	}
 
 	e.templates[name] = tmpl

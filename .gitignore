@@ -42,3 +42,6 @@ Thumbs.db
 dist/
 tmp/
 bin/
+
+# Assessment reports (generated, not committed)
+docs/assessments/

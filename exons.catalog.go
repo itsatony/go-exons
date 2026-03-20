@@ -14,7 +14,7 @@ type skillCatalogEntry struct {
 	injection   string
 }
 
-// GenerateSkillsCatalog generates a text catalog of skills in the specified format.
+// generateSkillsCatalog generates a text catalog of skills in the specified format.
 // The resolver is used to look up skill descriptions; resolution failures are non-fatal
 // (the skill appears with an empty description). If resolver is nil, all descriptions
 // will be empty.
@@ -24,7 +24,7 @@ type skillCatalogEntry struct {
 //   - CatalogFormatDetailed: Full description with injection mode
 //   - CatalogFormatCompact: Semicolon-separated single-line entries
 //   - CatalogFormatFunctionCalling: Not supported for skills (returns error)
-func GenerateSkillsCatalog(ctx context.Context, skills []SkillRef, resolver SpecResolver, format CatalogFormat) (string, error) {
+func generateSkillsCatalog(ctx context.Context, skills []SkillRef, resolver SpecResolver, format CatalogFormat) (string, error) {
 	if len(skills) == 0 {
 		return "", nil
 	}
@@ -62,7 +62,7 @@ func GenerateSkillsCatalog(ctx context.Context, skills []SkillRef, resolver Spec
 	}
 }
 
-// GenerateToolsCatalog generates a text catalog of tools in the specified format.
+// generateToolsCatalog generates a text catalog of tools in the specified format.
 // Returns an empty string when tools is nil or has no tool definitions.
 //
 // Supported formats:
@@ -70,7 +70,7 @@ func GenerateSkillsCatalog(ctx context.Context, skills []SkillRef, resolver Spec
 //   - CatalogFormatDetailed: Full description with JSON parameters and MCP servers
 //   - CatalogFormatCompact: Semicolon-separated single-line entries
 //   - CatalogFormatFunctionCalling: JSON array of OpenAI-compatible tool definitions
-func GenerateToolsCatalog(tools *ToolsConfig, format CatalogFormat) (string, error) {
+func generateToolsCatalog(tools *ToolsConfig, format CatalogFormat) (string, error) {
 	if !tools.HasTools() {
 		return "", nil
 	}

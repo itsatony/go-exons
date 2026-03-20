@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 
+	cuserr "github.com/itsatony/go-cuserr"
+	"github.com/itsatony/go-exons/execution"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1286,7 +1288,7 @@ func TestErrorTypes(t *testing.T) {
 	t.Run("credentialValidationError", func(t *testing.T) {
 		cause := fmt.Errorf("provider missing")
 		err := NewCredentialValidationError("my-label", cause)
-		assert.Contains(t, err.Error(), ErrMsgCredentialMissingProvider)
+		assert.Contains(t, err.Error(), ErrMsgCredentialValidationFailed)
 	})
 }
 
@@ -1395,4 +1397,146 @@ func TestEngine_LargeLoop(t *testing.T) {
 	assert.Contains(t, result, "item_0")
 	assert.Contains(t, result, "item_99")
 	assert.Equal(t, 100, strings.Count(result, ","))
+}
+
+// =============================================================================
+// Version embed
+// =============================================================================
+
+func TestVersion_LoadedFromVersionsYAML(t *testing.T) {
+	// Version must be non-empty and not the fallback
+	assert.NotEmpty(t, Version)
+	assert.NotEqual(t, "0.0.0-unknown", Version)
+	// Must match what's in versions.yaml
+	assert.Equal(t, "0.10.0", Version)
+}
+
+func TestVersionsYAML_Embedded(t *testing.T) {
+	// The raw embedded bytes must be valid YAML containing a version field
+	assert.NotEmpty(t, versionsYAML)
+	assert.Contains(t, string(versionsYAML), "version:")
+}
+
+// =============================================================================
+// DC-9: Bug fix tests
+// =============================================================================
+
+func TestNewSpecNameTooLongError_UsesMaxLength(t *testing.T) {
+	err := NewSpecNameTooLongError("very-long-name", 64)
+	assert.Contains(t, err.Error(), ErrMsgSpecNameTooLong)
+	// Verify metadata uses MetaKeyMaxLength, not MetaKeyMaxDepth
+	ce, ok := err.(*cuserr.CustomError)
+	require.True(t, ok)
+	val, found := ce.GetMetadata(MetaKeyMaxLength)
+	assert.True(t, found)
+	assert.Equal(t, "64", val)
+	_, hasDepth := ce.GetMetadata(MetaKeyMaxDepth)
+	assert.False(t, hasDepth)
+}
+
+func TestNewSpecDescriptionTooLongError_UsesMaxLength(t *testing.T) {
+	err := NewSpecDescriptionTooLongError(1024)
+	assert.Contains(t, err.Error(), ErrMsgSpecDescriptionTooLong)
+	ce, ok := err.(*cuserr.CustomError)
+	require.True(t, ok)
+	val, found := ce.GetMetadata(MetaKeyMaxLength)
+	assert.True(t, found)
+	assert.Equal(t, "1024", val)
+	_, hasDepth := ce.GetMetadata(MetaKeyMaxDepth)
+	assert.False(t, hasDepth)
+}
+
+func TestNewCredentialValidationError_GenericMessage(t *testing.T) {
+	cause := fmt.Errorf("provider missing")
+	err := NewCredentialValidationError("my-label", cause)
+	errStr := err.Error()
+	// Should use generic message, not provider-specific
+	assert.Contains(t, errStr, ErrMsgCredentialValidationFailed)
+	assert.Contains(t, errStr, "provider missing") // cause preserved
+}
+
+func TestRegisterTemplate_ConcurrentRegistration(t *testing.T) {
+	engine := MustNew()
+	var wg sync.WaitGroup
+	const goroutines = 20
+
+	// Register unique templates concurrently
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			name := fmt.Sprintf("tmpl-%d", idx)
+			source := fmt.Sprintf(`Hello {~exons.var name="name" default="world-%d" /~}`, idx)
+			_ = engine.RegisterTemplate(name, source)
+		}(i)
+	}
+	wg.Wait()
+
+	// All templates should be registered
+	assert.Equal(t, goroutines, engine.TemplateCount())
+}
+
+func TestKnownSpecFields_MatchesSpecStruct(t *testing.T) {
+	// knownSpecFields should only contain keys that correspond to actual Spec struct fields
+	// or the "extensions" catch-all. No orphan entries allowed.
+	spec := &Spec{
+		Name:        "test",
+		Description: "test desc",
+		Type:        DocumentTypeSkill,
+		Execution:   &execution.Config{Provider: "openai"},
+		Inputs:      map[string]*InputDef{"q": {Type: SchemaTypeString}},
+		Outputs:     map[string]*OutputDef{"a": {Type: SchemaTypeString}},
+		Sample:      map[string]any{"q": "hello"},
+		Skills:      []SkillRef{{Slug: "s1"}},
+		Tools:       &ToolsConfig{Functions: []*FunctionDef{{Name: "fn1"}}},
+		Constraints: &ConstraintsConfig{},
+		Messages:    []MessageTemplate{{Role: RoleSystem, Content: "hi"}},
+		Context:     map[string]any{"k": "v"},
+		Credentials: map[string]*CredentialRef{"c1": {Provider: "openai"}},
+		Credential:  "c1",
+		Memory:        &MemorySpec{},
+		Dispatch:      &DispatchSpec{},
+		Verifications: []VerificationCase{{Name: "v1"}},
+		Registry:      &RegistrySpec{},
+		Safety:      &SafetyConfig{},
+		Extensions:  map[string]any{"custom": "ext"},
+	}
+
+	// Serialize with all options to exercise all knownSpecFields entries
+	data, err := spec.Serialize(FullExportWithCredentials())
+	require.NoError(t, err)
+	assert.NotEmpty(t, data)
+
+	// Verify each knownSpecFields key appears in the serialized output
+	for key := range knownSpecFields {
+		// "extensions" is the inline catch-all — its keys appear as top-level, not as "extensions"
+		if key == SpecFieldExtensions {
+			continue
+		}
+		assert.Contains(t, string(data), key, "knownSpecFields entry %q should appear in serialized output", key)
+	}
+}
+
+func TestNewTemplateWithConfig_InheritanceErrorHandled(t *testing.T) {
+	// A template with exons.parent at root level (outside exons.extends) causes
+	// ExtractInheritanceInfo to return an error. The B3 fix ensures this error
+	// is captured and inheritanceInfo is set to nil (fail-safe behavior).
+	engine := MustNew()
+
+	// Parse a template with a bare exons.parent tag (no extends) —
+	// the parser allows it but ExtractInheritanceInfo rejects it.
+	tmpl, err := engine.Parse(`Hello {~exons.parent /~} World`)
+	require.NoError(t, err, "Parse should succeed — inheritance error is non-fatal")
+	require.NotNil(t, tmpl)
+
+	// Template should be usable — inheritance info should be nil (no extends)
+	assert.Nil(t, tmpl.inheritanceInfo)
+
+	// Execution should work normally (parent tag is just an unknown resolver at runtime)
+	ctx := context.Background()
+	result, err := tmpl.Execute(ctx, nil)
+	// exons.parent is not a registered resolver outside inheritance, so it errors
+	// unless error strategy handles it — but the key assertion is that Parse succeeded
+	_ = result
+	_ = err
 }
