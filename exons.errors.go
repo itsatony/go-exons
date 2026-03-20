@@ -304,6 +304,19 @@ const (
 	ErrMsgInvalidVisibility     = "invalid visibility value"
 	ErrMsgVersionNumberNegative = "version number must be non-negative"
 
+	// Import/export error messages
+	ErrMsgImportFailed     = "import failed"
+	ErrMsgImportZipFailed  = "zip import failed"
+	ErrMsgImportNoDocument = "no document found in archive"
+	ErrMsgImportReadFailed = "failed to read import file"
+	ErrMsgExportFailed     = "export failed"
+	ErrMsgExportZipFailed  = "zip export failed"
+
+	// SKILL.md format error messages
+	ErrMsgSkillMDInvalidFormat = "invalid SKILL.md format"
+	ErrMsgSkillMDMissingFM     = "SKILL.md missing frontmatter"
+	ErrMsgSkillMDParseFailed   = "SKILL.md parse failed"
+
 	// Storage error messages
 	ErrMsgCryptoRandFailure     = "cryptographic random number generator failure"
 	ErrMsgPathTraversalDetected = "invalid template name: path traversal characters detected"
@@ -679,4 +692,43 @@ func NewSerializeError(msg string, cause error) error {
 		return cuserr.WrapStdError(cause, ErrCodeSerialize, msg)
 	}
 	return cuserr.NewValidationError(ErrCodeSerialize, msg)
+}
+
+// NewCatalogError creates an error for catalog generation failures.
+func NewCatalogError(msg string, cause error) error {
+	if cause != nil {
+		return cuserr.WrapStdError(cause, ErrCodeCatalog, msg)
+	}
+	return cuserr.NewValidationError(ErrCodeCatalog, msg)
+}
+
+// NewCatalogFormatError creates an error for unsupported catalog format.
+func NewCatalogFormatError(msg string, format string) error {
+	return cuserr.NewValidationError(ErrCodeCatalog, msg).
+		WithMetadata(MetaKeyFormat, format)
+}
+
+// MetaKeyFormat is the metadata key for format values in catalog errors.
+const MetaKeyFormat = "format"
+
+// NewExportError creates an error for document export failures.
+func NewExportError(msg string, cause error) error {
+	if cause != nil {
+		return cuserr.WrapStdError(cause, ErrCodeSerialize, msg)
+	}
+	return cuserr.NewValidationError(ErrCodeSerialize, msg)
+}
+
+// NewImportError creates an error for document import failures.
+func NewImportError(msg string, cause error) error {
+	if cause != nil {
+		return cuserr.WrapStdError(cause, ErrCodeSpec, msg)
+	}
+	return cuserr.NewValidationError(ErrCodeSpec, msg)
+}
+
+// NewAgentValidationError creates an error for agent-specific validation failures.
+func NewAgentValidationError(msg string, specName string) error {
+	return cuserr.NewValidationError(ErrCodeAgent, msg).
+		WithMetadata(MetaKeySpecName, specName)
 }

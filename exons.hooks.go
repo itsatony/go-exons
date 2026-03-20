@@ -289,9 +289,9 @@ const (
 
 // Hook error format string constants.
 const (
-	hookErrFmtPoint     = " (hook: "
-	hookErrFmtPointEnd  = ")"
-	hookErrFmtCauseSep  = ": "
+	hookErrFmtPoint    = " (hook: "
+	hookErrFmtPointEnd = ")"
+	hookErrFmtCauseSep = ": "
 )
 
 // HookError represents an error from hook execution.

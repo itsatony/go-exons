@@ -217,15 +217,15 @@ func TestGetExonsFields_NilSpec(t *testing.T) {
 
 func TestGetExonsFields_Populated(t *testing.T) {
 	s := &Spec{
-		Type:       DocumentTypeAgent,
-		Execution:  &execution.Config{Provider: "openai"},
-		Skills:     []SkillRef{{Slug: "s"}},
-		Tools:      &ToolsConfig{},
-		Context:    map[string]any{"k": "v"},
+		Type:        DocumentTypeAgent,
+		Execution:   &execution.Config{Provider: "openai"},
+		Skills:      []SkillRef{{Slug: "s"}},
+		Tools:       &ToolsConfig{},
+		Context:     map[string]any{"k": "v"},
 		Constraints: &ConstraintsConfig{},
-		Messages:   []MessageTemplate{{Role: "user"}},
+		Messages:    []MessageTemplate{{Role: "user"}},
 		Credentials: map[string]*CredentialRef{"main": {}},
-		Credential: "main",
+		Credential:  "main",
 	}
 	m := s.GetExonsFields()
 	assert.Equal(t, string(DocumentTypeAgent), m[SpecFieldType])

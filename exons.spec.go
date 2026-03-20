@@ -432,4 +432,32 @@ func (s *Spec) IsPrompt() bool {
 	return s.Type == DocumentTypePrompt
 }
 
+// ValidateAsAgent checks that the spec is a valid agent definition.
+// An agent must have:
+//   - Type set to "agent" (or effective type is agent)
+//   - Execution config present
+//   - Either Body or Messages present
+func (s *Spec) ValidateAsAgent() error {
+	if s == nil {
+		return NewAgentValidationError(ErrMsgSpecNil, "")
+	}
+
+	// Check type
+	if s.EffectiveType() != DocumentTypeAgent {
+		return NewAgentValidationError(ErrMsgNotAnAgent, s.Name)
+	}
+
+	// Check execution config
+	if s.Execution == nil {
+		return NewAgentValidationError(ErrMsgNoExecutionConfig, s.Name)
+	}
+
+	// Check body or messages
+	if s.Body == "" && len(s.Messages) == 0 {
+		return NewAgentValidationError(ErrMsgAgentNoBodyOrMessages, s.Name)
+	}
+
+	return nil
+}
+
 // deepCopyMap, deepCopyValue, deepCopySlice are defined in exons.context.go.

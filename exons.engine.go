@@ -12,13 +12,19 @@ import (
 
 // Engine is the main entry point for the exons templating system.
 // It manages parsing, execution, resolver registration, and template storage.
+//
+// Thread safety: Engine is safe for concurrent access. Template registration,
+// resolver configuration, and execution can all be called from multiple goroutines.
 type Engine struct {
-	registry  *internal.Registry
-	templates map[string]*Template // Named templates for inclusion
-	tmplMu    sync.RWMutex        // Protects templates map
-	config    *engineConfig
-	executor  *internal.Executor
-	logger    *slog.Logger
+	registry     *internal.Registry
+	templates    map[string]*Template // Named templates for inclusion
+	tmplMu       sync.RWMutex         // Protects templates map
+	config       *engineConfig
+	executor     *internal.Executor
+	logger       *slog.Logger
+	specResolver SpecResolver         // Spec resolver for reference resolution
+	specAdapter  *SpecResolverAdapter // Cached adapter (avoids per-call allocation)
+	specResMu    sync.RWMutex         // Protects specResolver and specAdapter
 }
 
 // New creates a new exons Engine with the given options.
@@ -57,6 +63,43 @@ func MustNew(opts ...Option) *Engine {
 		panic(err)
 	}
 	return engine
+}
+
+// SetSpecResolver configures the spec resolver for reference resolution.
+// When set, the resolver is automatically injected into execution contexts,
+// enabling {~exons.ref slug="..." /~} tag functionality.
+// Safe for concurrent use; however, changing the resolver while executions
+// are in-flight means in-flight calls may see either the old or new resolver.
+func (e *Engine) SetSpecResolver(r SpecResolver) {
+	e.specResMu.Lock()
+	defer e.specResMu.Unlock()
+	e.specResolver = r
+	if r != nil {
+		e.specAdapter = NewSpecResolverAdapter(r)
+	} else {
+		e.specAdapter = nil
+	}
+}
+
+// GetSpecResolver returns the configured spec resolver, or nil if none is set.
+func (e *Engine) GetSpecResolver() SpecResolver {
+	e.specResMu.RLock()
+	defer e.specResMu.RUnlock()
+	return e.specResolver
+}
+
+// getSpecAdapter returns the cached SpecResolverAdapter, or nil if no resolver is set.
+func (e *Engine) getSpecAdapter() *SpecResolverAdapter {
+	e.specResMu.RLock()
+	defer e.specResMu.RUnlock()
+	return e.specAdapter
+}
+
+// getSpecResolverForCatalog returns the current SpecResolver for catalog generation.
+func (e *Engine) getSpecResolverForCatalog() SpecResolver {
+	e.specResMu.RLock()
+	defer e.specResMu.RUnlock()
+	return e.specResolver
 }
 
 // Parse parses a template source string and returns a Template.
@@ -156,6 +199,9 @@ func (e *Engine) resolveConfigEnvVars(yamlContent string) (string, error) {
 
 // Execute is a convenience method that parses and executes a template in one step.
 //
+// If a SpecResolver is configured via SetSpecResolver, it is automatically injected
+// into the execution context, enabling {~exons.ref slug="..." /~} tag resolution.
+//
 // PERFORMANCE WARNING: This method parses the template on every call.
 // For production workloads or repeated execution, use Parse() instead:
 //
@@ -169,7 +215,67 @@ func (e *Engine) Execute(ctx context.Context, source string, data map[string]any
 	if err != nil {
 		return "", err
 	}
-	return tmpl.Execute(ctx, data)
+	return e.executeTemplate(ctx, tmpl, data)
+}
+
+// executeTemplate executes a template with automatic SpecResolver injection.
+func (e *Engine) executeTemplate(ctx context.Context, tmpl *Template, data map[string]any) (string, error) {
+	adapter := e.getSpecAdapter()
+	if adapter == nil {
+		return tmpl.Execute(ctx, data)
+	}
+	// Create context with spec resolver injected
+	execCtx := NewContextWithStrategy(data, e.config.errorStrategy)
+	execCtx = execCtx.WithSpecResolver(adapter)
+	return tmpl.ExecuteWithContext(ctx, execCtx)
+}
+
+// ExecuteWithCatalogs executes a template with auto-generated skill and tool catalogs
+// injected into the context data. This makes {~exons.var name="skills" /~} and
+// {~exons.var name="tools" /~} available without manual context plumbing.
+//
+// The spec is used to generate catalog strings: skills from spec.Skills via the
+// configured SpecResolver, tools from spec.Tools. The generated catalogs are
+// injected into a copy of the data map under the "skills" and "tools" keys.
+// The caller's original data map is NOT modified.
+//
+// If format is empty (CatalogFormatDefault), the default markdown format is used.
+func (e *Engine) ExecuteWithCatalogs(ctx context.Context, source string, data map[string]any, spec *Spec, format CatalogFormat) (string, error) {
+	// Create a shallow copy of data to avoid mutating the caller's map
+	dataCopy := make(map[string]any, len(data)+2)
+	for k, v := range data {
+		dataCopy[k] = v
+	}
+
+	// Generate skills catalog if spec has skills
+	if spec != nil && len(spec.Skills) > 0 {
+		resolver := e.getSpecResolverForCatalog()
+		skillsCatalog, err := GenerateSkillsCatalog(ctx, spec.Skills, resolver, format)
+		if err != nil {
+			return "", err
+		}
+		if skillsCatalog != "" {
+			dataCopy[ContextKeySkills] = skillsCatalog
+		}
+	}
+
+	// Generate tools catalog if spec has tools
+	if spec != nil && spec.Tools != nil && spec.Tools.HasTools() {
+		toolsCatalog, err := GenerateToolsCatalog(spec.Tools, format)
+		if err != nil {
+			return "", err
+		}
+		if toolsCatalog != "" {
+			dataCopy[ContextKeyTools] = toolsCatalog
+		}
+	}
+
+	// Execute with SpecResolver injection
+	tmpl, err := e.Parse(source)
+	if err != nil {
+		return "", err
+	}
+	return e.executeTemplate(ctx, tmpl, dataCopy)
 }
 
 // Register adds a custom resolver to the engine.
@@ -344,6 +450,12 @@ func (e *Engine) ExecuteTemplate(ctx context.Context, name string, data map[stri
 	execCtx := NewContextWithStrategy(cleanData, e.config.errorStrategy)
 	execCtx = execCtx.WithEngine(e).WithDepth(parentDepth + 1)
 
+	// Inject spec resolver if configured
+	adapter := e.getSpecAdapter()
+	if adapter != nil {
+		execCtx = execCtx.WithSpecResolver(adapter)
+	}
+
 	return tmpl.ExecuteWithContext(ctx, execCtx)
 }
 
@@ -378,4 +490,3 @@ func (a *resolverAdapter) Validate(attrs internal.Attributes) error {
 	wrappedAttrs := &internalAttributesAdapter{attrs: attrs}
 	return a.resolver.Validate(wrappedAttrs)
 }
-

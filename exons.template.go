@@ -10,12 +10,12 @@ import (
 // Template represents a parsed template that can be executed multiple times.
 type Template struct {
 	source          string
-	templateBody    string                   // Template body without config block
+	templateBody    string // Template body without config block
 	ast             *internal.RootNode
 	executor        *internal.Executor
 	config          *engineConfig
-	engine          TemplateExecutor         // Engine reference for nested template execution
-	spec            *Spec                    // Parsed spec configuration from frontmatter
+	engine          TemplateExecutor          // Engine reference for nested template execution
+	spec            *Spec                     // Parsed spec configuration from frontmatter
 	inheritanceInfo *internal.InheritanceInfo // Inheritance info (nil if no extends)
 }
 

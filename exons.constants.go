@@ -3,7 +3,7 @@ package exons
 import "time"
 
 // Version is the current library version. Loaded from versions.yaml at build time.
-const Version = "0.4.0"
+const Version = "0.5.0"
 
 // File extension for exons specification files.
 const FileExtensionExons = ".exons"
@@ -330,7 +330,7 @@ const (
 
 // Error format string constants
 const (
-	FmtPosition      = "line %d, column %d"
+	FmtPosition       = "line %d, column %d"
 	RefChainSeparator = " -> "
 )
 
@@ -427,7 +427,7 @@ const (
 	SpecFieldExtensions  = "extensions"
 	SpecFieldSkills      = "skills"
 	SpecFieldTools       = "tools"
-	SpecFieldContext      = "context"
+	SpecFieldContext     = "context"
 	SpecFieldConstraints = "constraints"
 	SpecFieldMessages    = "messages"
 
@@ -552,7 +552,7 @@ const (
 const (
 	ContextKeyInput       = "input"
 	ContextKeyMeta        = "meta"
-	ContextKeyContext      = "context"
+	ContextKeyContext     = "context"
 	ContextKeyConstraints = "constraints"
 	ContextKeySkills      = "skills"
 	ContextKeyTools       = "tools"
@@ -845,3 +845,41 @@ const (
 	ErrMsgCatalogFuncCallingSkills = "function_calling not supported for skills catalog"
 	ErrMsgCatalogUnknownFormat     = "unknown catalog format"
 )
+
+// CatalogCompactDescriptionMaxLen is the max description length in compact format.
+const CatalogCompactDescriptionMaxLen = 80
+
+// Catalog formatting constants for markdown output generation.
+const (
+	CatalogHeaderSkills    = "## Skills\n\n"
+	CatalogHeaderTools     = "## Tools\n\n"
+	CatalogMDHeading3      = "### "
+	CatalogMDListItem      = "- **"
+	CatalogMDBoldClose     = "**"
+	CatalogMDColonSep      = ": "
+	CatalogMDDashSep       = " - "
+	CatalogMDInjectionPfx  = "- Injection: "
+	CatalogMDURLPfx        = "- URL: "
+	CatalogMDMCPPfx        = "[MCP] "
+	CatalogMDMCPListPfx    = "- **[MCP] "
+	CatalogMDMCPDetailPfx  = "### [MCP] "
+	CatalogMDCodeBlockOpen = "```json\n"
+	CatalogMDCodeBlockEnd  = "\n```\n"
+	CatalogMDParenOpen     = " ("
+	CatalogMDParenClose    = ")"
+	CatalogCompactSep      = "; "
+	TruncationSuffix       = "..."
+)
+
+// Tool definition map key constants (for ToOpenAITool, ToGenericTool).
+const (
+	ToolKeyType        = "type"
+	ToolKeyName        = "name"
+	ToolKeyDescription = "description"
+)
+
+// Import resource size limit for zip bomb protection.
+const MaxImportResourceSize = 50 * 1024 * 1024 // 50MB
+
+// Import error for multiple document files in archive.
+const ErrMsgImportMultipleDocuments = "multiple document files found in archive"

@@ -41,7 +41,7 @@ func (h *testLogHandler) Handle(_ context.Context, r slog.Record) error {
 }
 
 func (h *testLogHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
-func (h *testLogHandler) WithGroup(_ string) slog.Handler       { return h }
+func (h *testLogHandler) WithGroup(_ string) slog.Handler      { return h }
 
 func (h *testLogHandler) All() []testLogRecord {
 	h.mu.Lock()

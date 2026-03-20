@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0-dc4] - 2026-03-20
+
+### Added
+- Catalog generation API: `GenerateSkillsCatalog()` and `GenerateToolsCatalog()` with 4 formats (default, detailed, compact, function_calling) (DC-4)
+- `NoopSpecResolver` — default SpecResolver that always returns not-found errors
+- `MapSpecResolver` — thread-safe in-memory SpecResolver with `Add`, `AddMulti`, `Remove`, `Has`, `Count`
+- `Engine.SetSpecResolver()` / `Engine.GetSpecResolver()` — configure spec resolver on Engine
+- `Engine.ExecuteWithCatalogs()` — auto-generates skill/tool catalog strings and injects into context
+- Auto-injection: Engine automatically injects SpecResolver into execution Context for `{~exons.ref~}` resolution
+- `Import()` / `ImportDirectory()` — import from `.md` or `.zip` archives (SKILL.md/AGENT.md/PROMPT.md)
+- `ExportDirectory()` — export Spec + resources to `.zip` archive
+- `ImportFromSkillMD()` — parse SKILL.md format (frontmatter + body)
+- `Spec.ExportToSkillMD()` — serialize with Agent Skills compatible fields only
+- `Spec.StripExtensions()` — clone with execution/extensions/agent-fields removed
+- `Spec.ValidateAsAgent()` — validate spec has agent type, execution config, and body/messages
+- `ToolsConfig.HasTools()` — check if tools config has any functions or MCP servers
+- `FunctionDef.ToOpenAITool()` — OpenAI-compatible tool definition map
+- `ImportResult` struct for import results with Spec and Resources
+- `MapSpecResolverEntry` struct for bulk resolver population
+- 42 end-to-end integration tests verifying all 14 template tags through public Engine API
+- Error constructors: `NewCatalogError`, `NewExportError`, `NewImportError`, `NewAgentValidationError`
+- Root coverage: 88.8%, internal: 91.1%, execution: 92.1%
+
+### Changed
+- `Engine.Execute()` now auto-injects SpecResolver into context when configured
+- `Engine.ExecuteTemplate()` now auto-injects SpecResolver for nested templates
+- Version bumped to 0.5.0
+
 ## [0.4.0-dc3] - 2026-03-20
 
 ### Added

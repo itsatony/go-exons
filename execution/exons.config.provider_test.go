@@ -312,15 +312,15 @@ func TestConfig_ToAnthropic_Streaming(t *testing.T) {
 
 func TestConfig_ToAnthropic_NotPresent(t *testing.T) {
 	c := &Config{
-		MinP:                ptrFloat64(0.1),
-		RepetitionPenalty:   ptrFloat64(1.2),
-		Logprobs:            ptrInt(5),
-		FrequencyPenalty:    ptrFloat64(0.5),
-		PresencePenalty:     ptrFloat64(0.3),
-		N:                   ptrInt(2),
-		Image:               &ImageConfig{Width: ptrInt(1024)},
-		Audio:               &AudioConfig{Voice: "alloy"},
-		Embedding:           &EmbeddingConfig{Dimensions: ptrInt(768)},
+		MinP:              ptrFloat64(0.1),
+		RepetitionPenalty: ptrFloat64(1.2),
+		Logprobs:          ptrInt(5),
+		FrequencyPenalty:  ptrFloat64(0.5),
+		PresencePenalty:   ptrFloat64(0.3),
+		N:                 ptrInt(2),
+		Image:             &ImageConfig{Width: ptrInt(1024)},
+		Audio:             &AudioConfig{Voice: "alloy"},
+		Embedding:         &EmbeddingConfig{Dimensions: ptrInt(768)},
 	}
 	m := c.ToAnthropic()
 	assert.NotContains(t, m, ParamKeyMinP)

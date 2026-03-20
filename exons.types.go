@@ -46,6 +46,32 @@ type OperationalConstraints struct {
 	MaxToolCalls     *int     `yaml:"max_tool_calls,omitempty" json:"max_tool_calls,omitempty"`
 }
 
+// HasTools returns true if the ToolsConfig has at least one function or MCP server defined.
+func (tc *ToolsConfig) HasTools() bool {
+	return tc != nil && (len(tc.Functions) > 0 || len(tc.MCPServers) > 0)
+}
+
+// ToOpenAITool returns an OpenAI-compatible tool definition map for this function.
+// Format: {"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}
+func (f *FunctionDef) ToOpenAITool() map[string]any {
+	if f == nil {
+		return nil
+	}
+	fn := map[string]any{
+		ToolKeyName: f.Name,
+	}
+	if f.Description != "" {
+		fn[ToolKeyDescription] = f.Description
+	}
+	if f.Parameters != nil {
+		fn[ToolKeyParameters] = f.Parameters
+	}
+	return map[string]any{
+		ToolKeyType:     ToolKeyFunction,
+		ToolKeyFunction: fn,
+	}
+}
+
 // CredentialRef declares a credential for provider authentication.
 // go-exons stores but does NOT resolve credentials.
 type CredentialRef struct {

@@ -46,25 +46,25 @@ const (
 
 // DryRun warning format strings.
 const (
-	dryRunWarnInclude   = "line %d: included template '%s' not found"
-	dryRunWarnLoopSrc   = "line %d: loop source '%s' not found in data"
+	dryRunWarnInclude = "line %d: included template '%s' not found"
+	dryRunWarnLoopSrc = "line %d: loop source '%s' not found in data"
 )
 
 // Placeholder format strings for dry-run output.
 const (
-	placeholderVar     = "{{%s}}"
-	placeholderInclude = "{{include:%s}}"
-	placeholderTag     = "{{%s}}"
-	placeholderIfOpen  = "{{if:%s}}"
-	placeholderElseIf  = "{{elseif:%s}}"
-	placeholderElse    = "{{else}}"
-	placeholderIfClose = "{{/if}}"
-	placeholderForOpen = "{{for:%s in %s}}"
-	placeholderForClose = "{{/for}}"
-	placeholderSwitchOpen = "{{switch:%s}}"
-	placeholderCaseVal    = "{{case:%s}}"
-	placeholderCaseEval   = "{{case eval:%s}}"
-	placeholderDefault    = "{{default}}"
+	placeholderVar         = "{{%s}}"
+	placeholderInclude     = "{{include:%s}}"
+	placeholderTag         = "{{%s}}"
+	placeholderIfOpen      = "{{if:%s}}"
+	placeholderElseIf      = "{{elseif:%s}}"
+	placeholderElse        = "{{else}}"
+	placeholderIfClose     = "{{/if}}"
+	placeholderForOpen     = "{{for:%s in %s}}"
+	placeholderForClose    = "{{/for}}"
+	placeholderSwitchOpen  = "{{switch:%s}}"
+	placeholderCaseVal     = "{{case:%s}}"
+	placeholderCaseEval    = "{{case eval:%s}}"
+	placeholderDefault     = "{{default}}"
 	placeholderSwitchClose = "{{/switch}}"
 )
 

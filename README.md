@@ -101,13 +101,51 @@ genspec:
 
 ```
 Variable:       {~exons.var name="user.name" default="Guest" /~}
-Conditional:    {~exons.if eval="user.isAdmin"~}...{~/exons.if~}
+Conditional:    {~exons.if eval="user.isAdmin"~}...{~exons.else~}...{~/exons.if~}
 Loop:           {~exons.for item="x" in="items"~}...{~/exons.for~}
 Include:        {~exons.include template="header" /~}
 Message:        {~exons.message role="system"~}...{~/exons.message~}
+Ref:            {~exons.ref slug="my-skill" /~}
+Switch:         {~exons.switch eval="x"~}{~exons.case value="a"~}...{~/exons.case~}{~/exons.switch~}
+Skills Catalog: {~exons.skills_catalog /~}
+Tools Catalog:  {~exons.tools_catalog /~}
+Env:            {~exons.env name="API_KEY" default="none" /~}
+Extends:        {~exons.extends template="parent"~}
+Block:          {~exons.block name="content"~}...{~/exons.block~}
 Raw:            {~exons.raw~}not parsed{~/exons.raw~}
 Comment:        {~exons.comment~}removed{~/exons.comment~}
 Escape:         \{~ produces literal {~
+```
+
+### Catalog Generation & Spec Resolution
+
+```go
+// Register specs for cross-referencing
+resolver := exons.NewMapSpecResolver()
+resolver.Add("web-search", searchSpec, searchBody)
+engine.SetSpecResolver(resolver)
+
+// Auto-generate skill/tool catalogs and inject into template
+result, _ := engine.ExecuteWithCatalogs(ctx, source, data, agentSpec, exons.CatalogFormatDefault)
+
+// Or generate catalogs manually
+skillsCatalog, _ := exons.GenerateSkillsCatalog(ctx, skills, resolver, exons.CatalogFormatDetailed)
+toolsCatalog, _ := exons.GenerateToolsCatalog(tools, exons.CatalogFormatFunctionCalling)
+```
+
+### Import / Export
+
+```go
+// Import from .md or .zip
+result, _ := exons.Import(data, "agent.zip")
+spec := result.Spec
+
+// Export to zip archive
+zipData, _ := exons.ExportDirectory(spec, resources)
+
+// SKILL.md format (Agent Skills compatible)
+spec, _ := exons.ImportFromSkillMD(content)
+data, _ := spec.ExportToSkillMD()
 ```
 
 ## Multi-Provider Support

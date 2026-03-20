@@ -78,4 +78,3 @@ func (e *Engine) ListFuncs() []string {
 func (e *Engine) FuncCount() int {
 	return e.executor.FuncCount()
 }
-

@@ -622,7 +622,7 @@ func TestEngine_CustomFunctions(t *testing.T) {
 
 	t.Run("has func", func(t *testing.T) {
 		engine := MustNew()
-		assert.True(t, engine.HasFunc("len"))    // built-in
+		assert.True(t, engine.HasFunc("len"))     // built-in
 		assert.False(t, engine.HasFunc("custom")) // not registered
 	})
 

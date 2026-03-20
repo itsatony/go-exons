@@ -127,7 +127,7 @@ var knownSpecFields = map[string]bool{
 	SpecFieldExtensions:    true,
 	SpecFieldSkills:        true,
 	SpecFieldTools:         true,
-	SpecFieldContext:        true,
+	SpecFieldContext:       true,
 	SpecFieldConstraints:   true,
 	SpecFieldMessages:      true,
 	SpecFieldCredentials:   true,

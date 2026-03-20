@@ -388,10 +388,10 @@ func TestContext_GetMapDefault(t *testing.T) {
 
 func TestContext_GetStringSlice(t *testing.T) {
 	ctx := NewContext(map[string]any{
-		"str_slice":  []string{"a", "b"},
-		"any_slice":  []any{"x", "y"},
-		"mixed_any":  []any{"a", 1},
-		"not_slice":  "hello",
+		"str_slice": []string{"a", "b"},
+		"any_slice": []any{"x", "y"},
+		"mixed_any": []any{"a", 1},
+		"not_slice": "hello",
 	})
 
 	t.Run("string slice", func(t *testing.T) {
