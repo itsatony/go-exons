@@ -128,4 +128,3 @@ func TestExportToSkillMD_Import_Roundtrip(t *testing.T) {
 	assert.True(t, imported.Inputs["name"].Required)
 	assert.Equal(t, "User name", imported.Inputs["name"].Description)
 }
-

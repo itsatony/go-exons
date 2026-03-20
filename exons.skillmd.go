@@ -71,4 +71,3 @@ func (s *Spec) ExportToSkillMD() ([]byte, error) {
 	}
 	return s.Serialize(AgentSkillsExportOptions())
 }
-

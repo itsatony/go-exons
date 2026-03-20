@@ -412,8 +412,8 @@ const (
 	SpecFieldName        = "name"
 	SpecFieldDescription = "description"
 	SpecFieldInputs      = "inputs"
-	SpecFieldOutputs       = "outputs"
-	SpecFieldSample        = "sample"
+	SpecFieldOutputs     = "outputs"
+	SpecFieldSample      = "sample"
 
 	// go-exons extension fields
 	SpecFieldType        = "type"

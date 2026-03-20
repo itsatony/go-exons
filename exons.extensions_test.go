@@ -123,4 +123,3 @@ func TestHasExtension_NotPresent(t *testing.T) {
 	s := &Spec{Extensions: map[string]any{"other": "val"}}
 	assert.False(t, s.HasExtension("key"))
 }
-

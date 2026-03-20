@@ -46,4 +46,3 @@ func (s *Spec) RemoveExtension(key string) {
 	}
 	delete(s.Extensions, key)
 }
-
