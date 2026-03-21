@@ -36,7 +36,7 @@ exons.executor.builtins.go # Built-in resolvers (in internal/)
 
 - Root package (`package exons`) contains the public API
 - `internal/` uses `package internal` — flat, single package
-- Sub-packages (`genspec/`, `provider/`, etc.) each have their own package name
+- Sub-packages (`execution/`, `a2a/`, etc.) each have their own package name
 
 ### Constants
 
