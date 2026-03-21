@@ -43,5 +43,14 @@ dist/
 tmp/
 bin/
 
+# Example compiled binaries (Go builds binary named after directory)
+examples/01-basic-prompt/01-basic-prompt
+examples/02-chat-agent/02-chat-agent
+examples/03-custom-resolver/03-custom-resolver
+examples/04-tool-export/04-tool-export
+examples/05-template-composition/05-template-composition
+examples/06-validation-and-debug/06-validation-and-debug
+examples/07-a2a-agent-card/07-a2a-agent-card
+
 # Assessment reports (generated, not committed)
 docs/assessments/

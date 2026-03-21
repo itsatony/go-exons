@@ -70,7 +70,11 @@ func importMarkdown(data []byte) (*ImportResult, error) {
 // The archive must contain exactly one of: SKILL.md, AGENT.md, or PROMPT.md
 // (case-insensitive base name match). If multiple document files are found,
 // an error is returned. All other non-directory files are collected as resources.
-// Individual resource files are limited to MaxImportResourceSize bytes.
+//
+// Security limits:
+//   - Document files are limited to MaxImportDocumentSize (10MB).
+//   - Resource files are limited to MaxImportResourceSize (50MB).
+//   - Resource filenames with path traversal (../) or absolute paths are rejected.
 func ImportDirectory(data []byte) (*ImportResult, error) {
 	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -96,17 +100,22 @@ func ImportDirectory(data []byte) (*ImportResult, error) {
 			if documentData != nil {
 				return nil, NewImportError(ErrMsgImportMultipleDocuments, nil)
 			}
-			docBytes, readErr := readZipEntry(file, 0)
+			docBytes, readErr := readZipEntry(file, MaxImportDocumentSize)
 			if readErr != nil {
 				return nil, NewImportError(ErrMsgImportReadFailed, readErr)
 			}
 			documentData = docBytes
 		} else {
+			// Sanitize resource path to prevent path traversal
+			cleanName := filepath.Clean(file.Name)
+			if filepath.IsAbs(cleanName) || strings.HasPrefix(cleanName, "..") {
+				return nil, NewImportError(ErrMsgInvalidResourcePath, nil)
+			}
 			resBytes, readErr := readZipEntry(file, MaxImportResourceSize)
 			if readErr != nil {
 				return nil, NewImportError(ErrMsgImportReadFailed, readErr)
 			}
-			resources[file.Name] = resBytes
+			resources[cleanName] = resBytes
 		}
 	}
 
@@ -126,8 +135,8 @@ func ImportDirectory(data []byte) (*ImportResult, error) {
 }
 
 // readZipEntry reads a zip file entry with an optional size limit.
-// If maxSize is 0 or negative, no limit is applied (used for document files
-// which are size-checked at parse time via DefaultMaxFrontmatterSize).
+// If maxSize is 0 or negative, no limit is applied.
+// Returns ErrMsgImportFileTooLarge if the decompressed content exceeds maxSize.
 func readZipEntry(file *zip.File, maxSize int64) ([]byte, error) {
 	rc, err := file.Open()
 	if err != nil {
@@ -146,7 +155,7 @@ func readZipEntry(file *zip.File, maxSize int64) ([]byte, error) {
 	}
 
 	if maxSize > 0 && int64(len(data)) > maxSize {
-		return nil, io.ErrUnexpectedEOF
+		return nil, NewImportError(ErrMsgImportFileTooLarge, nil)
 	}
 
 	return data, nil

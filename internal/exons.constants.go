@@ -399,9 +399,13 @@ const (
 
 // Error messages for env resolver
 const (
-	ErrMsgEnvVarNotFound = "environment variable not found"
-	ErrMsgEnvVarRequired = "required environment variable not set"
-	ErrMsgEnvVarEmpty    = "environment variable is empty"
+	ErrMsgEnvVarNotFound    = "environment variable not found"
+	ErrMsgEnvVarRequired    = "required environment variable not set"
+	ErrMsgEnvVarEmpty       = "environment variable is empty"
+	ErrMsgEnvVarDenied      = "environment variable access denied by denylist"
+	ErrMsgEnvVarNotInList   = "environment variable not in allowlist"
+	ErrMsgEnvDisabled       = "environment variable access is disabled"
+	ErrMsgEnvInvalidPattern = "invalid glob pattern in env var access control"
 )
 
 // Log messages for env resolver operations

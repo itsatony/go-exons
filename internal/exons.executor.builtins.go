@@ -161,12 +161,17 @@ func (r *RawResolver) Validate(attrs Attributes) error {
 	return nil
 }
 
+// BuiltinConfig holds configuration for built-in resolvers.
+type BuiltinConfig struct {
+	Env EnvConfig
+}
+
 // RegisterBuiltins registers all built-in resolvers with the registry.
-func RegisterBuiltins(registry *Registry) {
+func RegisterBuiltins(registry *Registry, config BuiltinConfig) {
 	registry.MustRegister(NewVarResolver())
 	registry.MustRegister(NewRawResolver())
 	registry.MustRegister(NewIncludeResolver())
-	registry.MustRegister(NewEnvResolver())
+	registry.MustRegister(NewEnvResolver(config.Env))
 	registry.MustRegister(&MessageResolver{})
 	registry.MustRegister(NewRefResolver())
 	registry.MustRegister(NewSkillsCatalogResolver())

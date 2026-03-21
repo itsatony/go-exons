@@ -101,7 +101,7 @@ func (m *mockErrorStrategyContext) ErrorStrategy() int {
 // TestHandleTagError_ThrowStrategy verifies that the throw strategy propagates the error.
 func TestHandleTagError_ThrowStrategy(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	// A tag referencing a missing variable with onerror="throw" should produce an error.
@@ -122,7 +122,7 @@ func TestHandleTagError_ThrowStrategy(t *testing.T) {
 // the default attribute value when present.
 func TestHandleTagError_DefaultStrategyWithValue(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	tag := NewSelfClosingTag(TagNameVar, Attributes{
@@ -143,7 +143,7 @@ func TestHandleTagError_DefaultStrategyWithValue(t *testing.T) {
 // an empty string when no default attribute is present.
 func TestHandleTagError_DefaultStrategyWithoutValue(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	tag := NewSelfClosingTag(TagNameVar, Attributes{
@@ -162,7 +162,7 @@ func TestHandleTagError_DefaultStrategyWithoutValue(t *testing.T) {
 // TestHandleTagError_RemoveStrategy verifies that the remove strategy returns an empty string.
 func TestHandleTagError_RemoveStrategy(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	tag := NewSelfClosingTag(TagNameVar, Attributes{
@@ -182,7 +182,7 @@ func TestHandleTagError_RemoveStrategy(t *testing.T) {
 // returns the original tag source when RawSource is set.
 func TestHandleTagError_KeepRawStrategyWithRawSource(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	rawSource := `{~exons.var name="nonexistent" onerror="keepraw" /~}`
@@ -209,7 +209,7 @@ func TestHandleTagError_KeepRawStrategyWithRawSource(t *testing.T) {
 // returns an empty string when RawSource is not set.
 func TestHandleTagError_KeepRawStrategyWithoutRawSource(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	tag := NewSelfClosingTag(TagNameVar, Attributes{
@@ -229,7 +229,7 @@ func TestHandleTagError_KeepRawStrategyWithoutRawSource(t *testing.T) {
 // an empty string.
 func TestHandleTagError_LogStrategy(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 
 	// Use a test log handler so we can verify log output.
 	handler := newTestLogHandler()
@@ -264,7 +264,7 @@ func TestHandleTagError_LogStrategy(t *testing.T) {
 // onerror value falls back to the throw strategy (propagating the error).
 func TestHandleTagError_UnknownStrategyFallsToThrow(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	tag := NewSelfClosingTag(TagNameVar, Attributes{
@@ -284,7 +284,7 @@ func TestHandleTagError_UnknownStrategyFallsToThrow(t *testing.T) {
 // ErrorStrategyAccessor, its strategy is used when no per-tag onerror is set.
 func TestGetErrorStrategy_ContextLevel(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	// No onerror on tag, context provides ErrorStrategyDefault (1).
@@ -305,7 +305,7 @@ func TestGetErrorStrategy_ContextLevel(t *testing.T) {
 // produces an empty string for a failing tag.
 func TestGetErrorStrategy_ContextLevelRemove(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	tag := NewSelfClosingTag(TagNameVar, Attributes{
@@ -324,7 +324,7 @@ func TestGetErrorStrategy_ContextLevelRemove(t *testing.T) {
 // logs and returns an empty string.
 func TestGetErrorStrategy_ContextLevelLog(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 
 	handler := newTestLogHandler()
 	logger := slog.New(handler)
@@ -355,7 +355,7 @@ func TestGetErrorStrategy_ContextLevelLog(t *testing.T) {
 // takes precedence over the context-level error strategy.
 func TestGetErrorStrategy_TagOverridesContext(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	// Context says "remove", but tag says "throw".
@@ -376,7 +376,7 @@ func TestGetErrorStrategy_TagOverridesContext(t *testing.T) {
 // onerror="default" overrides context-level throw strategy.
 func TestGetErrorStrategy_TagDefaultOverridesContextThrow(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	// Context says "throw", but tag says "default" with a fallback value.
@@ -398,7 +398,7 @@ func TestGetErrorStrategy_TagDefaultOverridesContextThrow(t *testing.T) {
 // context provides an error strategy, the default is throw.
 func TestGetErrorStrategy_NoContextNoTag(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	// No onerror attribute, plain context (not ErrorStrategyAccessor).
@@ -479,7 +479,7 @@ func TestHandleTagError_UnknownTagWithStrategies(t *testing.T) {
 func TestHandleTagError_MixedContent(t *testing.T) {
 	t.Run("remove strategy preserves surrounding text", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		root := &RootNode{
@@ -501,7 +501,7 @@ func TestHandleTagError_MixedContent(t *testing.T) {
 
 	t.Run("default strategy with value in mixed content", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		root := &RootNode{
@@ -527,7 +527,7 @@ func TestHandleTagError_MixedContent(t *testing.T) {
 // returns the raw source when available.
 func TestHandleTagError_ContextLevelKeepRaw(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	rawSource := `{~exons.var name="nonexistent" /~}`
@@ -565,7 +565,7 @@ func TestHandleTagError_AllStrategiesViaLexerParser(t *testing.T) {
 
 	t.Run("throw via parser", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ast := parseTemplate(t, `{~exons.var name="missing" onerror="throw" /~}`)
@@ -578,7 +578,7 @@ func TestHandleTagError_AllStrategiesViaLexerParser(t *testing.T) {
 
 	t.Run("default with value via parser", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ast := parseTemplate(t, `{~exons.var name="missing" onerror="default" default="fallback" /~}`)
@@ -591,7 +591,7 @@ func TestHandleTagError_AllStrategiesViaLexerParser(t *testing.T) {
 
 	t.Run("default without value via parser", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ast := parseTemplate(t, `{~exons.var name="missing" onerror="default" /~}`)
@@ -604,7 +604,7 @@ func TestHandleTagError_AllStrategiesViaLexerParser(t *testing.T) {
 
 	t.Run("remove via parser", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ast := parseTemplate(t, `before {~exons.var name="missing" onerror="remove" /~} after`)
@@ -617,7 +617,7 @@ func TestHandleTagError_AllStrategiesViaLexerParser(t *testing.T) {
 
 	t.Run("log via parser", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 
 		handler := newTestLogHandler()
 		logger := slog.New(handler)
@@ -642,7 +642,7 @@ func TestHandleTagError_AllStrategiesViaLexerParser(t *testing.T) {
 
 	t.Run("keepraw via parser", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		source := `{~exons.var name="missing" onerror="keepraw" /~}`
@@ -662,7 +662,7 @@ func TestHandleTagError_AllStrategiesViaLexerParser(t *testing.T) {
 // independently to each failing tag in a template.
 func TestHandleTagError_MultipleFailingTags(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	root := &RootNode{
@@ -696,7 +696,7 @@ func TestHandleTagError_MultipleFailingTags(t *testing.T) {
 // do not interfere with tags that resolve successfully.
 func TestHandleTagError_SuccessfulTagNoStrategyApplied(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	tag := NewSelfClosingTag(TagNameVar, Attributes{

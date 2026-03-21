@@ -40,10 +40,18 @@ func New(opts ...Option) (*Engine, error) {
 	}
 
 	registry := internal.NewRegistry(logger)
-	internal.RegisterBuiltins(registry)
+	builtinConfig := internal.BuiltinConfig{
+		Env: internal.EnvConfig{
+			Disabled:  config.envDisabled,
+			Allowlist: config.envAllowlist,
+			Denylist:  config.envDenylist,
+		},
+	}
+	internal.RegisterBuiltins(registry, builtinConfig)
 
 	executorConfig := internal.ExecutorConfig{
-		MaxDepth: config.maxDepth,
+		MaxDepth:      config.maxDepth,
+		MaxOutputSize: config.maxOutputSize,
 	}
 	executor := internal.NewExecutor(registry, executorConfig, logger)
 

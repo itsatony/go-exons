@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0-dc10] - 2026-03-21
+
+### BREAKING
+- **Default env var denylist active**: `{~exons.env~}` now blocks environment variables matching common secret patterns (`*_KEY`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`, `*_PASS`, `*_CREDENTIAL`, `*_PASSPHRASE`, `*_DSN`, `*_CONN_STRING`) by default. Override with `WithEnvDenylist(nil)` or `WithEnvAllowlist(...)`.
+- **`DefaultEnvDenyPatterns` is now a function** returning a fresh copy, not a mutable `var` slice. Callers using the old var form need to add `()`.
+- **Zip document size limit**: `ImportDirectory` now limits document files (SKILL.md, AGENT.md, PROMPT.md) to 10MB (`MaxImportDocumentSize`). Previously unlimited.
+- **Zip path traversal rejection**: `ImportDirectory` rejects resource entries with path traversal (`../`) or absolute paths. `ExportDirectory` returns an error for such paths.
+
+### Added
+- `FunctionDef.ToAnthropicTool()` — Anthropic `input_schema` format
+- `FunctionDef.ToGeminiTool()` — Gemini `parameters` format (flat, no wrapper)
+- `FunctionDef.ToMCPTool()` — MCP `inputSchema` format (camelCase)
+- `FunctionDef.ToMistralTool()` — Mistral (OpenAI-compatible) format
+- `FunctionDef.ToCohereTool()` — Cohere `parameter_definitions` format
+- `ToolsConfig.ToOpenAITools()`, `ToAnthropicTools()`, `ToGeminiTools()`, `ToMCPTools()`, `ToMistralTools()`, `ToCohereTools()` — batch export methods
+- `WithEnvAllowlist(patterns)` — restrict `{~exons.env~}` to matching glob patterns only
+- `WithEnvDenylist(patterns)` — block `{~exons.env~}` for matching glob patterns
+- `WithEnvDisabled()` — completely disable `{~exons.env~}` tag
+- `WithMaxOutputSize(size)` — cap rendered template output (default 10MB)
+- `DefaultEnvDenyPatterns()` — returns default deny patterns (immutable function)
+- `MaxImportDocumentSize` constant (10MB) for zip document file limits
+- JSON Schema for `.exons` format at `schema/exons.schema.json` (draft 2020-12, 28 `$defs`)
+- 7 standalone Go examples in `examples/01-*` through `examples/07-*`
+- Blog post: `docs/blog/introducing-go-exons.md`
+
+### Security
+- Env var access denied by default for common secret patterns (defense in depth)
+- Zip bomb prevention: document files limited to 10MB
+- Zip path traversal: reject `../` and absolute paths in import; error on export
+- Output size enforcement: `executeNodes` enforces `MaxOutputSize` (10MB default)
+- Invalid glob patterns in env config fail loudly (no silent bypass)
+
+### Fixed
+- README: `EstimateTokens` example now matches actual signature `EstimateTokens(text string) *TokenEstimate`
+- README: `RegisterFunc` example now shows correct `*Func` struct form
+
 ## [0.10.0-dc9] - 2026-03-20
 
 ### BREAKING

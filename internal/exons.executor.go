@@ -9,13 +9,15 @@ import (
 
 // ExecutorConfig holds executor configuration options.
 type ExecutorConfig struct {
-	MaxDepth int // Maximum nesting depth (0 = unlimited)
+	MaxDepth      int // Maximum nesting depth (0 = unlimited)
+	MaxOutputSize int // Maximum rendered output size in bytes (0 = unlimited)
 }
 
 // DefaultExecutorConfig returns the default executor configuration.
 func DefaultExecutorConfig() ExecutorConfig {
 	return ExecutorConfig{
-		MaxDepth: DefaultMaxDepth,
+		MaxDepth:      DefaultMaxDepth,
+		MaxOutputSize: DefaultMaxOutputSize,
 	}
 }
 
@@ -97,6 +99,9 @@ func (e *Executor) executeNodes(ctx context.Context, nodes []Node, execCtx Conte
 		output, err := e.executeNode(ctx, node, execCtx, depth)
 		if err != nil {
 			return "", err
+		}
+		if e.config.MaxOutputSize > 0 && sb.Len()+len(output) > e.config.MaxOutputSize {
+			return "", NewExecutorError(ErrMsgOutputSizeExceeded, "", Position{})
 		}
 		sb.WriteString(output)
 	}
@@ -569,14 +574,17 @@ func NewTypeNotIterableError(typeName string) *ExecutorError {
 
 // Executor error message constants
 const (
-	ErrMsgMaxDepthExceeded = "maximum nesting depth exceeded"
-	ErrMsgUnknownNodeType  = "unknown node type"
-	ErrMsgUnknownTag       = "unknown tag"
-	ErrMsgResolverFailed   = "resolver failed"
-	ErrMsgTypeNotIterable  = "type is not iterable"
+	ErrMsgMaxDepthExceeded   = "maximum nesting depth exceeded"
+	ErrMsgUnknownNodeType    = "unknown node type"
+	ErrMsgUnknownTag         = "unknown tag"
+	ErrMsgResolverFailed     = "resolver failed"
+	ErrMsgTypeNotIterable    = "type is not iterable"
+	ErrMsgOutputSizeExceeded = "rendered output exceeds maximum size limit"
 )
 
-// Default configuration values
+// Default configuration values for internal use (tests and fallback).
+// Production values are set by the root package via Engine.New() options.
 const (
-	DefaultMaxDepth = 100
+	DefaultMaxDepth      = 100
+	DefaultMaxOutputSize = 10 * 1024 * 1024 // 10MB — matches root exons.DefaultMaxOutputSize
 )

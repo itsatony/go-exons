@@ -1,0 +1,26 @@
+---
+name: debug-example
+description: An agent used to demonstrate validation and debug features
+type: agent
+execution:
+  provider: openai
+  model: gpt-4o
+  temperature: 0.5
+---
+{~exons.message role="system"~}
+You are a helpful assistant.
+{~/exons.message~}
+
+{~exons.message role="user"~}
+Hello {~exons.var name="user_name" default="there" /~}!
+
+{~exons.if eval="show_details"~}
+Here are details about {~exons.var name="topic" /~}.
+{~exons.else~}
+Ask me anything!
+{~/exons.if~}
+
+{~exons.for item="item" in="items"~}
+- {~exons.var name="item" /~}
+{~/exons.for~}
+{~/exons.message~}

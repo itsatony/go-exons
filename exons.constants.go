@@ -856,20 +856,52 @@ const (
 	TruncationSuffix       = "..."
 )
 
-// Tool definition map key constants (for ToOpenAITool, ToGenericTool).
+// Tool definition map key constants for provider-specific tool export.
 const (
-	ToolKeyType        = "type"
-	ToolKeyName        = "name"
-	ToolKeyDescription = "description"
+	ToolKeyType                 = "type"
+	ToolKeyName                 = "name"
+	ToolKeyDescription          = "description"
+	ToolKeyInputSchemaCamel     = "inputSchema"           // MCP
+	ToolKeyParameterDefinitions = "parameter_definitions" // Cohere
+	ToolKeyRequired             = "required"
 )
 
-// Import resource size limit for zip bomb protection.
-const MaxImportResourceSize = 50 * 1024 * 1024 // 50MB
+// Import size limits for zip bomb protection.
+const (
+	MaxImportResourceSize = 50 * 1024 * 1024 // 50MB per resource file
+	MaxImportDocumentSize = 10 * 1024 * 1024 // 10MB per document file (SKILL.md, AGENT.md, PROMPT.md)
+)
 
-// Import error for multiple document files in archive.
-const ErrMsgImportMultipleDocuments = "multiple document files found in archive"
+// Import error messages.
+const (
+	ErrMsgImportMultipleDocuments = "multiple document files found in archive"
+	ErrMsgInvalidResourcePath     = "resource path contains traversal or absolute path"
+	ErrMsgImportFileTooLarge      = "file exceeds maximum allowed size"
+)
 
 // Credential validation error messages
 const (
 	ErrMsgCredentialMissingRef = "credential default label not found in credentials map"
 )
+
+// DefaultEnvDenyPatterns returns the default glob patterns for environment variable
+// names that are blocked to prevent accidental secret exfiltration.
+// Returns a fresh slice each call — callers cannot mutate the defaults.
+// Override with WithEnvDenylist(nil) to allow all, or WithEnvAllowlist to restrict.
+func DefaultEnvDenyPatterns() []string {
+	return []string{
+		"*_KEY",
+		"*_SECRET",
+		"*_TOKEN",
+		"*_PASSWORD",
+		"*_PASS",
+		"*_CREDENTIAL",
+		"*_CREDENTIALS",
+		"*_PRIVATE_KEY",
+		"*_API_KEY",
+		"*_PASSPHRASE",
+		"*_CONN_STRING",
+		"*_CONNECTION_STRING",
+		"*_DSN",
+	}
+}

@@ -3,6 +3,8 @@ package exons
 import (
 	"archive/zip"
 	"bytes"
+	"path/filepath"
+	"strings"
 )
 
 // ExportDirectory exports a Spec and optional resources as a zip archive.
@@ -33,9 +35,13 @@ func ExportDirectory(spec *Spec, resources map[string][]byte) ([]byte, error) {
 		return nil, NewExportError(ErrMsgExportZipFailed, err)
 	}
 
-	// Write resources
+	// Write resources (sanitize paths to prevent traversal)
 	for name, data := range resources {
-		rf, resErr := w.Create(name)
+		cleanName := filepath.Clean(name)
+		if filepath.IsAbs(cleanName) || strings.HasPrefix(cleanName, "..") {
+			return nil, NewExportError(ErrMsgInvalidResourcePath, nil)
+		}
+		rf, resErr := w.Create(cleanName)
 		if resErr != nil {
 			return nil, NewExportError(ErrMsgExportZipFailed, resErr)
 		}

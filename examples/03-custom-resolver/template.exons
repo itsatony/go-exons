@@ -1,0 +1,9 @@
+---
+name: timestamped-prompt
+description: A prompt that uses a custom timestamp resolver
+type: prompt
+---
+Report generated at: {~timestamp /~}
+
+Hello {~exons.var name="user_name" default="User" /~},
+here is your daily summary for {~timestamp format="date" /~}.

@@ -72,6 +72,173 @@ func (f *FunctionDef) ToOpenAITool() map[string]any {
 	}
 }
 
+// ToAnthropicTool returns an Anthropic-compatible tool definition map.
+// Format: {"name": ..., "description": ..., "input_schema": ...}
+func (f *FunctionDef) ToAnthropicTool() map[string]any {
+	if f == nil {
+		return nil
+	}
+	result := map[string]any{
+		ToolKeyName: f.Name,
+	}
+	if f.Description != "" {
+		result[ToolKeyDescription] = f.Description
+	}
+	if f.Parameters != nil {
+		result[ToolKeyInputSchema] = f.Parameters
+	}
+	return result
+}
+
+// ToGeminiTool returns a Gemini-compatible tool function declaration map.
+// Format: {"name": ..., "description": ..., "parameters": ...}
+func (f *FunctionDef) ToGeminiTool() map[string]any {
+	if f == nil {
+		return nil
+	}
+	result := map[string]any{
+		ToolKeyName: f.Name,
+	}
+	if f.Description != "" {
+		result[ToolKeyDescription] = f.Description
+	}
+	if f.Parameters != nil {
+		result[ToolKeyParameters] = f.Parameters
+	}
+	return result
+}
+
+// ToMCPTool returns an MCP-compatible tool definition map.
+// Format: {"name": ..., "description": ..., "inputSchema": ...}
+func (f *FunctionDef) ToMCPTool() map[string]any {
+	if f == nil {
+		return nil
+	}
+	result := map[string]any{
+		ToolKeyName: f.Name,
+	}
+	if f.Description != "" {
+		result[ToolKeyDescription] = f.Description
+	}
+	if f.Parameters != nil {
+		result[ToolKeyInputSchemaCamel] = f.Parameters
+	}
+	return result
+}
+
+// ToMistralTool returns a Mistral-compatible tool definition map.
+// Mistral uses OpenAI-compatible format.
+func (f *FunctionDef) ToMistralTool() map[string]any {
+	return f.ToOpenAITool()
+}
+
+// ToCohereTool returns a Cohere-compatible tool definition map.
+// Format: {"name": ..., "description": ..., "parameter_definitions": {...}}
+// Cohere uses a flat parameter_definitions format where each parameter
+// includes its type, description, and required status.
+func (f *FunctionDef) ToCohereTool() map[string]any {
+	if f == nil {
+		return nil
+	}
+	result := map[string]any{
+		ToolKeyName: f.Name,
+	}
+	if f.Description != "" {
+		result[ToolKeyDescription] = f.Description
+	}
+	if f.Parameters != nil {
+		result[ToolKeyParameterDefinitions] = cohereParameterDefs(f.Parameters)
+	}
+	return result
+}
+
+// cohereParameterDefs converts a JSON Schema parameters object to Cohere's
+// flat parameter_definitions format.
+func cohereParameterDefs(params map[string]any) map[string]any {
+	props, _ := params[SchemaKeyProperties].(map[string]any)
+	if props == nil {
+		return nil
+	}
+
+	// Build required set.
+	// Two type paths: YAML unmarshal produces []any, JSON unmarshal produces []string.
+	requiredSet := make(map[string]bool)
+	if reqList, ok := params[ToolKeyRequired]; ok {
+		if reqSlice, ok := reqList.([]any); ok {
+			for _, r := range reqSlice {
+				if s, ok := r.(string); ok {
+					requiredSet[s] = true
+				}
+			}
+		}
+		if reqStrSlice, ok := reqList.([]string); ok {
+			for _, s := range reqStrSlice {
+				requiredSet[s] = true
+			}
+		}
+	}
+
+	defs := make(map[string]any, len(props))
+	for name, schema := range props {
+		def := make(map[string]any)
+		if schemaMap, ok := schema.(map[string]any); ok {
+			if t, ok := schemaMap[ToolKeyType]; ok {
+				def[ToolKeyType] = t
+			}
+			if d, ok := schemaMap[ToolKeyDescription]; ok {
+				def[ToolKeyDescription] = d
+			}
+		}
+		def[ToolKeyRequired] = requiredSet[name]
+		defs[name] = def
+	}
+	return defs
+}
+
+// ToOpenAITools returns all functions as OpenAI-compatible tool definitions.
+func (tc *ToolsConfig) ToOpenAITools() []map[string]any {
+	return toolsConfigToList(tc, (*FunctionDef).ToOpenAITool)
+}
+
+// ToAnthropicTools returns all functions as Anthropic-compatible tool definitions.
+func (tc *ToolsConfig) ToAnthropicTools() []map[string]any {
+	return toolsConfigToList(tc, (*FunctionDef).ToAnthropicTool)
+}
+
+// ToGeminiTools returns all functions as Gemini-compatible tool definitions.
+func (tc *ToolsConfig) ToGeminiTools() []map[string]any {
+	return toolsConfigToList(tc, (*FunctionDef).ToGeminiTool)
+}
+
+// ToMCPTools returns all functions as MCP-compatible tool definitions.
+func (tc *ToolsConfig) ToMCPTools() []map[string]any {
+	return toolsConfigToList(tc, (*FunctionDef).ToMCPTool)
+}
+
+// ToMistralTools returns all functions as Mistral-compatible tool definitions.
+func (tc *ToolsConfig) ToMistralTools() []map[string]any {
+	return toolsConfigToList(tc, (*FunctionDef).ToMistralTool)
+}
+
+// ToCohereTools returns all functions as Cohere-compatible tool definitions.
+func (tc *ToolsConfig) ToCohereTools() []map[string]any {
+	return toolsConfigToList(tc, (*FunctionDef).ToCohereTool)
+}
+
+// toolsConfigToList applies a conversion function to all FunctionDefs in a ToolsConfig.
+func toolsConfigToList(tc *ToolsConfig, convert func(*FunctionDef) map[string]any) []map[string]any {
+	if tc == nil || len(tc.Functions) == 0 {
+		return nil
+	}
+	result := make([]map[string]any, 0, len(tc.Functions))
+	for _, f := range tc.Functions {
+		if tool := convert(f); tool != nil {
+			result = append(result, tool)
+		}
+	}
+	return result
+}
+
 // Clone creates a deep copy of the ToolsConfig.
 func (tc *ToolsConfig) Clone() *ToolsConfig {
 	if tc == nil {

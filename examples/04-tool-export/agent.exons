@@ -1,0 +1,48 @@
+---
+name: weather-agent
+description: An agent that can check weather and set alerts
+type: agent
+execution:
+  provider: openai
+  model: gpt-4o
+  temperature: 0.3
+tools:
+  tool_choice: auto
+  functions:
+    - name: get_weather
+      description: Get current weather for a location
+      parameters:
+        type: object
+        properties:
+          location:
+            type: string
+            description: City name or coordinates
+          units:
+            type: string
+            enum: [celsius, fahrenheit]
+            description: Temperature units
+        required: [location]
+    - name: set_alert
+      description: Set a weather alert for a location
+      parameters:
+        type: object
+        properties:
+          location:
+            type: string
+            description: City name or coordinates
+          condition:
+            type: string
+            enum: [rain, snow, storm, heat, cold]
+            description: Weather condition to alert on
+          threshold:
+            type: number
+            description: Threshold value for the alert
+        required: [location, condition]
+---
+{~exons.message role="system"~}
+You are a weather assistant. Use the available tools to help users with weather queries.
+{~/exons.message~}
+
+{~exons.message role="user"~}
+{~exons.var name="query" default="What is the weather like?" /~}
+{~/exons.message~}

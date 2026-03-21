@@ -56,7 +56,7 @@ func TestExecutor_ExecuteMultipleTextNodes(t *testing.T) {
 
 func TestExecutor_ExecuteVarTag(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	root := &RootNode{
@@ -79,7 +79,7 @@ func TestExecutor_ExecuteVarTag(t *testing.T) {
 
 func TestExecutor_ExecuteVarWithDefault(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	root := &RootNode{
@@ -100,7 +100,7 @@ func TestExecutor_ExecuteVarWithDefault(t *testing.T) {
 
 func TestExecutor_ExecuteRawBlock(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	// Create a raw block with literal tag syntax inside
@@ -120,7 +120,7 @@ func TestExecutor_ExecuteRawBlock(t *testing.T) {
 
 func TestExecutor_ExecuteNestedTags(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 
 	// Register a custom block tag resolver
 	registry.MustRegister(&testBlockResolver{name: "wrapper"})
@@ -164,7 +164,7 @@ func TestExecutor_ExecuteUnknownTag(t *testing.T) {
 
 func TestExecutor_ExecuteMissingVariable(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	root := &RootNode{
@@ -247,7 +247,7 @@ func TestExecutor_ResolverError(t *testing.T) {
 
 func TestExecutor_ComplexTemplate(t *testing.T) {
 	registry := NewRegistry(nil)
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 	// Simulate a parsed template like:
@@ -570,7 +570,7 @@ func (m *mockContextAccessorWithChild) Child(data map[string]any) interface{} {
 func TestExecutor_ExecuteConditional(t *testing.T) {
 	t.Run("if branch evaluates true", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -591,7 +591,7 @@ func TestExecutor_ExecuteConditional(t *testing.T) {
 
 	t.Run("if branch false, else executes", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -615,7 +615,7 @@ func TestExecutor_ExecuteConditional(t *testing.T) {
 
 	t.Run("multiple elseif branches, middle one matches", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -642,7 +642,7 @@ func TestExecutor_ExecuteConditional(t *testing.T) {
 
 	t.Run("no branch matches, else executes", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -668,7 +668,7 @@ func TestExecutor_ExecuteConditional(t *testing.T) {
 
 	t.Run("no branch matches, no else (empty result)", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -688,7 +688,7 @@ func TestExecutor_ExecuteConditional(t *testing.T) {
 
 	t.Run("condition evaluation error propagation", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(nil)
@@ -707,7 +707,7 @@ func TestExecutor_ExecuteConditional(t *testing.T) {
 
 	t.Run("nested conditionals evaluation", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -736,7 +736,7 @@ func TestExecutor_ExecuteConditional(t *testing.T) {
 
 	t.Run("complex boolean expressions", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -812,7 +812,7 @@ func TestExecutor_EvaluateCondition(t *testing.T) {
 func TestExecutor_ExecuteFor(t *testing.T) {
 	t.Run("iteration over []string", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessorWithChild(map[string]any{
@@ -831,7 +831,7 @@ func TestExecutor_ExecuteFor(t *testing.T) {
 
 	t.Run("iteration over []int", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessorWithChild(map[string]any{
@@ -850,7 +850,7 @@ func TestExecutor_ExecuteFor(t *testing.T) {
 
 	t.Run("iteration over []any", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessorWithChild(map[string]any{
@@ -869,7 +869,7 @@ func TestExecutor_ExecuteFor(t *testing.T) {
 
 	t.Run("iteration over map[string]any (sorted keys)", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessorWithChild(map[string]any{
@@ -895,7 +895,7 @@ func TestExecutor_ExecuteFor(t *testing.T) {
 
 	t.Run("empty collection (zero iterations)", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessorWithChild(map[string]any{
@@ -913,7 +913,7 @@ func TestExecutor_ExecuteFor(t *testing.T) {
 
 	t.Run("nil collection (treated as empty)", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessorWithChild(map[string]any{
@@ -931,7 +931,7 @@ func TestExecutor_ExecuteFor(t *testing.T) {
 
 	t.Run("limit applied (fewer iterations)", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessorWithChild(map[string]any{
@@ -949,7 +949,7 @@ func TestExecutor_ExecuteFor(t *testing.T) {
 
 	t.Run("index variable populated correctly", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessorWithChild(map[string]any{
@@ -970,7 +970,7 @@ func TestExecutor_ExecuteFor(t *testing.T) {
 
 	t.Run("child context isolation", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessorWithChild(map[string]any{
@@ -993,7 +993,7 @@ func TestExecutor_ExecuteFor(t *testing.T) {
 
 	t.Run("collection path not found (error)", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessorWithChild(map[string]any{})
@@ -1009,7 +1009,7 @@ func TestExecutor_ExecuteFor(t *testing.T) {
 
 	t.Run("non-iterable type (error)", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessorWithChild(map[string]any{
@@ -1027,7 +1027,7 @@ func TestExecutor_ExecuteFor(t *testing.T) {
 
 	t.Run("nested loops", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessorWithChild(map[string]any{
@@ -1052,7 +1052,7 @@ func TestExecutor_ExecuteFor(t *testing.T) {
 
 	t.Run("context does not support child creation", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		// Use regular mock without child support
@@ -1074,7 +1074,7 @@ func TestExecutor_ExecuteFor(t *testing.T) {
 func TestExecutor_ExecuteSwitch(t *testing.T) {
 	t.Run("case matches via value comparison", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -1097,7 +1097,7 @@ func TestExecutor_ExecuteSwitch(t *testing.T) {
 
 	t.Run("case matches via eval expression", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -1120,7 +1120,7 @@ func TestExecutor_ExecuteSwitch(t *testing.T) {
 
 	t.Run("second case matches (first doesn't)", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -1146,7 +1146,7 @@ func TestExecutor_ExecuteSwitch(t *testing.T) {
 
 	t.Run("no case matches, default executes", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -1173,7 +1173,7 @@ func TestExecutor_ExecuteSwitch(t *testing.T) {
 
 	t.Run("no case matches, no default (empty result)", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -1193,7 +1193,7 @@ func TestExecutor_ExecuteSwitch(t *testing.T) {
 
 	t.Run("integer switch values", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -1216,7 +1216,7 @@ func TestExecutor_ExecuteSwitch(t *testing.T) {
 
 	t.Run("boolean switch values", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -1239,7 +1239,7 @@ func TestExecutor_ExecuteSwitch(t *testing.T) {
 
 	t.Run("string switch values", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -1262,7 +1262,7 @@ func TestExecutor_ExecuteSwitch(t *testing.T) {
 
 	t.Run("nested path expressions in switch", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -1282,7 +1282,7 @@ func TestExecutor_ExecuteSwitch(t *testing.T) {
 
 	t.Run("case evaluation error propagation", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -1302,7 +1302,7 @@ func TestExecutor_ExecuteSwitch(t *testing.T) {
 
 	t.Run("nested switch blocks", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(map[string]any{
@@ -1330,7 +1330,7 @@ func TestExecutor_ExecuteSwitch(t *testing.T) {
 
 	t.Run("switch expression evaluation error", func(t *testing.T) {
 		registry := NewRegistry(nil)
-		RegisterBuiltins(registry)
+		RegisterBuiltins(registry, BuiltinConfig{})
 		executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
 
 		ctx := newMockContextAccessor(nil)
@@ -1533,4 +1533,166 @@ func TestSortStrings(t *testing.T) {
 		sortStrings(input)
 		assert.Equal(t, []string{"a", "a", "b", "b"}, input)
 	})
+}
+
+// --- Tests for MaxOutputSize enforcement ---
+
+func TestOutputSize_ExceedsLimit(t *testing.T) {
+	registry := NewRegistry(nil)
+	RegisterBuiltins(registry, BuiltinConfig{})
+
+	config := ExecutorConfig{
+		MaxDepth:      DefaultMaxDepth,
+		MaxOutputSize: 100,
+	}
+	executor := NewExecutor(registry, config, nil)
+
+	// Create a template that produces output > 100 bytes
+	// Use multiple text nodes that together exceed the limit
+	longText := strings.Repeat("A", 60)
+	root := &RootNode{
+		Children: []Node{
+			NewTextNode(longText, Position{Line: 1, Column: 1}),
+			NewTextNode(longText, Position{Line: 1, Column: 61}),
+		},
+	}
+
+	ctx := newMockContextAccessor(nil)
+	_, err := executor.Execute(context.Background(), root, ctx)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), ErrMsgOutputSizeExceeded)
+}
+
+func TestOutputSize_UnderLimit(t *testing.T) {
+	registry := NewRegistry(nil)
+	RegisterBuiltins(registry, BuiltinConfig{})
+
+	config := ExecutorConfig{
+		MaxDepth:      DefaultMaxDepth,
+		MaxOutputSize: 100,
+	}
+	executor := NewExecutor(registry, config, nil)
+
+	// Create a template that produces output under 100 bytes
+	root := &RootNode{
+		Children: []Node{
+			NewTextNode("Hello, World!", Position{Line: 1, Column: 1}),
+		},
+	}
+
+	ctx := newMockContextAccessor(nil)
+	result, err := executor.Execute(context.Background(), root, ctx)
+
+	require.NoError(t, err)
+	assert.Equal(t, "Hello, World!", result)
+}
+
+func TestOutputSize_ZeroMeansUnlimited(t *testing.T) {
+	registry := NewRegistry(nil)
+	RegisterBuiltins(registry, BuiltinConfig{})
+
+	config := ExecutorConfig{
+		MaxDepth:      DefaultMaxDepth,
+		MaxOutputSize: 0, // Unlimited
+	}
+	executor := NewExecutor(registry, config, nil)
+
+	// Create a template with large output
+	largeText := strings.Repeat("X", 100000)
+	root := &RootNode{
+		Children: []Node{
+			NewTextNode(largeText, Position{Line: 1, Column: 1}),
+		},
+	}
+
+	ctx := newMockContextAccessor(nil)
+	result, err := executor.Execute(context.Background(), root, ctx)
+
+	require.NoError(t, err)
+	assert.Equal(t, largeText, result)
+}
+
+func TestOutputSize_ExactlyAtLimit(t *testing.T) {
+	registry := NewRegistry(nil)
+	RegisterBuiltins(registry, BuiltinConfig{})
+
+	config := ExecutorConfig{
+		MaxDepth:      DefaultMaxDepth,
+		MaxOutputSize: 50,
+	}
+	executor := NewExecutor(registry, config, nil)
+
+	// Create output that is exactly at the limit
+	exactText := strings.Repeat("B", 50)
+	root := &RootNode{
+		Children: []Node{
+			NewTextNode(exactText, Position{Line: 1, Column: 1}),
+		},
+	}
+
+	ctx := newMockContextAccessor(nil)
+	result, err := executor.Execute(context.Background(), root, ctx)
+
+	require.NoError(t, err)
+	assert.Equal(t, exactText, result)
+}
+
+func TestOutputSize_OneByteOverLimit(t *testing.T) {
+	registry := NewRegistry(nil)
+	RegisterBuiltins(registry, BuiltinConfig{})
+
+	config := ExecutorConfig{
+		MaxDepth:      DefaultMaxDepth,
+		MaxOutputSize: 50,
+	}
+	executor := NewExecutor(registry, config, nil)
+
+	// First node fills buffer to 50, second adds 1 more — should fail
+	root := &RootNode{
+		Children: []Node{
+			NewTextNode(strings.Repeat("C", 50), Position{Line: 1, Column: 1}),
+			NewTextNode("D", Position{Line: 1, Column: 51}),
+		},
+	}
+
+	ctx := newMockContextAccessor(nil)
+	_, err := executor.Execute(context.Background(), root, ctx)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), ErrMsgOutputSizeExceeded)
+}
+
+func TestOutputSize_WithVarTags(t *testing.T) {
+	registry := NewRegistry(nil)
+	RegisterBuiltins(registry, BuiltinConfig{})
+
+	config := ExecutorConfig{
+		MaxDepth:      DefaultMaxDepth,
+		MaxOutputSize: 20,
+	}
+	executor := NewExecutor(registry, config, nil)
+
+	// Template: "Hello, {~exons.var name="user" /~}!" where user = long string
+	root := &RootNode{
+		Children: []Node{
+			NewTextNode("Hello, ", Position{Line: 1, Column: 1}),
+			NewSelfClosingTag(TagNameVar, Attributes{AttrName: "user"}, Position{Line: 1, Column: 8}),
+			NewTextNode("!", Position{Line: 1, Column: 30}),
+		},
+	}
+
+	ctx := newMockContextAccessor(map[string]any{
+		"user": strings.Repeat("Z", 20), // 7 + 20 + 1 = 28 > 20
+	})
+
+	_, err := executor.Execute(context.Background(), root, ctx)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), ErrMsgOutputSizeExceeded)
+}
+
+func TestOutputSize_DefaultConfig(t *testing.T) {
+	config := DefaultExecutorConfig()
+	assert.Equal(t, DefaultMaxOutputSize, config.MaxOutputSize)
 }

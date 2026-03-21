@@ -1,7 +1,7 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.10.0
+  version: 0.11.0
 custom:
   description: Agent specification format for Go — exons define what agents do
   go_version: "1.24"

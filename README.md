@@ -292,10 +292,15 @@ engine.RegisterResolver(&MyResolver{})
 ### Custom Functions
 
 ```go
-engine.RegisterFunc("shout", func(args ...any) (any, error) {
-    return strings.ToUpper(fmt.Sprint(args[0])), nil
+engine.RegisterFunc(&exons.Func{
+    Name:    "shout",
+    MinArgs: 1,
+    MaxArgs: 1,
+    Fn: func(args []any) (any, error) {
+        return strings.ToUpper(fmt.Sprint(args[0])), nil
+    },
 })
-// Use in templates: {~exons.var name="x" /~} → shout(x)
+// Use in expressions: {~exons.if eval="shout(name) == 'ALICE'"~}...{~/exons.if~}
 ```
 
 ### Message Extraction
@@ -342,8 +347,12 @@ Metadata enriches Agent Cards: dispatch keywords become skill tags, registry ver
 ## Token Estimation
 
 ```go
-estimate, _ := exons.EstimateTokens(source, data)
-// estimate.InputTokens, estimate.OutputTokens, estimate.TotalTokens
+// Estimate tokens for raw text
+estimate := exons.EstimateTokens(source)
+// estimate.EstimatedGPT, estimate.EstimatedClaude, estimate.EstimatedGeneric
+
+// Or estimate after template execution
+estimate, _ := tmpl.EstimateTokens(ctx, data)
 ```
 
 ## Debug & Validation
@@ -358,6 +367,51 @@ dryRun, _ := tmpl.DryRun()
 // Human-readable execution walkthrough
 explanation, _ := tmpl.Explain(ctx, data)
 ```
+
+## Tool Format Export
+
+Define tools once in the spec, export to any provider's format:
+
+```go
+spec, _ := exons.Parse(data)
+for _, fn := range spec.Tools.Functions {
+    openai := fn.ToOpenAITool()       // {"type":"function","function":{...}}
+    anthropic := fn.ToAnthropicTool() // {"name":...,"input_schema":{...}}
+    gemini := fn.ToGeminiTool()       // {"name":...,"parameters":{...}}
+    mcp := fn.ToMCPTool()             // {"name":...,"inputSchema":{...}}
+    cohere := fn.ToCohereTool()       // {"name":...,"parameter_definitions":{...}}
+    mistral := fn.ToMistralTool()     // OpenAI-compatible format
+}
+
+// Or use batch methods on ToolsConfig
+openAITools := spec.Tools.ToOpenAITools()
+anthropicTools := spec.Tools.ToAnthropicTools()
+```
+
+## Security
+
+The template engine is security-hardened by default:
+
+- **Env var access control**: `{~exons.env~}` blocks common secret patterns (`*_KEY`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`, etc.) by default. Configure with `WithEnvAllowlist`, `WithEnvDenylist`, or `WithEnvDisabled`.
+- **Output size limits**: Rendered output capped at 10MB by default (`WithMaxOutputSize` to override).
+- **Zip import protection**: Path traversal and decompression bomb defenses built in.
+- **Recursion limits**: Template inclusion, inheritance, and ref resolution all have configurable depth limits.
+
+## JSON Schema
+
+A JSON Schema for validating `.exons` YAML frontmatter ships at `schema/exons.schema.json`. Use it with VS Code's YAML extension or in CI pipelines.
+
+## Examples
+
+The `examples/` directory contains 7 standalone Go programs covering core workflows. Each is runnable with `go run .`:
+
+1. `01-basic-prompt` — Parse and execute a template
+2. `02-chat-agent` — Extract structured messages
+3. `03-custom-resolver` — Extend the template engine
+4. `04-tool-export` — Export tools to all provider formats
+5. `05-template-composition` — Compose agents from skills via SpecResolver
+6. `06-validation-and-debug` — Validate, dry-run, explain
+7. `07-a2a-agent-card` — Generate A2A Agent Cards
 
 ## Editor Support
 

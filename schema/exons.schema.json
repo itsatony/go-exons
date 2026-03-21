@@ -1,0 +1,1005 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/itsatony/go-exons/schema/exons.schema.json",
+  "title": "Exons Spec",
+  "description": "JSON Schema for the YAML frontmatter of .exons agent specification files. Validates the Spec struct defined in github.com/itsatony/go-exons.",
+  "type": "object",
+  "required": ["name", "type"],
+  "additionalProperties": true,
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Unique slug identifier for this spec. Must start with a lowercase letter followed by lowercase letters, digits, or hyphens.",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "maxLength": 64
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of the spec.",
+      "maxLength": 1024
+    },
+    "type": {
+      "$ref": "#/$defs/DocumentType"
+    },
+    "execution": {
+      "$ref": "#/$defs/ExecutionConfig"
+    },
+    "inputs": {
+      "type": "object",
+      "description": "Input parameter definitions keyed by parameter name.",
+      "additionalProperties": {
+        "$ref": "#/$defs/InputDef"
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "description": "Output parameter definitions keyed by parameter name.",
+      "additionalProperties": {
+        "$ref": "#/$defs/OutputDef"
+      }
+    },
+    "sample": {
+      "type": "object",
+      "description": "Sample input data for testing and documentation."
+    },
+    "skills": {
+      "type": "array",
+      "description": "Referenced skills for agent composition.",
+      "items": {
+        "$ref": "#/$defs/SkillRef"
+      }
+    },
+    "tools": {
+      "$ref": "#/$defs/ToolsConfig"
+    },
+    "constraints": {
+      "$ref": "#/$defs/ConstraintsConfig"
+    },
+    "messages": {
+      "type": "array",
+      "description": "Pre-defined conversation messages.",
+      "items": {
+        "$ref": "#/$defs/MessageTemplate"
+      }
+    },
+    "context": {
+      "type": "object",
+      "description": "Arbitrary context data passed to template execution."
+    },
+    "credentials": {
+      "type": "object",
+      "description": "Credential references keyed by label.",
+      "additionalProperties": {
+        "$ref": "#/$defs/CredentialRef"
+      }
+    },
+    "credential": {
+      "type": "string",
+      "description": "Default credential label (must reference a key in credentials map)."
+    },
+    "memory": {
+      "$ref": "#/$defs/MemorySpec"
+    },
+    "dispatch": {
+      "$ref": "#/$defs/DispatchSpec"
+    },
+    "verifications": {
+      "type": "array",
+      "description": "Declarative test/verification cases for this agent.",
+      "items": {
+        "$ref": "#/$defs/VerificationCase"
+      }
+    },
+    "registry": {
+      "$ref": "#/$defs/RegistrySpec"
+    },
+    "safety": {
+      "$ref": "#/$defs/SafetyConfig"
+    }
+  },
+  "$defs": {
+    "DocumentType": {
+      "type": "string",
+      "description": "The kind of document: prompt (simple template), skill (reusable capability), or agent (full agent definition).",
+      "enum": ["prompt", "skill", "agent"]
+    },
+    "InputDef": {
+      "type": "object",
+      "description": "Defines an input parameter for the spec.",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Data type of the input.",
+          "enum": ["string", "number", "boolean", "array", "object"]
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of this input."
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether this input is required.",
+          "default": false
+        },
+        "default": {
+          "description": "Default value when the input is not provided."
+        }
+      }
+    },
+    "OutputDef": {
+      "type": "object",
+      "description": "Defines an output parameter for the spec.",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Data type of the output.",
+          "enum": ["string", "number", "boolean", "array", "object"]
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of this output."
+        }
+      }
+    },
+    "SkillRef": {
+      "type": "object",
+      "description": "References a skill for agent composition.",
+      "required": ["slug"],
+      "additionalProperties": false,
+      "properties": {
+        "slug": {
+          "type": "string",
+          "description": "Slug identifier of the referenced skill.",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "injection": {
+          "type": "string",
+          "description": "How the skill is injected into the agent context.",
+          "enum": ["none", "system_prompt", "user_context"]
+        },
+        "credential": {
+          "type": "string",
+          "description": "Credential label to use for this skill (must exist in the credentials map)."
+        }
+      }
+    },
+    "ToolsConfig": {
+      "type": "object",
+      "description": "Configures tool availability for an agent.",
+      "additionalProperties": false,
+      "properties": {
+        "functions": {
+          "type": "array",
+          "description": "Tool function definitions.",
+          "items": {
+            "$ref": "#/$defs/FunctionDef"
+          }
+        },
+        "mcp_servers": {
+          "type": "array",
+          "description": "MCP server references.",
+          "items": {
+            "$ref": "#/$defs/MCPServer"
+          }
+        },
+        "tool_choice": {
+          "type": "string",
+          "description": "Tool selection strategy (provider-specific, e.g. 'auto', 'none', 'required', or a tool name)."
+        },
+        "parallel_tool_calls": {
+          "type": "boolean",
+          "description": "Whether to allow parallel tool calls."
+        },
+        "allow": {
+          "type": "array",
+          "description": "Allowlist of tool names the agent may use.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "FunctionDef": {
+      "type": "object",
+      "description": "Defines a tool function.",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Function name."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of the function."
+        },
+        "parameters": {
+          "type": "object",
+          "description": "JSON Schema describing the function parameters."
+        }
+      }
+    },
+    "MCPServer": {
+      "type": "object",
+      "description": "References an MCP (Model Context Protocol) server.",
+      "required": ["name", "url"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "MCP server name."
+        },
+        "url": {
+          "type": "string",
+          "description": "MCP server URL.",
+          "format": "uri"
+        }
+      }
+    },
+    "ConstraintsConfig": {
+      "type": "object",
+      "description": "Defines agent behavioral and operational constraints.",
+      "additionalProperties": false,
+      "properties": {
+        "behavioral": {
+          "type": "array",
+          "description": "Behavioral constraint descriptions.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "safety": {
+          "type": "array",
+          "description": "Safety constraint descriptions.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "operational": {
+          "$ref": "#/$defs/OperationalConstraints"
+        }
+      }
+    },
+    "OperationalConstraints": {
+      "type": "object",
+      "description": "Hard limits on agent execution.",
+      "additionalProperties": false,
+      "properties": {
+        "max_turns": {
+          "type": "integer",
+          "description": "Maximum number of conversation turns.",
+          "minimum": 1
+        },
+        "max_tokens_per_turn": {
+          "type": "integer",
+          "description": "Maximum tokens per turn.",
+          "minimum": 1
+        },
+        "allowed_domains": {
+          "type": "array",
+          "description": "Domain allowlist for network access.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "blocked_domains": {
+          "type": "array",
+          "description": "Domain blocklist for network access.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "description": "Execution timeout in seconds.",
+          "minimum": 1
+        },
+        "max_tool_calls": {
+          "type": "integer",
+          "description": "Maximum number of tool calls allowed.",
+          "minimum": 1
+        }
+      }
+    },
+    "MessageTemplate": {
+      "type": "object",
+      "description": "A pre-defined conversation message.",
+      "required": ["role", "content"],
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "type": "string",
+          "description": "Message role.",
+          "enum": ["system", "user", "assistant", "tool"]
+        },
+        "content": {
+          "type": "string",
+          "description": "Message content (may contain template syntax)."
+        },
+        "cache": {
+          "type": "boolean",
+          "description": "Whether this message should be cached.",
+          "default": false
+        }
+      }
+    },
+    "CredentialRef": {
+      "type": "object",
+      "description": "Declares a credential for provider authentication. go-exons stores but does NOT resolve credentials.",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "Provider that this credential authenticates with."
+        },
+        "label": {
+          "type": "string",
+          "description": "Human-readable label for the credential."
+        },
+        "ref": {
+          "type": "string",
+          "description": "Reference identifier for credential resolution."
+        },
+        "scopes": {
+          "type": "array",
+          "description": "Authorization scopes for this credential.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "MemorySpec": {
+      "type": "object",
+      "description": "Configures agent memory behavior. go-exons stores this declaration; memory implementation is the consumer's responsibility.",
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "type": "string",
+          "description": "Primary namespace for memory isolation.",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "auto_recall": {
+          "type": "boolean",
+          "description": "Hint that the runtime should recall relevant memories before each turn."
+        },
+        "auto_record": {
+          "type": "boolean",
+          "description": "Hint that the runtime should record important facts after each turn."
+        },
+        "read_scopes": {
+          "type": "array",
+          "description": "Additional scopes to read from (read-only).",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          }
+        }
+      }
+    },
+    "DispatchSpec": {
+      "type": "object",
+      "description": "Configures multi-agent routing rules. go-exons stores this declaration; orchestration is the consumer's responsibility.",
+      "additionalProperties": false,
+      "properties": {
+        "trigger_keywords": {
+          "type": "array",
+          "description": "Terms that suggest this agent should handle a task.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "trigger_description": {
+          "type": "string",
+          "description": "Explains when to route tasks to this agent."
+        },
+        "cost_limit_usd": {
+          "type": "number",
+          "description": "Maximum cost budget for a delegated task in USD.",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      }
+    },
+    "VerificationCase": {
+      "type": "object",
+      "description": "A declarative test specification for an agent.",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique identifier for this verification (slug pattern).",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "description": {
+          "type": "string",
+          "description": "Explains what this verification checks."
+        },
+        "tags": {
+          "type": "array",
+          "description": "Categories for this verification case.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "input": {
+          "type": "object",
+          "description": "Template variables for the verification."
+        },
+        "prompt": {
+          "type": "string",
+          "description": "User message to send to the agent."
+        },
+        "expect": {
+          "$ref": "#/$defs/VerificationExpect"
+        },
+        "ref": {
+          "type": "string",
+          "description": "Points to an external verification definition (mutually exclusive with expect)."
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "description": "Maximum time for this verification in seconds.",
+          "minimum": 1,
+          "maximum": 600
+        }
+      }
+    },
+    "VerificationExpect": {
+      "type": "object",
+      "description": "Defines assertions on the agent's response.",
+      "additionalProperties": false,
+      "properties": {
+        "tool_calls": {
+          "type": "array",
+          "description": "Tool names that must be called.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tool_calls_absent": {
+          "type": "array",
+          "description": "Tool names that must NOT be called.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "output_contains": {
+          "type": "string",
+          "description": "Substring that must appear in the output."
+        },
+        "output_not_contains": {
+          "type": "string",
+          "description": "Substring that must NOT appear in the output."
+        },
+        "output_matches_regex": {
+          "type": "string",
+          "description": "Regular expression pattern that the output must match.",
+          "format": "regex"
+        }
+      }
+    },
+    "RegistrySpec": {
+      "type": "object",
+      "description": "Metadata for agent catalogs and marketplaces.",
+      "additionalProperties": false,
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "description": "Unique identifier for this agent in the registry.",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "origin": {
+          "type": "string",
+          "description": "Provenance declaration: internal, external, or unknown.",
+          "enum": ["internal", "external", "unknown"]
+        },
+        "version": {
+          "type": "string",
+          "description": "Semantic version of this agent specification."
+        }
+      }
+    },
+    "SafetyConfig": {
+      "type": "object",
+      "description": "Runtime safety guardrails. go-exons stores this declaration; enforcement is the consumer's responsibility.",
+      "additionalProperties": false,
+      "properties": {
+        "guardrails": {
+          "type": "string",
+          "description": "Enables or disables runtime safety checks.",
+          "enum": ["enabled", "disabled"]
+        },
+        "require_confirmation_for": {
+          "type": "array",
+          "description": "Tool names that require user confirmation before execution.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deny_tools": {
+          "type": "array",
+          "description": "Tools that this agent must never invoke.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "ExecutionConfig": {
+      "type": "object",
+      "description": "LLM execution parameters parsed from .exons frontmatter.",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "LLM provider identifier.",
+          "enum": ["openai", "anthropic", "google", "gemini", "vertex", "vllm", "azure", "mistral", "cohere"]
+        },
+        "model": {
+          "type": "string",
+          "description": "Model identifier (e.g. 'gpt-4', 'claude-sonnet-4-5')."
+        },
+        "temperature": {
+          "type": "number",
+          "description": "Sampling temperature.",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "max_tokens": {
+          "type": "integer",
+          "description": "Maximum tokens in the response.",
+          "minimum": 1
+        },
+        "top_p": {
+          "type": "number",
+          "description": "Nucleus sampling threshold.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "top_k": {
+          "type": "integer",
+          "description": "Top-K sampling parameter.",
+          "minimum": 1
+        },
+        "stop_sequences": {
+          "type": "array",
+          "description": "Sequences that cause the model to stop generating.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "min_p": {
+          "type": "number",
+          "description": "Minimum probability threshold for sampling.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "repetition_penalty": {
+          "type": "number",
+          "description": "Penalty for repeated tokens.",
+          "minimum": 0
+        },
+        "seed": {
+          "type": "integer",
+          "description": "Random seed for reproducibility."
+        },
+        "logprobs": {
+          "type": "integer",
+          "description": "Number of log probabilities to return.",
+          "minimum": 0
+        },
+        "stop_token_ids": {
+          "type": "array",
+          "description": "Token IDs that cause the model to stop generating.",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "logit_bias": {
+          "type": "object",
+          "description": "Token ID to bias value mapping.",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "frequency_penalty": {
+          "type": "number",
+          "description": "Penalty for frequent tokens.",
+          "minimum": -2,
+          "maximum": 2
+        },
+        "presence_penalty": {
+          "type": "number",
+          "description": "Penalty for tokens already present.",
+          "minimum": -2,
+          "maximum": 2
+        },
+        "n": {
+          "type": "integer",
+          "description": "Number of completions to generate.",
+          "minimum": 1,
+          "maximum": 128
+        },
+        "max_completion_tokens": {
+          "type": "integer",
+          "description": "Maximum completion tokens (OpenAI-specific alias for max_tokens).",
+          "minimum": 1
+        },
+        "reasoning_effort": {
+          "type": "string",
+          "description": "Reasoning effort level.",
+          "enum": ["low", "medium", "high", "max"]
+        },
+        "top_a": {
+          "type": "number",
+          "description": "Top-A sampling parameter.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "user": {
+          "type": "string",
+          "description": "User identifier for tracking."
+        },
+        "service_tier": {
+          "type": "string",
+          "description": "Service tier selection.",
+          "enum": ["auto", "default"]
+        },
+        "store": {
+          "type": "boolean",
+          "description": "Whether to store completions."
+        },
+        "thinking": {
+          "$ref": "#/$defs/ThinkingConfig"
+        },
+        "response_format": {
+          "$ref": "#/$defs/ResponseFormat"
+        },
+        "guided_decoding": {
+          "$ref": "#/$defs/GuidedDecoding"
+        },
+        "modality": {
+          "type": "string",
+          "description": "Execution intent signal.",
+          "enum": [
+            "text", "image", "audio_speech", "audio_transcription",
+            "music", "sound_effects", "embedding", "video", "image_edit"
+          ]
+        },
+        "image": {
+          "$ref": "#/$defs/ImageConfig"
+        },
+        "audio": {
+          "$ref": "#/$defs/AudioConfig"
+        },
+        "embedding": {
+          "$ref": "#/$defs/EmbeddingConfig"
+        },
+        "streaming": {
+          "$ref": "#/$defs/StreamingConfig"
+        },
+        "async": {
+          "$ref": "#/$defs/AsyncConfig"
+        },
+        "provider_options": {
+          "type": "object",
+          "description": "Provider-specific passthrough options."
+        }
+      }
+    },
+    "ThinkingConfig": {
+      "type": "object",
+      "description": "Extended thinking mode configuration (Anthropic Claude).",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether extended thinking is enabled."
+        },
+        "budget_tokens": {
+          "type": "integer",
+          "description": "Token budget for thinking.",
+          "minimum": 1
+        }
+      }
+    },
+    "ResponseFormat": {
+      "type": "object",
+      "description": "Structured output enforcement configuration.",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Response format type.",
+          "enum": ["text", "json_object", "json_schema", "enum"]
+        },
+        "json_schema": {
+          "$ref": "#/$defs/JSONSchemaSpec"
+        },
+        "enum": {
+          "$ref": "#/$defs/EnumConstraint"
+        }
+      }
+    },
+    "JSONSchemaSpec": {
+      "type": "object",
+      "description": "JSON schema definition for structured outputs.",
+      "required": ["name", "schema"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the schema (required for API calls)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of what the schema represents."
+        },
+        "schema": {
+          "type": "object",
+          "description": "The JSON schema definition."
+        },
+        "strict": {
+          "type": "boolean",
+          "description": "Enables strict schema validation.",
+          "default": false
+        },
+        "additionalProperties": {
+          "type": "boolean",
+          "description": "Controls whether extra properties are allowed."
+        },
+        "propertyOrdering": {
+          "type": "array",
+          "description": "Order of properties in output (Gemini 2.5+ only).",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "EnumConstraint": {
+      "type": "object",
+      "description": "Enum/choice constraints for outputs.",
+      "required": ["values"],
+      "additionalProperties": false,
+      "properties": {
+        "values": {
+          "type": "array",
+          "description": "Allowed enum values.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "description": {
+          "type": "string",
+          "description": "Explains the enum choices."
+        }
+      }
+    },
+    "GuidedDecoding": {
+      "type": "object",
+      "description": "vLLM structured output constraints.",
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "type": "string",
+          "description": "Guided decoding engine.",
+          "enum": ["xgrammar", "outlines", "lm_format_enforcer", "auto"]
+        },
+        "json": {
+          "type": "object",
+          "description": "JSON schema for structured output."
+        },
+        "regex": {
+          "type": "string",
+          "description": "Regex pattern constraint."
+        },
+        "choice": {
+          "type": "array",
+          "description": "Allowed output choices.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "grammar": {
+          "type": "string",
+          "description": "Context-free grammar constraint."
+        },
+        "whitespace_pattern": {
+          "type": "string",
+          "description": "Controls whitespace handling."
+        }
+      }
+    },
+    "ImageConfig": {
+      "type": "object",
+      "description": "Image generation parameters.",
+      "additionalProperties": false,
+      "properties": {
+        "width": {
+          "type": "integer",
+          "description": "Width of the generated image in pixels.",
+          "minimum": 1,
+          "maximum": 8192
+        },
+        "height": {
+          "type": "integer",
+          "description": "Height of the generated image in pixels.",
+          "minimum": 1,
+          "maximum": 8192
+        },
+        "size": {
+          "type": "string",
+          "description": "Provider-specific size string (e.g. '1024x1024')."
+        },
+        "quality": {
+          "type": "string",
+          "description": "Quality of the generated image.",
+          "enum": ["standard", "hd", "low", "medium", "high"]
+        },
+        "style": {
+          "type": "string",
+          "description": "Style of the generated image.",
+          "enum": ["natural", "vivid"]
+        },
+        "aspect_ratio": {
+          "type": "string",
+          "description": "Aspect ratio for the generated image (e.g. '16:9', '1:1')."
+        },
+        "negative_prompt": {
+          "type": "string",
+          "description": "Content to avoid in generation."
+        },
+        "num_images": {
+          "type": "integer",
+          "description": "Number of images to generate.",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "guidance_scale": {
+          "type": "number",
+          "description": "Controls adherence to the prompt.",
+          "minimum": 0,
+          "maximum": 30
+        },
+        "steps": {
+          "type": "integer",
+          "description": "Number of diffusion steps.",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "strength": {
+          "type": "number",
+          "description": "Controls how much to transform a reference image.",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "AudioConfig": {
+      "type": "object",
+      "description": "Audio generation (TTS/transcription) parameters.",
+      "additionalProperties": false,
+      "properties": {
+        "voice": {
+          "type": "string",
+          "description": "Voice name (e.g. 'alloy', 'echo', 'nova')."
+        },
+        "voice_id": {
+          "type": "string",
+          "description": "Provider-specific voice identifier."
+        },
+        "speed": {
+          "type": "number",
+          "description": "Playback speed.",
+          "minimum": 0.25,
+          "maximum": 4.0
+        },
+        "output_format": {
+          "type": "string",
+          "description": "Audio output format.",
+          "enum": ["mp3", "opus", "aac", "flac", "wav", "pcm"]
+        },
+        "duration": {
+          "type": "number",
+          "description": "Maximum duration in seconds.",
+          "exclusiveMinimum": 0,
+          "maximum": 600
+        },
+        "language": {
+          "type": "string",
+          "description": "Language code (e.g. 'en', 'es')."
+        }
+      }
+    },
+    "EmbeddingConfig": {
+      "type": "object",
+      "description": "Embedding generation parameters.",
+      "additionalProperties": false,
+      "properties": {
+        "dimensions": {
+          "type": "integer",
+          "description": "Number of embedding dimensions.",
+          "minimum": 1,
+          "maximum": 65536
+        },
+        "format": {
+          "type": "string",
+          "description": "Embedding wire encoding format.",
+          "enum": ["float", "base64"]
+        },
+        "input_type": {
+          "type": "string",
+          "description": "Classifies the input for retrieval/search optimization.",
+          "enum": [
+            "search_query", "search_document", "classification",
+            "clustering", "semantic_similarity"
+          ]
+        },
+        "output_dtype": {
+          "type": "string",
+          "description": "Quantization data type.",
+          "enum": ["float32", "int8", "uint8", "binary", "ubinary"]
+        },
+        "truncation": {
+          "type": "string",
+          "description": "How inputs exceeding the model max length are handled.",
+          "enum": ["none", "start", "end"]
+        },
+        "normalize": {
+          "type": "boolean",
+          "description": "Whether embeddings are L2-normalized (vLLM)."
+        },
+        "pooling_type": {
+          "type": "string",
+          "description": "Pooling strategy (vLLM).",
+          "enum": ["mean", "cls", "last"]
+        }
+      }
+    },
+    "StreamingConfig": {
+      "type": "object",
+      "description": "Streaming execution behavior configuration.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether streaming is enabled."
+        },
+        "method": {
+          "type": "string",
+          "description": "Streaming transport method.",
+          "enum": ["sse", "websocket"]
+        }
+      }
+    },
+    "AsyncConfig": {
+      "type": "object",
+      "description": "Asynchronous execution behavior configuration.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether async execution is enabled."
+        },
+        "poll_interval_seconds": {
+          "type": "number",
+          "description": "Polling interval in seconds.",
+          "exclusiveMinimum": 0
+        },
+        "poll_timeout_seconds": {
+          "type": "number",
+          "description": "Maximum polling duration in seconds.",
+          "exclusiveMinimum": 0
+        }
+      }
+    }
+  }
+}

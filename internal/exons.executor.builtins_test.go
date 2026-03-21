@@ -239,7 +239,7 @@ func TestRawResolver_Validate(t *testing.T) {
 func TestRegisterBuiltins(t *testing.T) {
 	registry := NewRegistry(nil)
 
-	RegisterBuiltins(registry)
+	RegisterBuiltins(registry, BuiltinConfig{})
 
 	// Verify all built-ins are registered
 	assert.True(t, registry.Has(TagNameVar))

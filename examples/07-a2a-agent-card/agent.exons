@@ -1,0 +1,67 @@
+---
+name: research-agent
+description: A research agent that searches and summarizes information
+type: agent
+execution:
+  provider: anthropic
+  model: claude-sonnet-4-6
+  temperature: 0.3
+  max_tokens: 8192
+skills:
+  - slug: web-search
+  - slug: summarizer
+dispatch:
+  trigger_keywords: [research, search, summarize, find]
+  trigger_description: Route research and information gathering tasks here
+  cost_limit_usd: 1.00
+registry:
+  namespace: research-agent
+  origin: internal
+  version: 2.1.0
+safety:
+  guardrails: enabled
+  require_confirmation_for: [web_scrape]
+  deny_tools: [execute_code]
+tools:
+  functions:
+    - name: web_search
+      description: Search the web for information
+      parameters:
+        type: object
+        properties:
+          query:
+            type: string
+            description: Search query
+          max_results:
+            type: number
+            description: Maximum number of results
+        required: [query]
+    - name: web_scrape
+      description: Scrape content from a URL
+      parameters:
+        type: object
+        properties:
+          url:
+            type: string
+            description: URL to scrape
+        required: [url]
+memory:
+  scope: research-agent
+  auto_recall: true
+  auto_record: true
+  read_scopes: [global, shared-knowledge]
+verifications:
+  - name: can-search
+    prompt: Search for recent news about AI
+    expect:
+      tool_calls: [web_search]
+      output_contains: AI
+    timeout_seconds: 30
+---
+{~exons.message role="system"~}
+You are a research agent. Search for information and provide well-sourced summaries.
+{~/exons.message~}
+
+{~exons.message role="user"~}
+{~exons.var name="query" default="What are the latest developments in AI?" /~}
+{~/exons.message~}

@@ -1,0 +1,14 @@
+---
+name: hello-prompt
+description: A simple greeting prompt
+type: prompt
+---
+Hello, {~exons.var name="user_name" default="World" /~}!
+
+Welcome to go-exons. Today's topic is: {~exons.var name="topic" default="template engines" /~}.
+
+{~exons.if eval="user_name != 'World'"~}
+We're glad to have you here, {~exons.var name="user_name" default="friend" /~}.
+{~exons.else~}
+Please tell us your name!
+{~/exons.if~}
