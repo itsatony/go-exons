@@ -1,10 +1,33 @@
 package exons
 
+import "github.com/itsatony/go-exons/execution"
+
 // SkillRef references a skill for agent composition.
 type SkillRef struct {
-	Slug       string `yaml:"slug" json:"slug"`
-	Injection  string `yaml:"injection,omitempty" json:"injection,omitempty"`
-	Credential string `yaml:"credential,omitempty" json:"credential,omitempty"`
+	Slug         string            `yaml:"slug" json:"slug"`
+	Version      string            `yaml:"version,omitempty" json:"version,omitempty"`
+	Injection    string            `yaml:"injection,omitempty" json:"injection,omitempty"`
+	Inline       *InlineSkill      `yaml:"inline,omitempty" json:"inline,omitempty"`
+	Execution    *execution.Config `yaml:"execution,omitempty" json:"execution,omitempty"`
+	Credential   string            `yaml:"credential,omitempty" json:"credential,omitempty"`
+	Requirements *Requirements     `yaml:"requirements,omitempty" json:"requirements,omitempty"`
+}
+
+// InlineSkill defines an inline skill embedded directly within an agent spec.
+// Alternative to referencing an external skill by slug.
+type InlineSkill struct {
+	Slug        string `yaml:"slug,omitempty" json:"slug,omitempty"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	Body        string `yaml:"body,omitempty" json:"body,omitempty"`
+	Type        string `yaml:"type,omitempty" json:"type,omitempty"`
+}
+
+// Requirements declares execution requirements for a skill activation.
+// Used to declare what capabilities, modality, or provider binding a skill needs.
+type Requirements struct {
+	Modality        string   `yaml:"modality,omitempty" json:"modality,omitempty"`
+	ProviderBinding string   `yaml:"provider_binding,omitempty" json:"provider_binding,omitempty"`
+	Capabilities    []string `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
 }
 
 // ToolsConfig defines tool availability for an agent.
@@ -16,17 +39,21 @@ type ToolsConfig struct {
 	Allow             []string       `yaml:"allow,omitempty" json:"allow,omitempty"`
 }
 
-// FunctionDef defines a tool function.
+// FunctionDef defines a tool function with optional return schema and strict mode.
 type FunctionDef struct {
 	Name        string         `yaml:"name" json:"name"`
 	Description string         `yaml:"description,omitempty" json:"description,omitempty"`
 	Parameters  map[string]any `yaml:"parameters,omitempty" json:"parameters,omitempty"`
+	Returns     map[string]any `yaml:"returns,omitempty" json:"returns,omitempty"`
+	Strict      bool           `yaml:"strict,omitempty" json:"strict,omitempty"`
 }
 
-// MCPServer references an MCP server.
+// MCPServer references an MCP server with optional transport and tool filtering.
 type MCPServer struct {
-	Name string `yaml:"name" json:"name"`
-	URL  string `yaml:"url" json:"url"`
+	Name      string   `yaml:"name" json:"name"`
+	URL       string   `yaml:"url" json:"url"`
+	Transport string   `yaml:"transport,omitempty" json:"transport,omitempty"`
+	Tools     []string `yaml:"tools,omitempty" json:"tools,omitempty"`
 }
 
 // ConstraintsConfig defines agent behavioral and operational constraints.
@@ -253,6 +280,9 @@ func (tc *ToolsConfig) Clone() *ToolsConfig {
 			if f.Parameters != nil {
 				fCopy.Parameters = deepCopyMap(f.Parameters)
 			}
+			if f.Returns != nil {
+				fCopy.Returns = deepCopyMap(f.Returns)
+			}
 			clone.Functions[i] = &fCopy
 		}
 	}
@@ -261,6 +291,10 @@ func (tc *ToolsConfig) Clone() *ToolsConfig {
 		clone.MCPServers = make([]*MCPServer, len(tc.MCPServers))
 		for i, m := range tc.MCPServers {
 			mCopy := *m
+			if m.Tools != nil {
+				mCopy.Tools = make([]string, len(m.Tools))
+				copy(mCopy.Tools, m.Tools)
+			}
 			clone.MCPServers[i] = &mCopy
 		}
 	}
