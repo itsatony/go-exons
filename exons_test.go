@@ -1407,8 +1407,8 @@ func TestVersion_LoadedFromVersionsYAML(t *testing.T) {
 	// Version must be non-empty and not the fallback
 	assert.NotEmpty(t, Version)
 	assert.NotEqual(t, "0.0.0-unknown", Version)
-	// Must match what's in versions.yaml
-	assert.Equal(t, "0.10.0", Version)
+	// Must look like a semver string
+	assert.Regexp(t, `^\d+\.\d+\.\d+`, Version)
 }
 
 func TestVersionsYAML_Embedded(t *testing.T) {
@@ -1421,7 +1421,8 @@ func TestVersionInfo_ReturnsFullInfo(t *testing.T) {
 	info := VersionInfo()
 	require.NotNil(t, info)
 	assert.Equal(t, "go-exons", info.Project.Name)
-	assert.Equal(t, "0.10.0", info.Project.Version)
+	// Version must match the package-level Version variable (loaded from same source)
+	assert.Equal(t, Version, info.Project.Version)
 }
 
 // =============================================================================
