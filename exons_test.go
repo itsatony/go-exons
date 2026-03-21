@@ -1417,6 +1417,13 @@ func TestVersionsYAML_Embedded(t *testing.T) {
 	assert.Contains(t, string(versionsYAML), "version:")
 }
 
+func TestVersionInfo_ReturnsFullInfo(t *testing.T) {
+	info := VersionInfo()
+	require.NotNil(t, info)
+	assert.Equal(t, "go-exons", info.Project.Name)
+	assert.Equal(t, "0.10.0", info.Project.Version)
+}
+
 // =============================================================================
 // DC-9: Bug fix tests
 // =============================================================================

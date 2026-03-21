@@ -3,31 +3,30 @@ package exons
 import (
 	_ "embed"
 
-	"gopkg.in/yaml.v3"
+	goversion "github.com/itsatony/go-version"
 )
 
 //go:embed versions.yaml
 var versionsYAML []byte
 
-// versionInfo holds the parsed content of versions.yaml.
-type versionInfo struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
-	Version     string `yaml:"version"`
-	GoVersion   string `yaml:"go_version"`
-	Repository  string `yaml:"repository"`
-	License     string `yaml:"license"`
-	Website     string `yaml:"website"`
-}
-
-// Version is the current library version, loaded from versions.yaml at compile time.
+// Version is the current library version, loaded from the embedded versions.yaml
+// via go-version. This is the single source of truth — edit versions.yaml to bump.
 var Version string
 
 func init() {
-	var info versionInfo
-	if err := yaml.Unmarshal(versionsYAML, &info); err != nil {
+	if err := goversion.Initialize(goversion.WithEmbedded(versionsYAML)); err != nil {
 		Version = "0.0.0-unknown"
 		return
 	}
-	Version = info.Version
+	Version = goversion.MustGet().Project.Version
+}
+
+// VersionInfo returns the full go-version Info including project, git, and build metadata.
+// Returns nil if version initialization failed.
+func VersionInfo() *goversion.Info {
+	info, err := goversion.Get()
+	if err != nil {
+		return nil
+	}
+	return info
 }
