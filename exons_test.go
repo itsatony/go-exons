@@ -12,6 +12,7 @@ import (
 	"github.com/itsatony/go-exons/execution"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 // =============================================================================
@@ -1404,11 +1405,17 @@ func TestEngine_LargeLoop(t *testing.T) {
 // =============================================================================
 
 func TestVersion_LoadedFromVersionsYAML(t *testing.T) {
-	// Version must be non-empty and not the fallback
-	assert.NotEmpty(t, Version)
-	assert.NotEqual(t, "0.0.0-unknown", Version)
-	// Must look like a semver string
-	assert.Regexp(t, `^\d+\.\d+\.\d+`, Version)
+	// Parse the version directly from the embedded versions.yaml source of truth
+	var manifest struct {
+		Project struct {
+			Version string `yaml:"version"`
+		} `yaml:"project"`
+	}
+	require.NoError(t, yaml.Unmarshal(versionsYAML, &manifest))
+
+	// Package-level Version must match the embedded source of truth exactly
+	assert.Equal(t, manifest.Project.Version, Version,
+		"Version variable must match versions.yaml — never hardcode version strings")
 }
 
 func TestVersionsYAML_Embedded(t *testing.T) {
