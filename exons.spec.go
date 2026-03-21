@@ -94,7 +94,7 @@ func isValidDocumentType(dt DocumentType) bool {
 // Returns an error if the YAML data exceeds DefaultMaxFrontmatterSize (DoS protection).
 func ParseYAMLSpec(yamlData string) (*Spec, error) {
 	if yamlData == "" {
-		return nil, nil
+		return nil, NewFrontmatterError(ErrMsgFrontmatterEmpty, Position{}, nil)
 	}
 
 	// Check size limit to prevent DoS via large YAML

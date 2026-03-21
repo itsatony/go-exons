@@ -15,8 +15,9 @@ import (
 
 func TestParseYAMLSpec_Empty(t *testing.T) {
 	spec, err := ParseYAMLSpec("")
-	require.NoError(t, err)
+	assert.Error(t, err)
 	assert.Nil(t, spec)
+	assert.Contains(t, err.Error(), ErrMsgFrontmatterEmpty)
 }
 
 func TestParseYAMLSpec_Basic(t *testing.T) {

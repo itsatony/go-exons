@@ -130,6 +130,7 @@ const (
 	ErrMsgFrontmatterParse         = "failed to parse YAML frontmatter"
 	ErrMsgFrontmatterInvalid       = "invalid YAML frontmatter format"
 	ErrMsgFrontmatterUnclosed      = "YAML frontmatter not properly closed"
+	ErrMsgFrontmatterEmpty         = "empty YAML frontmatter"
 	ErrMsgLegacyJSONConfigDetected = "legacy JSON config block detected - please migrate to YAML frontmatter with --- delimiters"
 
 	// Message tag messages
