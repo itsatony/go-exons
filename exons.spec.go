@@ -42,6 +42,10 @@ type Spec struct {
 	Credentials map[string]*CredentialRef `yaml:"credentials,omitempty" json:"credentials,omitempty"`
 	Credential  string                    `yaml:"credential,omitempty" json:"credential,omitempty"`
 
+	// Requirements declares abstract capability/credential needs without binding
+	// them (portable seam for governance + authoring-time preflight).
+	Requirements *SpecRequirements `yaml:"requirements,omitempty" json:"requirements,omitempty"`
+
 	// Metadata — agent specification metadata (flattened from genspec/)
 	Memory        *MemorySpec        `yaml:"memory,omitempty" json:"memory,omitempty"`
 	Dispatch      *DispatchSpec      `yaml:"dispatch,omitempty" json:"dispatch,omitempty"`
@@ -210,6 +214,9 @@ func (s *Spec) Validate() error {
 			return err
 		}
 	}
+	if err := s.ValidateRequirements(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -317,6 +324,9 @@ func (s *Spec) Clone() *Spec {
 			clone.Credentials[k] = v.Clone()
 		}
 	}
+
+	// Clone requirements block
+	clone.Requirements = s.Requirements.Clone()
 
 	// Clone metadata fields (deep copy via per-type Clone methods)
 	clone.Memory = s.Memory.Clone()

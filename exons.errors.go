@@ -220,6 +220,13 @@ const (
 	ErrMsgA2ACardMissingURL  = "agent card requires a service URL in options"
 	ErrMsgA2ACardMissingName = "agent card requires a spec name"
 
+	// Requirements block validation messages
+	ErrMsgRequirementCapabilityEmpty = "requirements.mcp[].capability must not be empty"
+	ErrMsgRequirementCapabilityDup   = "requirements.mcp[].capability must be unique"
+	ErrMsgRequirementCredRefEmpty    = "requirements.credentials[].ref must not be empty"
+	ErrMsgRequirementCredRefDup      = "requirements.credentials[].ref must be unique"
+	ErrMsgRequirementScopeInvalid    = "requirements scope must be: org, user, or per_call"
+
 	// Credential and manifest validation messages
 	ErrMsgCredentialNotFound         = "credential label not found in credentials map"
 	ErrMsgCredentialMissingProvider  = "credential must specify a provider"

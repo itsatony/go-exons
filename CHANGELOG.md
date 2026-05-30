@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-05-30
+
+### Added
+- **Portable `requirements` block** (`Spec.Requirements *SpecRequirements`): an
+  additive, optional top-level block declaring abstract MCP capabilities and
+  logical credential refs (+ `scope`: `org`/`user`/`per_call`) **without binding
+  them** — never server URLs, never secrets. The portable seam that lets
+  downstream governance and authoring-time preflight reason about a definition's
+  needs while keeping it runtime-agnostic.
+  - Types: `SpecRequirements`, `MCPRequirement{capability, credential_ref, scope}`,
+    `CredentialRequirement{ref, provider, scope}`; scope constants
+    `RequirementScopeOrg`/`User`/`PerCall`.
+  - `(*Spec).ValidateRequirements()` and `(*SpecRequirements).Validate()` check
+    shape (non-empty capability/ref), capability + ref uniqueness, and scope enum.
+    Wired into `Spec.Validate()` and `Spec.Clone()`.
+  - Named distinctly from the existing skill-activation `Requirements` type.
+
 ## [0.11.0-dc10] - 2026-03-21
 
 ### BREAKING
