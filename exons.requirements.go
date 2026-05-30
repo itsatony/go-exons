@@ -13,6 +13,14 @@ const (
 	RequirementScopePerCall = "per_call"
 )
 
+// Bounds on the requirements block (defense-in-depth beyond the whole-document
+// frontmatter size cap): cap list length and per-field length so the governance
+// seam cannot be flooded with oversized or excessive entries.
+const (
+	MaxRequirementEntries  = 256
+	MaxRequirementFieldLen = 512
+)
+
 // SpecRequirements is an additive, portable block declaring the abstract capability
 // and credential needs of a definition WITHOUT binding them. It is the seam that
 // keeps a definition portable while letting governance and authoring-time
@@ -63,11 +71,17 @@ func (r *SpecRequirements) Validate() error {
 	if r == nil {
 		return nil
 	}
+	if len(r.MCP) > MaxRequirementEntries || len(r.Credentials) > MaxRequirementEntries {
+		return NewSpecValidationError(ErrMsgRequirementTooManyEntries, "")
+	}
 
 	seenCapabilities := make(map[string]struct{}, len(r.MCP))
 	for _, m := range r.MCP {
 		if m.Capability == "" {
 			return NewSpecValidationError(ErrMsgRequirementCapabilityEmpty, "")
+		}
+		if len(m.Capability) > MaxRequirementFieldLen || len(m.CredentialRef) > MaxRequirementFieldLen {
+			return NewSpecValidationError(ErrMsgRequirementFieldTooLong, m.Capability)
 		}
 		if _, dup := seenCapabilities[m.Capability]; dup {
 			return NewSpecValidationError(ErrMsgRequirementCapabilityDup, m.Capability)
@@ -83,6 +97,9 @@ func (r *SpecRequirements) Validate() error {
 		if c.Ref == "" {
 			return NewSpecValidationError(ErrMsgRequirementCredRefEmpty, "")
 		}
+		if len(c.Ref) > MaxRequirementFieldLen || len(c.Provider) > MaxRequirementFieldLen {
+			return NewSpecValidationError(ErrMsgRequirementFieldTooLong, c.Ref)
+		}
 		if _, dup := seenRefs[c.Ref]; dup {
 			return NewSpecValidationError(ErrMsgRequirementCredRefDup, c.Ref)
 		}
@@ -95,7 +112,10 @@ func (r *SpecRequirements) Validate() error {
 	return nil
 }
 
-// Clone returns a deep copy of the SpecRequirements block.
+// Clone returns a deep copy of the SpecRequirements block. copy() is a true deep
+// copy here because MCPRequirement and CredentialRequirement are all-scalar value
+// types; if either gains a slice/map/pointer field, switch to per-element deep
+// copies (as Spec.Clone does) to preserve the deep-copy guarantee.
 func (r *SpecRequirements) Clone() *SpecRequirements {
 	if r == nil {
 		return nil

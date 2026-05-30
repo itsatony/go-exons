@@ -44,6 +44,26 @@ func TestRequirementsValidate(t *testing.T) {
 	}
 }
 
+func TestRequirementsBounds(t *testing.T) {
+	t.Run("too many mcp entries", func(t *testing.T) {
+		mcp := make([]MCPRequirement, MaxRequirementEntries+1)
+		for i := range mcp {
+			mcp[i] = MCPRequirement{Capability: "cap-" + string(rune('a'+i%26)) + "-" + string(rune('a'+(i/26)%26)) + "-x"}
+		}
+		// Distinct capabilities avoid the duplicate check; the count cap fires.
+		err := (&SpecRequirements{MCP: mcp[:MaxRequirementEntries+1]}).Validate()
+		assert.Error(t, err)
+	})
+	t.Run("field too long", func(t *testing.T) {
+		long := make([]byte, MaxRequirementFieldLen+1)
+		for i := range long {
+			long[i] = 'x'
+		}
+		err := (&SpecRequirements{MCP: []MCPRequirement{{Capability: string(long)}}}).Validate()
+		assert.Error(t, err)
+	})
+}
+
 func TestSpecValidateRequirements(t *testing.T) {
 	t.Run("nil spec", func(t *testing.T) {
 		var s *Spec

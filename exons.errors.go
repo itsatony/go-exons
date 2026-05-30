@@ -226,6 +226,8 @@ const (
 	ErrMsgRequirementCredRefEmpty    = "requirements.credentials[].ref must not be empty"
 	ErrMsgRequirementCredRefDup      = "requirements.credentials[].ref must be unique"
 	ErrMsgRequirementScopeInvalid    = "requirements scope must be: org, user, or per_call"
+	ErrMsgRequirementTooManyEntries  = "requirements list exceeds the maximum number of entries"
+	ErrMsgRequirementFieldTooLong    = "requirements field exceeds the maximum length"
 
 	// Credential and manifest validation messages
 	ErrMsgCredentialNotFound         = "credential label not found in credentials map"
