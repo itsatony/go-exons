@@ -134,6 +134,37 @@ func TestRefResolver_Resolve_SlugAtVersionSyntax(t *testing.T) {
 	assert.Equal(t, "Hello from v2", result)
 }
 
+func TestRefResolver_Resolve_QualifiedSlug(t *testing.T) {
+	// A namespace-qualified "@org/name" slug reaches the resolver and renders its body —
+	// the portable cross-namespace reference form (e.g. aigentverse's @org/name contract).
+	resolver := NewRefResolver()
+	bodies := map[string]string{
+		"@aigentverse/source-scout:latest": "Hello from the qualified ref",
+	}
+	mockResolver := newMockSpecBodyResolver(bodies)
+	execCtx := &mockRefContext{resolver: mockResolver, depth: 0, chain: nil}
+	attrs := Attributes{AttrSlug: "@aigentverse/source-scout"}
+
+	result, err := resolver.Resolve(context.Background(), execCtx, attrs)
+	require.NoError(t, err)
+	assert.Equal(t, "Hello from the qualified ref", result)
+}
+
+func TestRefResolver_Resolve_QualifiedSlugAtVersion(t *testing.T) {
+	// "@org/name@version" splits on the LAST "@": slug="@org/name", version="1.2.3".
+	resolver := NewRefResolver()
+	bodies := map[string]string{
+		"@aigentverse/source-scout:1.2.3": "qualified v1.2.3 body",
+	}
+	mockResolver := newMockSpecBodyResolver(bodies)
+	execCtx := &mockRefContext{resolver: mockResolver, depth: 0, chain: nil}
+	attrs := Attributes{AttrSlug: "@aigentverse/source-scout@1.2.3"}
+
+	result, err := resolver.Resolve(context.Background(), execCtx, attrs)
+	require.NoError(t, err)
+	assert.Equal(t, "qualified v1.2.3 body", result)
+}
+
 func TestRefResolver_Resolve_SlugAtVersionMultipleAtSigns(t *testing.T) {
 	// Uses LastIndex of "@", so "a@b@v3" should parse as slug="a@b", version="v3"
 	// But "a@b" will fail slug validation since @ is not allowed
@@ -412,6 +443,9 @@ func TestIsValidSpecSlug(t *testing.T) {
 		{"mixed alphanumeric", "a1b2c3"},
 		{"hyphenated", "my-long-prompt-name"},
 		{"letter then digits", "x99"},
+		{"qualified org/name", "@aigentverse/source-scout"},
+		{"qualified with digits", "@org-1/draft-frag"},
+		{"qualified digit-leading segments", "@1org/2name"},
 	}
 
 	for _, tc := range validSlugs {
@@ -435,6 +469,11 @@ func TestIsValidSpecSlug(t *testing.T) {
 		{"dots", "my.prompt"},
 		{"at sign", "my@prompt"},
 		{"leading space", " abc"},
+		{"qualified missing name", "@org/"},
+		{"qualified missing org", "@/name"},
+		{"qualified no slash", "@orgname"},
+		{"qualified uppercase", "@Org/Name"},
+		{"qualified three segments", "@org/team/name"},
 	}
 
 	for _, tc := range invalidSlugs {

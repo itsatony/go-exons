@@ -146,15 +146,24 @@ func getRefChain(execCtx interface{}) []string {
 	return nil
 }
 
-// isValidSpecSlug validates the spec slug format.
-// Must start with lowercase letter, followed by lowercase letters, digits, or hyphens.
-var specSlugRegex = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+// isValidSpecSlug validates the spec slug format. Two forms are accepted:
+//   - a BARE slug — start with a lowercase letter, then lowercase letters, digits, or
+//     hyphens (e.g. "greeting"); the spec resolver supplies the namespace.
+//   - a NAMESPACE-QUALIFIED slug of the form "@org/name" (e.g. "@aigentverse/source-scout"),
+//     the portable cross-namespace reference contract used by registries that address specs
+//     by "@org/name". Each segment is lowercase alphanumeric/hyphen. A trailing "@version" is
+//     already stripped by the caller before validation, so the only "@" reaching a qualified
+//     slug is the leading namespace marker.
+var (
+	specSlugRegex          = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+	qualifiedSpecSlugRegex = regexp.MustCompile(`^@[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$`)
+)
 
 func isValidSpecSlug(slug string) bool {
 	if slug == "" {
 		return false
 	}
-	return specSlugRegex.MatchString(slug)
+	return specSlugRegex.MatchString(slug) || qualifiedSpecSlugRegex.MatchString(slug)
 }
 
 // NewRefCircularError creates an error for circular reference detection.

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-06-21
+
+### Added
+
+- `exons.ref` now accepts namespace-qualified `@org/name` slugs (e.g.
+  `{~exons.ref slug="@aigentverse/source-scout" /~}`) in addition to bare slugs. The
+  `@org/name` form is the portable cross-namespace reference contract used by registries that
+  address specs by org and name; previously the slug validator (`^[a-z][a-z0-9-]*$`) rejected
+  it before the resolver was consulted, so such references could not be composed at all. A
+  trailing `@version` still parses (split on the last `@`). Bare slugs are unchanged.
+
 ## [0.13.1] - 2026-05-30
 
 ### Added
