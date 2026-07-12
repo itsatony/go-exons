@@ -8,8 +8,9 @@ import (
 
 // LexerConfig holds lexer configuration
 type LexerConfig struct {
-	OpenDelim  string // Opening delimiter (default: "{~")
-	CloseDelim string // Closing delimiter (default: "~}")
+	OpenDelim      string // Opening delimiter (default: "{~")
+	CloseDelim     string // Closing delimiter (default: "~}")
+	MarkdownFences bool   // Treat markdown code fences as inert regions
 }
 
 // DefaultLexerConfig returns the default lexer configuration
@@ -35,14 +36,24 @@ func (c LexerConfig) escapeOpen() string {
 	return "\\" + c.OpenDelim
 }
 
+// verbatimFencesActive reports whether {~~ ... ~~} verbatim fences are
+// recognized. The fence family extends the default delimiter alphabet only;
+// under custom delimiters the sequence "{~~" remains plain text.
+func (c LexerConfig) verbatimFencesActive() bool {
+	return c.OpenDelim == StrOpenDelim && c.CloseDelim == StrCloseDelim
+}
+
 // Lexer tokenizes template source into a token stream
 type Lexer struct {
-	source string
-	config LexerConfig
-	pos    int // Current byte position
-	line   int // Current line (1-indexed)
-	column int // Current column (1-indexed)
-	logger *slog.Logger
+	source       string
+	config       LexerConfig
+	pos          int // Current byte position
+	line         int // Current line (1-indexed)
+	column       int // Current column (1-indexed)
+	logger       *slog.Logger
+	fencesActive bool          // cached LexerConfig.verbatimFencesActive()
+	inertRegions []InertRegion // markdown fence regions (MarkdownFences mode)
+	inertIdx     int           // cursor into inertRegions (monotonic)
 }
 
 // NewLexer creates a new lexer with default configuration
@@ -56,14 +67,19 @@ func NewLexerWithConfig(source string, config LexerConfig, logger *slog.Logger) 
 		logger = slog.Default()
 	}
 	logger.Debug(LogMsgLexerCreated, slog.Int(LogFieldSource, len(source)))
-	return &Lexer{
-		source: source,
-		config: config,
-		pos:    0,
-		line:   1,
-		column: 1,
-		logger: logger,
+	l := &Lexer{
+		source:       source,
+		config:       config,
+		pos:          0,
+		line:         1,
+		column:       1,
+		logger:       logger,
+		fencesActive: config.verbatimFencesActive(),
 	}
+	if config.MarkdownFences {
+		l.inertRegions = ScanMarkdownFences(source)
+	}
+	return l
 }
 
 // Tokenize processes the source and returns a token stream
@@ -72,12 +88,33 @@ func (l *Lexer) Tokenize() ([]Token, error) {
 	var tokens []Token
 
 	for !l.isAtEnd() {
+		// Consume markdown-inert regions wholesale (MarkdownFences mode).
+		// Must run before any delimiter matching so fenced examples stay text.
+		if region, ok := l.currentInertRegion(); ok {
+			pos := l.currentPosition()
+			body := l.source[l.pos:region.End]
+			l.advanceN(len(body))
+			tokens = append(tokens, NewTextToken(body, pos))
+			continue
+		}
+
 		// Check for escape sequence first
 		if l.isEscapedOpenDelim() {
 			// Handle escape: consume \{~ and emit {~ as text
 			pos := l.currentPosition()
 			l.advanceN(len(l.config.escapeOpen())) // Skip escaped open delim
 			tokens = append(tokens, NewTextToken(l.config.OpenDelim, pos))
+			continue
+		}
+
+		// Check for verbatim tilde fence {~~ ... ~~} (before block-close/open:
+		// "{~~" prefix-matches the open delimiter but is a fence of order >= 2)
+		if l.fencesActive && l.isFenceOpen() {
+			fenceToken, err := l.scanVerbatimFence()
+			if err != nil {
+				return nil, err
+			}
+			tokens = append(tokens, fenceToken)
 			continue
 		}
 
@@ -107,6 +144,17 @@ func (l *Lexer) Tokenize() ([]Token, error) {
 				return nil, err
 			}
 			tokens = append(tokens, tagTokens...)
+
+			// Raw/comment block openers switch to verbatim scanning: the body
+			// runs byte-for-byte until the canonical close sequence, so it
+			// need not be lexically valid exons.
+			if name, isVerbatim := verbatimBlockTag(tagTokens); isVerbatim {
+				blockTokens, err := l.scanVerbatimBlock(name, pos)
+				if err != nil {
+					return nil, err
+				}
+				tokens = append(tokens, blockTokens...)
+			}
 			continue
 		}
 
@@ -133,6 +181,10 @@ func (l *Lexer) scanText() (Token, error) {
 
 	blockClosePattern := l.config.blockClose()
 	for !l.isAtEnd() {
+		// Stop at a markdown-inert region boundary
+		if _, inRegion := l.currentInertRegion(); inRegion {
+			break
+		}
 		// Stop at escape sequence
 		if l.isEscapedOpenDelim() {
 			break
@@ -151,6 +203,135 @@ func (l *Lexer) scanText() (Token, error) {
 	}
 
 	return NewTextToken(sb.String(), startPos), nil
+}
+
+// currentInertRegion returns the markdown-inert region containing the current
+// position, advancing the region cursor past regions already behind us. Live
+// fences (info string "exons") are skipped: their contents lex normally.
+func (l *Lexer) currentInertRegion() (InertRegion, bool) {
+	for l.inertIdx < len(l.inertRegions) {
+		region := l.inertRegions[l.inertIdx]
+		if l.pos >= region.End {
+			l.inertIdx++
+			continue
+		}
+		// Live fences (info string "exons") lex normally: not inert.
+		if !region.Live && l.pos >= region.Start {
+			return region, true
+		}
+		return InertRegion{}, false
+	}
+	return InertRegion{}, false
+}
+
+// tildeRunLenAt returns the length of the tilde run starting at pos.
+func (l *Lexer) tildeRunLenAt(pos int) int {
+	n := 0
+	for pos+n < len(l.source) && l.source[pos+n] == CharTilde {
+		n++
+	}
+	return n
+}
+
+// isFenceOpen reports whether the current position starts a verbatim tilde
+// fence: '{' followed by a run of at least MinVerbatimFenceTildes tildes.
+func (l *Lexer) isFenceOpen() bool {
+	return l.peek() == CharOpenBrace && l.tildeRunLenAt(l.pos+1) >= MinVerbatimFenceTildes
+}
+
+// scanVerbatimFence scans a verbatim tilde fence {~~ ... ~~} of order k
+// (k = length of the opening tilde run, k >= 2). The body is emitted
+// byte-for-byte as a single text token with no escape, tag, or nested-fence
+// processing. The fence closes at the first maximal run of exactly k tildes
+// immediately followed by '}'; a longer run never closes (so "~~~}" is body
+// content inside a k=2 fence). An unterminated fence is a hard lexer error.
+func (l *Lexer) scanVerbatimFence() (Token, error) {
+	openPos := l.currentPosition()
+	l.advance() // consume '{'
+	k := 0
+	for !l.isAtEnd() && l.peek() == CharTilde {
+		l.advance()
+		k++
+	}
+
+	bodyPos := l.currentPosition()
+	bodyStart := l.pos
+
+	// Scan forward over whole tilde runs; the body always starts with a
+	// non-tilde byte (the opening run was maximal), so every run below is
+	// left-bounded by a non-tilde and therefore maximal.
+	i := bodyStart
+	for i < len(l.source) {
+		if l.source[i] != CharTilde {
+			i++
+			continue
+		}
+		runStart := i
+		for i < len(l.source) && l.source[i] == CharTilde {
+			i++
+		}
+		if i-runStart == k && i < len(l.source) && l.source[i] == CharCloseBrace {
+			body := l.source[bodyStart:runStart]
+			l.advanceN(len(body)) // move over body (maintains line/column)
+			l.advanceN(k + 1)     // move over closing run + '}'
+			l.logger.Debug(LogMsgFenceScanned, slog.Int(LogFieldFenceLen, k), slog.Int(LogFieldSource, len(body)))
+			return NewTextToken(body, bodyPos), nil
+		}
+	}
+	return Token{}, l.newUnterminatedFenceError(k, openPos)
+}
+
+// verbatimBlockTag inspects the token stream of a just-scanned open tag and
+// returns the tag name if it opens a verbatim block: exons.raw or
+// exons.comment in block form (CLOSE_TAG, not SELF_CLOSE).
+func verbatimBlockTag(tagTokens []Token) (string, bool) {
+	if len(tagTokens) == 0 || tagTokens[0].Type != TokenTypeTagName {
+		return "", false
+	}
+	name := tagTokens[0].Value
+	if name != TagNameRaw && name != TagNameComment {
+		return "", false
+	}
+	if tagTokens[len(tagTokens)-1].Type != TokenTypeCloseTag {
+		return "", false
+	}
+	return name, true
+}
+
+// scanVerbatimBlock scans the body of a raw/comment block byte-for-byte until
+// the canonical close sequence (e.g. "{~/exons.raw~}", built from the
+// configured delimiters) and emits TEXT (omitted when empty) + BLOCK_CLOSE +
+// TAG_NAME + CLOSE_TAG. First close wins; the {~~ ... ~~} fence is the escape
+// hatch for content containing the close sequence itself.
+func (l *Lexer) scanVerbatimBlock(tagName string, openPos Position) ([]Token, error) {
+	closeSeq := l.config.blockClose() + tagName + l.config.CloseDelim
+	idx := strings.Index(l.source[l.pos:], closeSeq)
+	if idx < 0 {
+		return nil, l.newUnterminatedVerbatimBlockError(closeSeq, openPos)
+	}
+
+	var tokens []Token
+	if idx > 0 {
+		bodyPos := l.currentPosition()
+		body := l.source[l.pos : l.pos+idx]
+		l.advanceN(idx)
+		tokens = append(tokens, NewTextToken(body, bodyPos))
+	}
+
+	blockClosePos := l.currentPosition()
+	l.advanceN(len(l.config.blockClose()))
+	tokens = append(tokens, NewBlockCloseToken(blockClosePos))
+
+	namePos := l.currentPosition()
+	l.advanceN(len(tagName))
+	tokens = append(tokens, NewTagNameToken(tagName, namePos))
+
+	closePos := l.currentPosition()
+	l.advanceN(len(l.config.CloseDelim))
+	tokens = append(tokens, NewCloseTagToken(closePos))
+
+	l.logger.Debug(LogMsgVerbatimBlockScanned, slog.String(LogFieldTag, tagName), slog.Int(LogFieldSource, idx))
+	return tokens, nil
 }
 
 // scanTagContent scans the content inside a tag (name, attributes, closing)
@@ -441,6 +622,20 @@ func (l *Lexer) newUnexpectedCharError() error {
 	return &LexerError{
 		Message:  ErrMsgUnexpectedChar,
 		Position: l.currentPosition(),
+	}
+}
+
+func (l *Lexer) newUnterminatedFenceError(tildes int, openPos Position) error {
+	return &LexerError{
+		Message:  fmt.Sprintf(ErrFmtUnterminatedFence, ErrMsgUnterminatedFence, tildes),
+		Position: openPos,
+	}
+}
+
+func (l *Lexer) newUnterminatedVerbatimBlockError(closeSeq string, openPos Position) error {
+	return &LexerError{
+		Message:  fmt.Sprintf(ErrFmtUnterminatedVerbatimBlock, ErrMsgUnterminatedVerbatimBlock, closeSeq),
+		Position: openPos,
 	}
 }
 

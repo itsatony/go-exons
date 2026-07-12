@@ -8,30 +8,32 @@ import (
 
 // Parser produces an AST from a token stream
 type Parser struct {
-	tokens     []Token
-	source     string // Original source for raw text extraction
-	pos        int
-	logger     *slog.Logger
-	inRawBlock bool // Track if we're inside a raw block
+	tokens []Token
+	source string // Original source for raw text extraction
+	pos    int
+	logger *slog.Logger
+	config LexerConfig // Delimiter config for raw-source offset math
 }
 
 // NewParser creates a new parser for the given token stream
 func NewParser(tokens []Token, logger *slog.Logger) *Parser {
-	return NewParserWithSource(tokens, StringValueEmpty, logger)
+	return NewParserWithSource(tokens, StringValueEmpty, DefaultLexerConfig(), logger)
 }
 
-// NewParserWithSource creates a new parser with source for raw text capture
-func NewParserWithSource(tokens []Token, source string, logger *slog.Logger) *Parser {
+// NewParserWithSource creates a new parser with source for raw text capture.
+// The config must match the lexer config the tokens were produced with so
+// RawSource offsets line up under custom delimiters.
+func NewParserWithSource(tokens []Token, source string, config LexerConfig, logger *slog.Logger) *Parser {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	logger.Debug(LogMsgParserCreated, slog.Int(LogFieldTokens, len(tokens)))
 	return &Parser{
-		tokens:     tokens,
-		source:     source,
-		pos:        0,
-		logger:     logger,
-		inRawBlock: false,
+		tokens: tokens,
+		source: source,
+		pos:    0,
+		logger: logger,
+		config: config,
 	}
 }
 
@@ -53,6 +55,12 @@ func (p *Parser) Parse() (*RootNode, error) {
 	nodes, err := p.parseNodes()
 	if err != nil {
 		return nil, err
+	}
+
+	// A stray top-level block close (e.g. "{~/x~}" with no open) stops
+	// parseNodes early; surface it instead of silently dropping the rest.
+	if !p.isAtEnd() {
+		return nil, p.newUnexpectedTokenError(p.current())
 	}
 
 	root := &RootNode{Children: nodes}
@@ -130,14 +138,14 @@ func (p *Parser) parseTag() (Node, error) {
 		p.advance() // consume SELF_CLOSE
 		tag := NewSelfClosingTag(tagName, attrs, pos)
 		// Capture raw source for keepRaw error strategy
-		endOffset := endTok.Position.Offset + LenSelfClose
+		endOffset := endTok.Position.Offset + len(p.config.selfClose())
 		tag.RawSource = p.extractRawSource(pos.Offset, endOffset)
 		return tag, nil
 
 	case TokenTypeCloseTag:
 		p.advance() // consume CLOSE_TAG
 		// This is a block tag - parse content and closing
-		return p.parseBlockTag(tagName, attrs, pos, openTok)
+		return p.parseBlockTag(tagName, attrs, pos)
 
 	default:
 		return nil, p.newUnexpectedTokenError(endTok)
@@ -145,10 +153,10 @@ func (p *Parser) parseTag() (Node, error) {
 }
 
 // parseBlockTag parses the content and closing of a block tag
-func (p *Parser) parseBlockTag(tagName string, attrs Attributes, pos Position, openTok Token) (Node, error) {
+func (p *Parser) parseBlockTag(tagName string, attrs Attributes, pos Position) (Node, error) {
 	// Special handling for raw blocks
 	if tagName == TagNameRaw {
-		return p.parseRawBlock(pos, openTok)
+		return p.parseRawBlock(pos)
 	}
 
 	// Special handling for conditionals
@@ -158,7 +166,7 @@ func (p *Parser) parseBlockTag(tagName string, attrs Attributes, pos Position, o
 
 	// Special handling for comments - discard content entirely
 	if tagName == TagNameComment {
-		return p.parseCommentBlock(pos, openTok)
+		return p.parseCommentBlock()
 	}
 
 	// Special handling for for loops
@@ -212,7 +220,7 @@ func (p *Parser) parseBlockTag(tagName string, attrs Attributes, pos Position, o
 
 	tag := NewBlockTag(tagName, attrs, children, pos)
 	// Capture raw source for keepRaw error strategy (full block from open to close)
-	endOffset := closeTok.Position.Offset + LenCloseDelim
+	endOffset := closeTok.Position.Offset + len(p.config.CloseDelim)
 	tag.RawSource = p.extractRawSource(pos.Offset, endOffset)
 	return tag, nil
 }
@@ -629,176 +637,63 @@ func (p *Parser) newSwitchError(message string, pos Position) error {
 	}
 }
 
-// parseRawBlock parses a raw block - preserving content literally
-func (p *Parser) parseRawBlock(pos Position, openTok Token) (*TagNode, error) {
-	// Check for nested raw blocks
-	if p.inRawBlock {
-		return nil, p.newNestedRawBlockError(pos)
-	}
-
-	p.inRawBlock = true
-	defer func() { p.inRawBlock = false }()
-
-	// For raw blocks, we need to collect all text and tokens until we see {~/exons.raw~}
+// parseRawBlock parses a raw block. The lexer scans raw bodies verbatim and
+// emits at most one TEXT token followed by the canonical close triplet, so
+// this is a trivial consumer; content round-trips byte-for-byte.
+func (p *Parser) parseRawBlock(pos Position) (*TagNode, error) {
 	var rawContent string
-
-	for !p.isAtEnd() {
-		tok := p.current()
-
-		// Check for the closing raw tag
-		if tok.Type == TokenTypeBlockClose {
-			if p.pos+1 < len(p.tokens) && p.tokens[p.pos+1].Type == TokenTypeTagName && p.tokens[p.pos+1].Value == TagNameRaw {
-				break
-			}
-		}
-
-		switch tok.Type {
-		case TokenTypeText:
-			rawContent += tok.Value
-			p.advance()
-		case TokenTypeOpenTag:
-			// Reconstruct the tag as literal text
-			rawContent += StrOpenDelim
-			p.advance()
-			// Get tag content
-			tagContent, err := p.collectTagAsText()
-			if err != nil {
-				return nil, err
-			}
-			rawContent += tagContent
-		case TokenTypeBlockClose:
-			rawContent += StrBlockClose
-			p.advance()
-			// Get tag content
-			tagContent, err := p.collectTagCloseAsText()
-			if err != nil {
-				return nil, err
-			}
-			rawContent += tagContent
-		default:
-			return nil, p.newUnexpectedTokenError(tok)
-		}
+	if p.current().Type == TokenTypeText {
+		rawContent = p.current().Value
+		p.advance()
 	}
 
-	// Consume the closing sequence: BLOCK_CLOSE, TAG_NAME (exons.raw), CLOSE_TAG
-	if !p.isBlockClose() {
-		return nil, p.newMismatchedTagError(TagNameRaw, "")
+	closeTok, err := p.consumeVerbatimClose(TagNameRaw)
+	if err != nil {
+		return nil, err
 	}
-	p.advance() // BLOCK_CLOSE
-
-	closeNameTok := p.current()
-	if closeNameTok.Type != TokenTypeTagName || closeNameTok.Value != TagNameRaw {
-		return nil, p.newMismatchedTagError(TagNameRaw, closeNameTok.Value)
-	}
-	p.advance() // TAG_NAME
-
-	closeTok := p.current()
-	if closeTok.Type != TokenTypeCloseTag {
-		return nil, p.newExpectedTokenError(TokenTypeCloseTag, closeTok)
-	}
-	p.advance() // CLOSE_TAG
 
 	tag := NewRawBlockTag(rawContent, pos)
 	// Capture raw source for keepRaw error strategy
-	endOffset := closeTok.Position.Offset + LenCloseDelim
+	endOffset := closeTok.Position.Offset + len(p.config.CloseDelim)
 	tag.RawSource = p.extractRawSource(pos.Offset, endOffset)
 	return tag, nil
 }
 
 // parseCommentBlock parses a comment block - content is discarded
-func (p *Parser) parseCommentBlock(pos Position, openTok Token) (Node, error) {
-	// Skip all tokens until we find the closing {~/exons.comment~}
-	for !p.isAtEnd() {
-		tok := p.current()
-
-		// Check for the closing comment tag
-		if tok.Type == TokenTypeBlockClose {
-			if p.pos+1 < len(p.tokens) && p.tokens[p.pos+1].Type == TokenTypeTagName && p.tokens[p.pos+1].Value == TagNameComment {
-				break
-			}
-		}
-
-		// Skip everything - comments are discarded
-		p.advance()
+func (p *Parser) parseCommentBlock() (Node, error) {
+	if p.current().Type == TokenTypeText {
+		p.advance() // discard body
 	}
 
-	// Consume the closing sequence: BLOCK_CLOSE, TAG_NAME (exons.comment), CLOSE_TAG
-	if !p.isBlockClose() {
-		return nil, p.newMismatchedTagError(TagNameComment, "")
+	if _, err := p.consumeVerbatimClose(TagNameComment); err != nil {
+		return nil, err
 	}
-	p.advance() // BLOCK_CLOSE
-
-	closeNameTok := p.current()
-	if closeNameTok.Type != TokenTypeTagName || closeNameTok.Value != TagNameComment {
-		return nil, p.newMismatchedTagError(TagNameComment, closeNameTok.Value)
-	}
-	p.advance() // TAG_NAME
-
-	closeTok := p.current()
-	if closeTok.Type != TokenTypeCloseTag {
-		return nil, p.newExpectedTokenError(TokenTypeCloseTag, closeTok)
-	}
-	p.advance() // CLOSE_TAG
 
 	// Return nil - comment nodes produce no output
 	return nil, nil
 }
 
-// collectTagAsText collects tag tokens and returns them as literal text (for raw blocks)
-func (p *Parser) collectTagAsText() (string, error) {
-	var result string
-
-	// Tag name
-	if p.current().Type == TokenTypeTagName {
-		result += p.current().Value
-		p.advance()
+// consumeVerbatimClose consumes the close triplet of a verbatim block
+// (BLOCK_CLOSE, TAG_NAME, CLOSE_TAG) and returns the CLOSE_TAG token.
+func (p *Parser) consumeVerbatimClose(tagName string) (Token, error) {
+	if !p.isBlockClose() {
+		return Token{}, p.newMismatchedTagError(tagName, StringValueEmpty)
 	}
+	p.advance() // BLOCK_CLOSE
 
-	// Attributes and closing
-	for !p.isAtEnd() {
-		tok := p.current()
-		switch tok.Type {
-		case TokenTypeAttrName:
-			result += " " + tok.Value
-			p.advance()
-		case TokenTypeEquals:
-			result += "="
-			p.advance()
-		case TokenTypeAttrValue:
-			result += "\"" + tok.Value + "\""
-			p.advance()
-		case TokenTypeSelfClose:
-			result += " " + StrSelfClose
-			p.advance()
-			return result, nil
-		case TokenTypeCloseTag:
-			result += StrCloseDelim
-			p.advance()
-			return result, nil
-		default:
-			return result, nil
-		}
+	closeNameTok := p.current()
+	if closeNameTok.Type != TokenTypeTagName || closeNameTok.Value != tagName {
+		return Token{}, p.newMismatchedTagError(tagName, closeNameTok.Value)
 	}
-	return result, nil
-}
+	p.advance() // TAG_NAME
 
-// collectTagCloseAsText collects closing tag tokens as literal text (for raw blocks)
-func (p *Parser) collectTagCloseAsText() (string, error) {
-	var result string
-
-	// Tag name
-	if p.current().Type == TokenTypeTagName {
-		result += p.current().Value
-		p.advance()
+	closeTok := p.current()
+	if closeTok.Type != TokenTypeCloseTag {
+		return Token{}, p.newExpectedTokenError(TokenTypeCloseTag, closeTok)
 	}
+	p.advance() // CLOSE_TAG
 
-	// Close delimiter
-	if p.current().Type == TokenTypeCloseTag {
-		result += StrCloseDelim
-		p.advance()
-	}
-
-	return result, nil
+	return closeTok, nil
 }
 
 // parseAttributes parses tag attributes until we hit a closing token
@@ -893,13 +788,6 @@ func (p *Parser) newMismatchedTagError(expected, actual string) error {
 		Position:    p.current().Position,
 		ExpectedTag: expected,
 		ActualTag:   actual,
-	}
-}
-
-func (p *Parser) newNestedRawBlockError(pos Position) error {
-	return &ParserError{
-		Message:  ErrMsgNestedRawBlock,
-		Position: pos,
 	}
 }
 

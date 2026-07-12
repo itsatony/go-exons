@@ -10,7 +10,8 @@ type InheritanceResolver struct {
 	engine           TemplateExecutor
 	maxDepth         int
 	templateResolver TemplateSourceResolver
-	inheritanceChain []string // Track templates to detect circular inheritance
+	inheritanceChain []string    // Track templates to detect circular inheritance
+	lexerConfig      LexerConfig // Engine lexer config for parent template re-lexing
 }
 
 // TemplateSourceResolver provides access to raw template sources
@@ -18,8 +19,10 @@ type TemplateSourceResolver interface {
 	GetTemplateSource(name string) (string, bool)
 }
 
-// NewInheritanceResolver creates a new inheritance resolver
-func NewInheritanceResolver(engine TemplateExecutor, templateResolver TemplateSourceResolver, maxDepth int) *InheritanceResolver {
+// NewInheritanceResolver creates a new inheritance resolver. The lexerConfig
+// must match the engine's so parent templates lex with the same delimiters
+// and markdown-fence mode as the child that extends them.
+func NewInheritanceResolver(engine TemplateExecutor, templateResolver TemplateSourceResolver, maxDepth int, lexerConfig LexerConfig) *InheritanceResolver {
 	if maxDepth <= 0 {
 		maxDepth = DefaultMaxInheritanceDepth
 	}
@@ -28,6 +31,7 @@ func NewInheritanceResolver(engine TemplateExecutor, templateResolver TemplateSo
 		maxDepth:         maxDepth,
 		templateResolver: templateResolver,
 		inheritanceChain: make([]string, 0),
+		lexerConfig:      lexerConfig,
 	}
 }
 
@@ -86,14 +90,15 @@ func (r *InheritanceResolver) ResolveInheritance(
 
 // parseTemplateWithInheritance parses a template and extracts inheritance info
 func (r *InheritanceResolver) parseTemplateWithInheritance(source string) (*RootNode, *InheritanceInfo, error) {
-	// Create a lexer and parser for the parent template
-	lexer := NewLexer(source, nil)
+	// Create a lexer and parser for the parent template using the engine's
+	// lexer config (custom delimiters, markdown-fence mode)
+	lexer := NewLexerWithConfig(source, r.lexerConfig, nil)
 	tokens, err := lexer.Tokenize()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	parser := NewParserWithSource(tokens, source, nil)
+	parser := NewParserWithSource(tokens, source, r.lexerConfig, nil)
 	root, err := parser.Parse()
 	if err != nil {
 		return nil, nil, err

@@ -52,7 +52,7 @@ func TestParseBlock(t *testing.T) {
 	tokens, err := lexer.Tokenize()
 	require.NoError(t, err)
 
-	parser := NewParserWithSource(tokens, source, nil)
+	parser := NewParserWithSource(tokens, source, DefaultLexerConfig(), nil)
 	root, err := parser.Parse()
 	require.NoError(t, err)
 
@@ -76,7 +76,7 @@ func TestParseBlock_MissingName(t *testing.T) {
 	tokens, err := lexer.Tokenize()
 	require.NoError(t, err)
 
-	parser := NewParserWithSource(tokens, source, nil)
+	parser := NewParserWithSource(tokens, source, DefaultLexerConfig(), nil)
 	_, err = parser.Parse()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), ErrMsgBlockMissingName)
@@ -90,7 +90,7 @@ func TestExtractInheritanceInfo(t *testing.T) {
 		tokens, err := lexer.Tokenize()
 		require.NoError(t, err)
 
-		parser := NewParserWithSource(tokens, source, nil)
+		parser := NewParserWithSource(tokens, source, DefaultLexerConfig(), nil)
 		root, err := parser.Parse()
 		require.NoError(t, err)
 
@@ -107,7 +107,7 @@ func TestExtractInheritanceInfo(t *testing.T) {
 		tokens, err := lexer.Tokenize()
 		require.NoError(t, err)
 
-		parser := NewParserWithSource(tokens, source, nil)
+		parser := NewParserWithSource(tokens, source, DefaultLexerConfig(), nil)
 		root, err := parser.Parse()
 		require.NoError(t, err)
 
@@ -125,7 +125,7 @@ func TestExtractInheritanceInfo(t *testing.T) {
 		tokens, err := lexer.Tokenize()
 		require.NoError(t, err)
 
-		parser := NewParserWithSource(tokens, source, nil)
+		parser := NewParserWithSource(tokens, source, DefaultLexerConfig(), nil)
 		root, err := parser.Parse()
 		require.NoError(t, err)
 
@@ -141,7 +141,7 @@ func TestExtractInheritanceInfo(t *testing.T) {
 		tokens, err := lexer.Tokenize()
 		require.NoError(t, err)
 
-		parser := NewParserWithSource(tokens, source, nil)
+		parser := NewParserWithSource(tokens, source, DefaultLexerConfig(), nil)
 		root, err := parser.Parse()
 		require.NoError(t, err)
 
@@ -157,7 +157,7 @@ func TestExtractInheritanceInfo(t *testing.T) {
 		tokens, err := lexer.Tokenize()
 		require.NoError(t, err)
 
-		parser := NewParserWithSource(tokens, source, nil)
+		parser := NewParserWithSource(tokens, source, DefaultLexerConfig(), nil)
 		root, err := parser.Parse()
 		require.NoError(t, err)
 
@@ -176,7 +176,7 @@ Content
 	tokens, err := lexer.Tokenize()
 	require.NoError(t, err)
 
-	parser := NewParserWithSource(tokens, source, nil)
+	parser := NewParserWithSource(tokens, source, DefaultLexerConfig(), nil)
 	root, err := parser.Parse()
 	require.NoError(t, err)
 

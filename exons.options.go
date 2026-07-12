@@ -9,15 +9,16 @@ type Option func(*engineConfig)
 
 // engineConfig holds the internal configuration for an Engine.
 type engineConfig struct {
-	openDelim     string
-	closeDelim    string
-	errorStrategy ErrorStrategy
-	maxDepth      int
-	maxOutputSize int
-	logger        *slog.Logger
-	envAllowlist  []string // glob patterns; if set, only matching env vars allowed
-	envDenylist   []string // glob patterns; matching env vars are blocked
-	envDisabled   bool     // completely disable {~exons.env~}
+	openDelim      string
+	closeDelim     string
+	errorStrategy  ErrorStrategy
+	maxDepth       int
+	maxOutputSize  int
+	logger         *slog.Logger
+	envAllowlist   []string // glob patterns; if set, only matching env vars allowed
+	envDenylist    []string // glob patterns; matching env vars are blocked
+	envDisabled    bool     // completely disable {~exons.env~}
+	markdownFences bool     // markdown code fences are inert regions
 }
 
 // defaultEngineConfig returns the default engine configuration.
@@ -108,5 +109,20 @@ func WithEnvDenylist(patterns []string) Option {
 func WithEnvDisabled() Option {
 	return func(c *engineConfig) {
 		c.envDisabled = true
+	}
+}
+
+// WithMarkdownFences makes markdown code fences inert: exons tags, escapes,
+// and verbatim fences inside a fenced code block (``` or ~~~, per a
+// CommonMark subset) pass through as literal text instead of rendering.
+// A fence opts back into live rendering when the first word of its info
+// string is "exons" (e.g. ```exons).
+//
+// Intended for markdown-format templates (SKILL.md-style bodies; see
+// Spec.ContentFormat). Off by default: plain templates commonly interpolate
+// variables inside code fences.
+func WithMarkdownFences() Option {
+	return func(c *engineConfig) {
+		c.markdownFences = true
 	}
 }

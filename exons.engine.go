@@ -119,8 +119,9 @@ func (e *Engine) getSpecResolverForCatalog() SpecResolver {
 func (e *Engine) Parse(source string) (*Template, error) {
 	// Create lexer config
 	lexerConfig := internal.LexerConfig{
-		OpenDelim:  e.config.openDelim,
-		CloseDelim: e.config.closeDelim,
+		OpenDelim:      e.config.openDelim,
+		CloseDelim:     e.config.closeDelim,
+		MarkdownFences: e.config.markdownFences,
 	}
 
 	// Extract config block if present
@@ -180,7 +181,7 @@ func (e *Engine) Parse(source string) (*Template, error) {
 	}
 
 	// Parse with source for raw text extraction (keepRaw strategy)
-	parser := internal.NewParserWithSource(tokens, templateBody, e.logger)
+	parser := internal.NewParserWithSource(tokens, templateBody, lexerConfig, e.logger)
 	ast, err := parser.Parse()
 	if err != nil {
 		return nil, NewParseError(ErrMsgParseFailed, Position{}, err)

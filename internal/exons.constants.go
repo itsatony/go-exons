@@ -87,48 +87,44 @@ const (
 	CharSpace       = ' '
 	CharTab         = '\t'
 	CharCarriageRet = '\r'
+	CharTilde       = '~'
+	CharOpenBrace   = '{'
+	CharCloseBrace  = '}'
+	CharBacktick    = '`'
 	CharNullByte    = "\x00" // String for use with strings.ReplaceAll (security: marker sanitization)
 )
 
-// String constants for delimiter matching
+// Default delimiter constants. Derived patterns (self-close, block-close,
+// escape) come from LexerConfig methods so custom delimiters work everywhere.
 const (
 	StrOpenDelim  = "{~"
 	StrCloseDelim = "~}"
-	StrSelfClose  = "/~}"
-	StrBlockClose = "{~/"
-	StrEscapeOpen = "\\{~"
-)
-
-// Delimiter lengths
-const (
-	LenOpenDelim  = 2 // {~
-	LenCloseDelim = 2 // ~}
-	LenSelfClose  = 3 // /~}
-	LenBlockClose = 3 // {~/
-	LenEscapeOpen = 3 // \{~
 )
 
 // Log message constants
 const (
-	LogMsgLexerCreated       = "lexer created"
-	LogMsgTokenizerStart     = "starting tokenization"
-	LogMsgTokenizerEnd       = "tokenization complete"
-	LogMsgParserCreated      = "parser created"
-	LogMsgParserStart        = "starting parse"
-	LogMsgParserEnd          = "parse complete"
-	LogMsgExecutorCreated    = "executor created"
-	LogMsgExecutorStart      = "starting execution"
-	LogMsgExecutorEnd        = "execution complete"
-	LogMsgResolverInvoked    = "resolver invoked"
-	LogMsgResolverComplete   = "resolver complete"
-	LogMsgRegistryCreated    = "registry created"
-	LogMsgResolverRegistered = "resolver registered"
-	LogMsgResolverCollision  = "resolver registration collision - first-come-wins"
+	LogMsgLexerCreated         = "lexer created"
+	LogMsgTokenizerStart       = "starting tokenization"
+	LogMsgTokenizerEnd         = "tokenization complete"
+	LogMsgParserCreated        = "parser created"
+	LogMsgParserStart          = "starting parse"
+	LogMsgParserEnd            = "parse complete"
+	LogMsgExecutorCreated      = "executor created"
+	LogMsgExecutorStart        = "starting execution"
+	LogMsgExecutorEnd          = "execution complete"
+	LogMsgResolverInvoked      = "resolver invoked"
+	LogMsgResolverComplete     = "resolver complete"
+	LogMsgRegistryCreated      = "registry created"
+	LogMsgResolverRegistered   = "resolver registered"
+	LogMsgResolverCollision    = "resolver registration collision - first-come-wins"
+	LogMsgFenceScanned         = "verbatim fence scanned"
+	LogMsgVerbatimBlockScanned = "verbatim block scanned"
 )
 
 // Log field names
 const (
 	LogFieldSource       = "source_length"
+	LogFieldFenceLen     = "fence_tildes"
 	LogFieldTokens       = "token_count"
 	LogFieldNodes        = "node_count"
 	LogFieldTag          = "tag"
@@ -578,13 +574,41 @@ const (
 	ErrMsgUnexpectedToken = "unexpected token"
 	ErrMsgExpectedToken   = "expected token"
 	ErrMsgMismatchedTag   = "mismatched closing tag"
-	ErrMsgNestedRawBlock  = "nested raw blocks are not allowed"
 )
 
 // Error message constants for lexer
 const (
-	ErrMsgUnterminatedTag = "unterminated tag"
-	ErrMsgUnterminatedStr = "unterminated string literal"
-	ErrMsgInvalidTagName  = "invalid tag name"
-	ErrMsgUnexpectedChar  = "unexpected character"
+	ErrMsgUnterminatedTag           = "unterminated tag"
+	ErrMsgUnterminatedStr           = "unterminated string literal"
+	ErrMsgInvalidTagName            = "invalid tag name"
+	ErrMsgUnexpectedChar            = "unexpected character"
+	ErrMsgUnterminatedFence         = "unterminated verbatim fence"
+	ErrMsgUnterminatedVerbatimBlock = "unterminated verbatim block"
+)
+
+// Error format strings for lexer verbatim constructs. The LexerError wrapper
+// appends the open position, so these formats carry only message and detail.
+const (
+	// ErrFmtUnterminatedFence formats: message, tilde count
+	ErrFmtUnterminatedFence = "%s: expected closing run of exactly %d tildes followed by '}'"
+	// ErrFmtUnterminatedVerbatimBlock formats: message, closing tag sequence
+	ErrFmtUnterminatedVerbatimBlock = "%s: missing closing tag %q"
+)
+
+// Verbatim tilde fence constants ({~~ ... ~~})
+const (
+	// MinVerbatimFenceTildes is the minimum tilde run length for a verbatim
+	// fence open; a single tilde is the regular open delimiter.
+	MinVerbatimFenceTildes = 2
+)
+
+// Markdown code fence constants (WithMarkdownFences mode)
+const (
+	// MarkdownFenceMinLen is the minimum fence character run per CommonMark.
+	MarkdownFenceMinLen = 3
+	// MarkdownFenceMaxIndent is the maximum leading-space indent per CommonMark.
+	MarkdownFenceMaxIndent = 3
+	// MarkdownFenceInfoLive marks a fence whose contents are rendered live:
+	// the first whitespace-separated word of the info string equals this value.
+	MarkdownFenceInfoLive = "exons"
 )

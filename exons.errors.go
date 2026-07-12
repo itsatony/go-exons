@@ -46,7 +46,6 @@ const (
 	ErrMsgMismatchedTag   = "mismatched closing tag"
 	ErrMsgInvalidTagName  = "invalid tag name"
 	ErrMsgEmptyTagName    = "tag name cannot be empty"
-	ErrMsgNestedRawBlock  = "nested raw blocks are not allowed"
 
 	// Execution errors
 	ErrMsgUnknownTag       = "unknown tag"
@@ -85,6 +84,10 @@ const (
 	ErrMsgUnknownTagInTemplate = "unknown tag in template"
 	ErrMsgInvalidOnErrorAttr   = "invalid onerror attribute value"
 	ErrMsgMissingIncludeTarget = "included template not found"
+
+	// Markdown fence mode validation warnings (WithMarkdownFences)
+	WarnMsgTagLikeInInertFence   = "tag-like syntax inside inert code fence - add 'exons' info string to render"
+	WarnMsgUnclosedMarkdownFence = "unclosed markdown code fence - content is inert to end of input"
 
 	// For loop messages
 	ErrMsgForMissingItem    = "missing required 'item' attribute"
@@ -359,14 +362,6 @@ func NewMismatchedTagError(expected, actual string, pos Position) error {
 		WithMetadata(MetaKeyColumn, strconv.Itoa(pos.Column)).
 		WithMetadata(MetaKeyExpected, expected).
 		WithMetadata(MetaKeyActual, actual)
-}
-
-// NewNestedRawBlockError creates an error for nested raw blocks
-func NewNestedRawBlockError(pos Position) error {
-	return cuserr.NewValidationError(ErrCodeParse, ErrMsgNestedRawBlock).
-		WithMetadata(MetaKeyLine, strconv.Itoa(pos.Line)).
-		WithMetadata(MetaKeyColumn, strconv.Itoa(pos.Column)).
-		WithMetadata(MetaKeyOffset, strconv.Itoa(pos.Offset))
 }
 
 // NewExecutionError creates an execution error with tag context

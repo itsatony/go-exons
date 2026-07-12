@@ -167,6 +167,19 @@ The `{~...~}` delimiter was chosen to never collide with prompt content (JSON, X
 | Raw | `{~exons.raw~}not parsed{~/exons.raw~}` |
 | Comment | `{~exons.comment~}removed from output{~/exons.comment~}` |
 | Escape | `\{~` produces literal `{~` |
+| Verbatim fence | `{~~ ... ~~}` emits its body byte-for-byte |
+
+### Writing exons syntax as content
+
+Three escape layers, from smallest to largest (full spec: [docs/template-syntax.md](docs/template-syntax.md)):
+
+| Mechanism | Use for | Notes |
+|---|---|---|
+| `\{~` | a single literal `{~` | one-off inline escape |
+| `{~~ ... ~~}` | any verbatim region | body is emitted byte-for-byte and may contain broken syntax, raw blocks, anything; if the body contains `~~}`, add one more tilde per side (`{~~~ ... ~~~}`, etc.) |
+| `{~exons.raw~}...{~/exons.raw~}` | self-documenting verbatim | scans to the **first** `{~/exons.raw~}` — cannot contain its own close; use a `{~~` fence for that |
+
+For markdown-format templates (SKILL.md-style bodies), enable `WithMarkdownFences()`: fenced code blocks (``` or ~~~) become inert so syntax examples never execute, and a fence renders live when its info string starts with `exons` (```` ```exons ````). `ImportFromSkillMD` marks specs with `ContentFormat: "markdown"` so consumers know to enable it. `Validate()` warns when tag-like syntax sits in an inert fence.
 
 ## Metadata Fields
 

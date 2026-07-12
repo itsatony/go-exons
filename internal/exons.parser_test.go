@@ -668,16 +668,12 @@ func TestParser_EscapedQuotesInAttributes(t *testing.T) {
 	assert.Equal(t, `value with "quotes"`, name)
 }
 
-func TestParser_NestedRawBlockError(t *testing.T) {
-	// Nested raw blocks are disallowed - this tests that error path
-	// However, since the lexer tokenizes everything, and the parser tracks inRawBlock,
-	// we need to construct a scenario where a raw block is detected inside another.
-	// Currently, the raw block parser collects tokens until {~/exons.raw~},
-	// so inner {~exons.raw~} would be collected as text.
-	// The inRawBlock flag protects against recursive parseRawBlock calls.
-
-	// This test verifies the raw block parsing logic works correctly
-	input := `{~exons.raw~}Outer content{~/exons.raw~}`
+func TestParser_RawBlockFirstCloseWins(t *testing.T) {
+	// Raw blocks scan verbatim to the FIRST canonical close: an inner
+	// {~exons.raw~} opener is literal body content, and the first
+	// {~/exons.raw~} closes the block. Use a {~~ ... ~~} fence for content
+	// that must contain the close sequence itself.
+	input := `{~exons.raw~}a{~exons.raw~}b{~/exons.raw~}`
 
 	lexer := NewLexer(input, nil)
 	tokens, err := lexer.Tokenize()
@@ -688,9 +684,59 @@ func TestParser_NestedRawBlockError(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, ast)
 
+	require.Len(t, ast.Children, 1)
 	tagNode := ast.Children[0].(*TagNode)
 	assert.Equal(t, TagNameRaw, tagNode.Name)
-	assert.Equal(t, "Outer content", tagNode.RawContent)
+	assert.Equal(t, "a{~exons.raw~}b", tagNode.RawContent)
+}
+
+func TestParser_RawBlockByteFidelity(t *testing.T) {
+	// Raw bodies round-trip byte-for-byte: irregular whitespace, single
+	// quotes, escapes, and lexically-invalid fragments are all preserved.
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "irregular whitespace and single quotes", body: `{~x   a='1'    b="2"/~}`},
+		{name: "escape preserved", body: `\{~ stays escaped`},
+		{name: "lexically invalid fragment", body: `{~ 5 ~} and a lone {~`},
+		{name: "block close of another tag", body: `{~/exons.if~}`},
+		{name: "crlf content", body: "line1\r\nline2\r\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := "{~exons.raw~}" + tt.body + "{~/exons.raw~}"
+			lexer := NewLexer(input, nil)
+			tokens, err := lexer.Tokenize()
+			require.NoError(t, err)
+
+			parser := NewParserWithSource(tokens, input, DefaultLexerConfig(), nil)
+			ast, err := parser.Parse()
+			require.NoError(t, err)
+
+			require.Len(t, ast.Children, 1)
+			tagNode := ast.Children[0].(*TagNode)
+			assert.Equal(t, TagNameRaw, tagNode.Name)
+			assert.Equal(t, tt.body, tagNode.RawContent)
+			assert.Equal(t, input, tagNode.RawSource)
+		})
+	}
+}
+
+func TestParser_StrayBlockCloseErrors(t *testing.T) {
+	// A top-level block close with no matching open is an error, not a
+	// silent truncation of everything after it.
+	input := `before{~/exons.if~}after`
+
+	lexer := NewLexer(input, nil)
+	tokens, err := lexer.Tokenize()
+	require.NoError(t, err)
+
+	parser := NewParser(tokens, nil)
+	_, err = parser.Parse()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), ErrMsgUnexpectedToken)
 }
 
 func TestParser_RawBlockWithNestedTags(t *testing.T) {
@@ -1194,7 +1240,7 @@ func TestParser_ParseCommentBlock(t *testing.T) {
 			name:    "unclosed comment",
 			input:   `{~exons.comment~}This comment never closes`,
 			wantErr: true,
-			errMsg:  ErrMsgMismatchedTag,
+			errMsg:  ErrMsgUnterminatedVerbatimBlock,
 		},
 		{
 			name:    "multiple comments in sequence",
@@ -1240,10 +1286,14 @@ func TestParser_ParseCommentBlock(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			lexer := NewLexer(tt.input, nil)
 			tokens, err := lexer.Tokenize()
-			require.NoError(t, err)
 
-			parser := NewParser(tokens, nil)
-			ast, err := parser.Parse()
+			// Unterminated comment blocks now fail at the lexer stage;
+			// parse only when tokenization succeeded.
+			var ast *RootNode
+			if err == nil {
+				parser := NewParser(tokens, nil)
+				ast, err = parser.Parse()
+			}
 
 			if tt.wantErr {
 				require.Error(t, err)

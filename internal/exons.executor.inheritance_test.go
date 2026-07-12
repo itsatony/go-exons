@@ -31,22 +31,22 @@ func (m *mockTemplateSourceResolver) GetTemplateSource(name string) (string, boo
 
 func TestNewInheritanceResolver(t *testing.T) {
 	t.Run("positive max depth is preserved", func(t *testing.T) {
-		resolver := NewInheritanceResolver(nil, nil, 5)
+		resolver := NewInheritanceResolver(nil, nil, 5, DefaultLexerConfig())
 		assert.Equal(t, 5, resolver.maxDepth)
 	})
 
 	t.Run("zero max depth uses default", func(t *testing.T) {
-		resolver := NewInheritanceResolver(nil, nil, 0)
+		resolver := NewInheritanceResolver(nil, nil, 0, DefaultLexerConfig())
 		assert.Equal(t, DefaultMaxInheritanceDepth, resolver.maxDepth)
 	})
 
 	t.Run("negative max depth uses default", func(t *testing.T) {
-		resolver := NewInheritanceResolver(nil, nil, -1)
+		resolver := NewInheritanceResolver(nil, nil, -1, DefaultLexerConfig())
 		assert.Equal(t, DefaultMaxInheritanceDepth, resolver.maxDepth)
 	})
 
 	t.Run("inheritance chain starts empty", func(t *testing.T) {
-		resolver := NewInheritanceResolver(nil, nil, 5)
+		resolver := NewInheritanceResolver(nil, nil, 5, DefaultLexerConfig())
 		assert.NotNil(t, resolver.inheritanceChain)
 		assert.Empty(t, resolver.inheritanceChain)
 	})
@@ -54,7 +54,7 @@ func TestNewInheritanceResolver(t *testing.T) {
 	t.Run("engine and template resolver stored", func(t *testing.T) {
 		engine := newMockTemplateExecutor()
 		tsr := newMockTemplateSourceResolver(nil)
-		resolver := NewInheritanceResolver(engine, tsr, 3)
+		resolver := NewInheritanceResolver(engine, tsr, 3, DefaultLexerConfig())
 		assert.Equal(t, engine, resolver.engine)
 		assert.Equal(t, tsr, resolver.templateResolver)
 	})
@@ -64,7 +64,7 @@ func TestNewInheritanceResolver(t *testing.T) {
 
 func TestResolveInheritance_MaxDepthExceeded(t *testing.T) {
 	tsr := newMockTemplateSourceResolver(nil)
-	resolver := NewInheritanceResolver(nil, tsr, 2)
+	resolver := NewInheritanceResolver(nil, tsr, 2, DefaultLexerConfig())
 	pos := Position{Line: 1, Column: 1, Offset: 0}
 
 	childRoot := &RootNode{Children: []Node{NewTextNode("child", pos)}}
@@ -77,7 +77,7 @@ func TestResolveInheritance_MaxDepthExceeded(t *testing.T) {
 
 func TestResolveInheritance_ExactlyAtMaxDepth(t *testing.T) {
 	tsr := newMockTemplateSourceResolver(nil)
-	resolver := NewInheritanceResolver(nil, tsr, 2)
+	resolver := NewInheritanceResolver(nil, tsr, 2, DefaultLexerConfig())
 	pos := Position{Line: 1, Column: 1, Offset: 0}
 
 	childRoot := &RootNode{Children: []Node{NewTextNode("child", pos)}}
@@ -100,7 +100,7 @@ func TestResolveInheritance_CircularInheritance(t *testing.T) {
 			// Parent extends itself (but we detect it through chain tracking)
 			"parent": "Parent content",
 		})
-		resolver := NewInheritanceResolver(nil, tsr, 10)
+		resolver := NewInheritanceResolver(nil, tsr, 10, DefaultLexerConfig())
 		// Pre-load the chain to simulate that "parent" is already in the ancestry
 		resolver.inheritanceChain = append(resolver.inheritanceChain, "parent")
 
@@ -117,7 +117,7 @@ func TestResolveInheritance_CircularInheritance(t *testing.T) {
 		tsr := newMockTemplateSourceResolver(map[string]string{
 			"base": `{~exons.extends template="child-template" /~}{~exons.block name="content"~}base{~/exons.block~}`,
 		})
-		resolver := NewInheritanceResolver(nil, tsr, 10)
+		resolver := NewInheritanceResolver(nil, tsr, 10, DefaultLexerConfig())
 		resolver.inheritanceChain = append(resolver.inheritanceChain, "child-template")
 
 		childRoot := &RootNode{Children: []Node{NewTextNode("child", pos)}}
@@ -138,7 +138,7 @@ func TestResolveInheritance_CircularInheritance(t *testing.T) {
 		tsr := newMockTemplateSourceResolver(map[string]string{
 			"parent": "Hello from parent",
 		})
-		resolver := NewInheritanceResolver(nil, tsr, 10)
+		resolver := NewInheritanceResolver(nil, tsr, 10, DefaultLexerConfig())
 
 		childRoot := &RootNode{Children: []Node{NewTextNode("child", pos)}}
 		childInfo := NewInheritanceInfo("parent", pos)
@@ -152,7 +152,7 @@ func TestResolveInheritance_CircularInheritance(t *testing.T) {
 }
 
 func TestResolveInheritance_NilTemplateResolver(t *testing.T) {
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 	pos := Position{Line: 1, Column: 1, Offset: 0}
 
 	childRoot := &RootNode{Children: []Node{NewTextNode("child", pos)}}
@@ -165,7 +165,7 @@ func TestResolveInheritance_NilTemplateResolver(t *testing.T) {
 
 func TestResolveInheritance_ParentTemplateNotFound(t *testing.T) {
 	tsr := newMockTemplateSourceResolver(nil) // empty sources
-	resolver := NewInheritanceResolver(nil, tsr, 10)
+	resolver := NewInheritanceResolver(nil, tsr, 10, DefaultLexerConfig())
 	pos := Position{Line: 1, Column: 1, Offset: 0}
 
 	childRoot := &RootNode{Children: []Node{NewTextNode("child", pos)}}
@@ -185,7 +185,7 @@ func TestResolveInheritance_SimpleBlockOverride(t *testing.T) {
 	tsr := newMockTemplateSourceResolver(map[string]string{
 		"parent": parentSource,
 	})
-	resolver := NewInheritanceResolver(nil, tsr, 10)
+	resolver := NewInheritanceResolver(nil, tsr, 10, DefaultLexerConfig())
 
 	// Child overrides the "content" block
 	childBlock := NewBlockNode("content", []Node{NewTextNode("Overridden Content", pos)}, pos)
@@ -223,7 +223,7 @@ func TestResolveInheritance_BlockNotOverridden(t *testing.T) {
 	tsr := newMockTemplateSourceResolver(map[string]string{
 		"parent": parentSource,
 	})
-	resolver := NewInheritanceResolver(nil, tsr, 10)
+	resolver := NewInheritanceResolver(nil, tsr, 10, DefaultLexerConfig())
 
 	// Child provides no block overrides
 	childInfo := NewInheritanceInfo("parent", pos)
@@ -257,7 +257,7 @@ func TestResolveInheritance_MultipleBlocks(t *testing.T) {
 	tsr := newMockTemplateSourceResolver(map[string]string{
 		"parent": parentSource,
 	})
-	resolver := NewInheritanceResolver(nil, tsr, 10)
+	resolver := NewInheritanceResolver(nil, tsr, 10, DefaultLexerConfig())
 
 	// Child overrides only the footer block
 	footerBlock := NewBlockNode("footer", []Node{NewTextNode("Custom Footer", pos)}, pos)
@@ -309,7 +309,7 @@ func TestResolveInheritance_ParentContentInsertion(t *testing.T) {
 	tsr := newMockTemplateSourceResolver(map[string]string{
 		"parent": parentSource,
 	})
-	resolver := NewInheritanceResolver(nil, tsr, 10)
+	resolver := NewInheritanceResolver(nil, tsr, 10, DefaultLexerConfig())
 
 	// Child block uses exons.parent to include parent content
 	parentTag := NewSelfClosingTag(TagNameParent, make(Attributes), pos)
@@ -368,7 +368,7 @@ func TestResolveInheritance_MultiLevelInheritance(t *testing.T) {
 		"grandparent": grandparentSource,
 		"parent":      parentSource,
 	})
-	resolver := NewInheritanceResolver(nil, tsr, 10)
+	resolver := NewInheritanceResolver(nil, tsr, 10, DefaultLexerConfig())
 
 	// Child extends parent, overrides title again
 	childBlock := NewBlockNode("title", []Node{NewTextNode("Child Title", pos)}, pos)
@@ -406,7 +406,7 @@ func TestResolveInheritance_ExtendsTagsRemovedFromOutput(t *testing.T) {
 	tsr := newMockTemplateSourceResolver(map[string]string{
 		"parent": parentSource,
 	})
-	resolver := NewInheritanceResolver(nil, tsr, 10)
+	resolver := NewInheritanceResolver(nil, tsr, 10, DefaultLexerConfig())
 
 	childInfo := NewInheritanceInfo("parent", pos)
 	childRoot := &RootNode{Children: []Node{
@@ -432,7 +432,7 @@ func TestResolveInheritance_InvalidParentSource(t *testing.T) {
 	tsr := newMockTemplateSourceResolver(map[string]string{
 		"parent": `{~exons.if~}unclosed`,
 	})
-	resolver := NewInheritanceResolver(nil, tsr, 10)
+	resolver := NewInheritanceResolver(nil, tsr, 10, DefaultLexerConfig())
 
 	childInfo := NewInheritanceInfo("parent", pos)
 	childRoot := &RootNode{Children: []Node{
@@ -447,7 +447,7 @@ func TestResolveInheritance_InvalidParentSource(t *testing.T) {
 
 func TestMergeBlocks_EmptyChildBlocks(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	parentBlock := NewBlockNode("header", []Node{NewTextNode("Default", pos)}, pos)
 	parentRoot := &RootNode{Children: []Node{parentBlock}}
@@ -462,7 +462,7 @@ func TestMergeBlocks_EmptyChildBlocks(t *testing.T) {
 
 func TestMergeBlocks_NilChildBlocks(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	parentBlock := NewBlockNode("header", []Node{NewTextNode("Default", pos)}, pos)
 	parentRoot := &RootNode{Children: []Node{parentBlock}}
@@ -476,7 +476,7 @@ func TestMergeBlocks_NilChildBlocks(t *testing.T) {
 }
 
 func TestMergeBlocks_EmptyParent(t *testing.T) {
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	parentRoot := &RootNode{Children: []Node{}}
 
@@ -489,7 +489,7 @@ func TestMergeBlocks_EmptyParent(t *testing.T) {
 
 func TestMergeBlocksInNodes_ConditionalNode(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	// Parent has a conditional with a block inside a branch
 	innerBlock := NewBlockNode("inner", []Node{NewTextNode("Default Inner", pos)}, pos)
@@ -523,7 +523,7 @@ func TestMergeBlocksInNodes_ConditionalNode(t *testing.T) {
 
 func TestMergeBlocksInNodes_ForNode(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	// Parent has a for loop with a block inside
 	innerBlock := NewBlockNode("item-block", []Node{NewTextNode("Default Item", pos)}, pos)
@@ -555,7 +555,7 @@ func TestMergeBlocksInNodes_ForNode(t *testing.T) {
 
 func TestMergeBlocksInNodes_SwitchNode(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	// Parent has a switch node with a block inside a case
 	innerBlock := NewBlockNode("case-block", []Node{NewTextNode("Default Case", pos)}, pos)
@@ -589,7 +589,7 @@ func TestMergeBlocksInNodes_SwitchNode(t *testing.T) {
 
 func TestMergeBlocksInNodes_NestedTagNode(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	// Parent has a tag node (non-extends) with a block inside its children
 	innerBlock := NewBlockNode("nested", []Node{NewTextNode("Default Nested", pos)}, pos)
@@ -621,7 +621,7 @@ func TestMergeBlocksInNodes_NestedTagNode(t *testing.T) {
 
 func TestMergeBlocksInNodes_ExtendsTagSkipped(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	// Parent AST has an extends tag (shouldn't normally happen, but test the skip)
 	extendsTag := NewSelfClosingTag(TagNameExtends, Attributes{AttrTemplate: "other"}, pos)
@@ -640,7 +640,7 @@ func TestMergeBlocksInNodes_ExtendsTagSkipped(t *testing.T) {
 
 func TestMergeBlocksInNodes_TextNodePassthrough(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	parentRoot := &RootNode{Children: []Node{
 		NewTextNode("Hello", pos),
@@ -660,7 +660,7 @@ func TestMergeBlocksInNodes_TextNodePassthrough(t *testing.T) {
 
 func TestMergeBlocksInNodes_SelfClosingTagPassthrough(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	// Self-closing tags (non-extends) should pass through
 	varTag := NewSelfClosingTag(TagNameVar, Attributes{AttrName: "user"}, pos)
@@ -678,7 +678,7 @@ func TestMergeBlocksInNodes_SelfClosingTagPassthrough(t *testing.T) {
 
 func TestResolveParentCalls_NoParentTag(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	childBlock := NewBlockNode("content", []Node{
 		NewTextNode("Just Child Content", pos),
@@ -697,7 +697,7 @@ func TestResolveParentCalls_NoParentTag(t *testing.T) {
 
 func TestResolveParentCalls_SingleParentTag(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	parentTag := NewSelfClosingTag(TagNameParent, make(Attributes), pos)
 	childBlock := NewBlockNode("content", []Node{
@@ -719,7 +719,7 @@ func TestResolveParentCalls_SingleParentTag(t *testing.T) {
 
 func TestResolveParentCalls_MultipleParentTags(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	parentTag1 := NewSelfClosingTag(TagNameParent, make(Attributes), pos)
 	parentTag2 := NewSelfClosingTag(TagNameParent, make(Attributes), pos)
@@ -743,7 +743,7 @@ func TestResolveParentCalls_MultipleParentTags(t *testing.T) {
 
 func TestResolveParentCalls_ParentWithMultipleChildren(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	parentTag := NewSelfClosingTag(TagNameParent, make(Attributes), pos)
 	childBlock := NewBlockNode("content", []Node{parentTag}, pos)
@@ -764,7 +764,7 @@ func TestResolveParentCalls_ParentWithMultipleChildren(t *testing.T) {
 
 func TestResolveParentCalls_EmptyChildBlock(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	childBlock := NewBlockNode("content", []Node{}, pos)
 	parentBlock := NewBlockNode("content", []Node{
@@ -779,7 +779,7 @@ func TestResolveParentCalls_EmptyChildBlock(t *testing.T) {
 
 func TestResolveParentCalls_EmptyParentBlock(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	parentTag := NewSelfClosingTag(TagNameParent, make(Attributes), pos)
 	childBlock := NewBlockNode("content", []Node{
@@ -799,7 +799,7 @@ func TestResolveParentCalls_EmptyParentBlock(t *testing.T) {
 
 func TestResolveParentCalls_NestedInTagNode(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	// Parent tag nested inside another tag node
 	parentTag := NewSelfClosingTag(TagNameParent, make(Attributes), pos)
@@ -821,7 +821,7 @@ func TestResolveParentCalls_NestedInTagNode(t *testing.T) {
 
 func TestResolveParentCalls_NestedInBlockNode(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	// Parent tag inside a nested block
 	parentTag := NewSelfClosingTag(TagNameParent, make(Attributes), pos)
@@ -843,7 +843,7 @@ func TestResolveParentCalls_NestedInBlockNode(t *testing.T) {
 
 func TestResolveParentCalls_NestedInConditionalNode(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	// Parent tag inside a conditional branch
 	parentTag := NewSelfClosingTag(TagNameParent, make(Attributes), pos)
@@ -867,7 +867,7 @@ func TestResolveParentCalls_NestedInConditionalNode(t *testing.T) {
 
 func TestResolveParentCalls_NestedInForNode(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	// Parent tag inside a for loop
 	parentTag := NewSelfClosingTag(TagNameParent, make(Attributes), pos)
@@ -889,7 +889,7 @@ func TestResolveParentCalls_NestedInForNode(t *testing.T) {
 
 func TestResolveParentCalls_NestedInSwitchNode(t *testing.T) {
 	pos := Position{Line: 1, Column: 1, Offset: 0}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	// Parent tag inside a switch case
 	parentTag := NewSelfClosingTag(TagNameParent, make(Attributes), pos)
@@ -913,7 +913,7 @@ func TestResolveParentCalls_NestedInSwitchNode(t *testing.T) {
 
 func TestResolveParentCalls_PreservesBlockMetadata(t *testing.T) {
 	pos := Position{Line: 5, Column: 10, Offset: 42}
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	childBlock := &BlockNode{
 		pos:       pos,
@@ -933,7 +933,7 @@ func TestResolveParentCalls_PreservesBlockMetadata(t *testing.T) {
 // --- parseTemplateWithInheritance Tests ---
 
 func TestParseTemplateWithInheritance_SimpleTemplate(t *testing.T) {
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	root, info, err := resolver.parseTemplateWithInheritance("Hello World")
 	require.NoError(t, err)
@@ -943,7 +943,7 @@ func TestParseTemplateWithInheritance_SimpleTemplate(t *testing.T) {
 }
 
 func TestParseTemplateWithInheritance_WithExtends(t *testing.T) {
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	source := `{~exons.extends template="base" /~}{~exons.block name="content"~}Hello{~/exons.block~}`
 	root, info, err := resolver.parseTemplateWithInheritance(source)
@@ -955,7 +955,7 @@ func TestParseTemplateWithInheritance_WithExtends(t *testing.T) {
 }
 
 func TestParseTemplateWithInheritance_InvalidSyntax(t *testing.T) {
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	// Malformed template
 	_, _, err := resolver.parseTemplateWithInheritance(`{~exons.if~}unclosed`)
@@ -963,7 +963,7 @@ func TestParseTemplateWithInheritance_InvalidSyntax(t *testing.T) {
 }
 
 func TestParseTemplateWithInheritance_EmptyTemplate(t *testing.T) {
-	resolver := NewInheritanceResolver(nil, nil, 10)
+	resolver := NewInheritanceResolver(nil, nil, 10, DefaultLexerConfig())
 
 	root, info, err := resolver.parseTemplateWithInheritance("")
 	require.NoError(t, err)
@@ -1347,14 +1347,14 @@ func TestResolveInheritance_FullPipelineSimple(t *testing.T) {
 	tsr := newMockTemplateSourceResolver(map[string]string{
 		"parent": parentSource,
 	})
-	resolver := NewInheritanceResolver(nil, tsr, 10)
+	resolver := NewInheritanceResolver(nil, tsr, 10, DefaultLexerConfig())
 
 	// Parse child
 	lexer := NewLexer(childSource, nil)
 	tokens, err := lexer.Tokenize()
 	require.NoError(t, err)
 
-	parser := NewParserWithSource(tokens, childSource, nil)
+	parser := NewParserWithSource(tokens, childSource, DefaultLexerConfig(), nil)
 	childRoot, err := parser.Parse()
 	require.NoError(t, err)
 
@@ -1399,14 +1399,14 @@ func TestResolveInheritance_FullPipelineWithParentCall(t *testing.T) {
 	tsr := newMockTemplateSourceResolver(map[string]string{
 		"parent": parentSource,
 	})
-	resolver := NewInheritanceResolver(nil, tsr, 10)
+	resolver := NewInheritanceResolver(nil, tsr, 10, DefaultLexerConfig())
 
 	// Parse child
 	lexer := NewLexer(childSource, nil)
 	tokens, err := lexer.Tokenize()
 	require.NoError(t, err)
 
-	parser := NewParserWithSource(tokens, childSource, nil)
+	parser := NewParserWithSource(tokens, childSource, DefaultLexerConfig(), nil)
 	childRoot, err := parser.Parse()
 	require.NoError(t, err)
 
@@ -1450,14 +1450,14 @@ func TestResolveInheritance_ThreeLevelInheritance(t *testing.T) {
 		"grandparent": grandparentSource,
 		"parent":      parentSource,
 	})
-	resolver := NewInheritanceResolver(nil, tsr, 10)
+	resolver := NewInheritanceResolver(nil, tsr, 10, DefaultLexerConfig())
 
 	// Parse child
 	lexer := NewLexer(childSource, nil)
 	tokens, err := lexer.Tokenize()
 	require.NoError(t, err)
 
-	parser := NewParserWithSource(tokens, childSource, nil)
+	parser := NewParserWithSource(tokens, childSource, DefaultLexerConfig(), nil)
 	childRoot, err := parser.Parse()
 	require.NoError(t, err)
 

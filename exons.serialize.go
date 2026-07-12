@@ -115,6 +115,7 @@ func (s *Spec) ExportFull() ([]byte, error) {
 var knownSpecFields = map[string]bool{
 	SpecFieldName:          true,
 	SpecFieldDescription:   true,
+	SpecFieldContentFormat: true,
 	SpecFieldInputs:        true,
 	SpecFieldOutputs:       true,
 	SpecFieldSample:        true,
@@ -145,6 +146,9 @@ func (s *Spec) buildSerializeMap(opts *SerializeOptions) map[string]any {
 	}
 	if s.Description != "" {
 		m[SpecFieldDescription] = s.Description
+	}
+	if s.ContentFormat != "" {
+		m[SpecFieldContentFormat] = s.ContentFormat
 	}
 
 	// Type (include if agent fields are included or if type is explicitly set)

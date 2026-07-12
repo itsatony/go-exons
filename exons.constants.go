@@ -252,6 +252,13 @@ const (
 	LiteralOpenDelim = "{~"
 )
 
+// Content format constants for Spec.ContentFormat
+const (
+	// ContentFormatMarkdown marks a Spec body as markdown; render such
+	// bodies with WithMarkdownFences so fenced code examples stay inert.
+	ContentFormatMarkdown = "markdown"
+)
+
 // Internal meta keys for nested template data passing.
 // These are used internally and prefixed with underscore to avoid collision.
 const (
@@ -409,11 +416,12 @@ const (
 // Used in buildSerializeMap and extension key filtering.
 const (
 	// Standard fields
-	SpecFieldName        = "name"
-	SpecFieldDescription = "description"
-	SpecFieldInputs      = "inputs"
-	SpecFieldOutputs     = "outputs"
-	SpecFieldSample      = "sample"
+	SpecFieldName          = "name"
+	SpecFieldDescription   = "description"
+	SpecFieldInputs        = "inputs"
+	SpecFieldOutputs       = "outputs"
+	SpecFieldSample        = "sample"
+	SpecFieldContentFormat = "content_format"
 
 	// go-exons extension fields
 	SpecFieldType        = "type"

@@ -60,7 +60,12 @@ func (t *Template) ExecuteWithContext(ctx context.Context, execCtx *Context) (st
 	if t.inheritanceInfo != nil && t.engine != nil {
 		// Create an adapter that wraps the engine for TemplateSourceResolver interface
 		sourceResolver := &engineSourceAdapter{engine: t.engine}
-		resolver := internal.NewInheritanceResolver(nil, sourceResolver, t.config.maxDepth)
+		lexerConfig := internal.LexerConfig{
+			OpenDelim:      t.config.openDelim,
+			CloseDelim:     t.config.closeDelim,
+			MarkdownFences: t.config.markdownFences,
+		}
+		resolver := internal.NewInheritanceResolver(nil, sourceResolver, t.config.maxDepth, lexerConfig)
 		resolvedAST, err := resolver.ResolveInheritance(ctx, t.ast, t.inheritanceInfo, 0)
 		if err != nil {
 			return "", err

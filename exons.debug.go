@@ -531,16 +531,16 @@ func (t *Template) generatePlaceholders(node any, data map[string]any, sb *strin
 
 			// Try to get actual value
 			if val, ok := getPath(data, varName); ok {
-				sb.WriteString(fmt.Sprintf("%v", val))
+				fmt.Fprintf(sb, "%v", val)
 			} else if defaultVal != "" {
 				sb.WriteString(defaultVal)
 			} else {
-				sb.WriteString(fmt.Sprintf(placeholderVar, varName))
+				fmt.Fprintf(sb, placeholderVar, varName)
 			}
 
 		case TagNameInclude:
 			tmplName, _ := n.Attributes.Get(AttrTemplate)
-			sb.WriteString(fmt.Sprintf(placeholderInclude, tmplName))
+			fmt.Fprintf(sb, placeholderInclude, tmplName)
 
 		case TagNameRaw:
 			sb.WriteString(n.RawContent)
@@ -549,12 +549,12 @@ func (t *Template) generatePlaceholders(node any, data map[string]any, sb *strin
 			// Comments produce no output
 
 		default:
-			sb.WriteString(fmt.Sprintf(placeholderTag, n.Name))
+			fmt.Fprintf(sb, placeholderTag, n.Name)
 		}
 
 	case *internal.ConditionalNode:
 		if len(n.Branches) > 0 {
-			sb.WriteString(fmt.Sprintf(placeholderIfOpen, n.Branches[0].Condition))
+			fmt.Fprintf(sb, placeholderIfOpen, n.Branches[0].Condition)
 			for _, child := range n.Branches[0].Children {
 				t.generatePlaceholders(child, data, sb)
 			}
@@ -563,7 +563,7 @@ func (t *Template) generatePlaceholders(node any, data map[string]any, sb *strin
 				if branch.IsElse {
 					sb.WriteString(placeholderElse)
 				} else {
-					sb.WriteString(fmt.Sprintf(placeholderElseIf, branch.Condition))
+					fmt.Fprintf(sb, placeholderElseIf, branch.Condition)
 				}
 				for _, child := range branch.Children {
 					t.generatePlaceholders(child, data, sb)
@@ -573,19 +573,19 @@ func (t *Template) generatePlaceholders(node any, data map[string]any, sb *strin
 		}
 
 	case *internal.ForNode:
-		sb.WriteString(fmt.Sprintf(placeholderForOpen, n.ItemVar, n.Source))
+		fmt.Fprintf(sb, placeholderForOpen, n.ItemVar, n.Source)
 		for _, child := range n.Children {
 			t.generatePlaceholders(child, data, sb)
 		}
 		sb.WriteString(placeholderForClose)
 
 	case *internal.SwitchNode:
-		sb.WriteString(fmt.Sprintf(placeholderSwitchOpen, n.Expression))
+		fmt.Fprintf(sb, placeholderSwitchOpen, n.Expression)
 		for _, c := range n.Cases {
 			if c.Value != "" {
-				sb.WriteString(fmt.Sprintf(placeholderCaseVal, c.Value))
+				fmt.Fprintf(sb, placeholderCaseVal, c.Value)
 			} else {
-				sb.WriteString(fmt.Sprintf(placeholderCaseEval, c.Eval))
+				fmt.Fprintf(sb, placeholderCaseEval, c.Eval)
 			}
 			for _, child := range c.Children {
 				t.generatePlaceholders(child, data, sb)
@@ -644,7 +644,7 @@ func (t *Template) formatAST(node any, depth int) string {
 
 	switch n := node.(type) {
 	case *internal.RootNode:
-		sb.WriteString(fmt.Sprintf(astRootLabel, indent))
+		fmt.Fprintf(&sb, astRootLabel, indent)
 		for _, child := range n.Children {
 			sb.WriteString(t.formatAST(child, depth+1))
 		}
@@ -655,20 +655,20 @@ func (t *Template) formatAST(node any, depth int) string {
 			content = content[:astTextMaxLen] + astTextTruncation
 		}
 		content = strings.ReplaceAll(content, astNewlineChar, astNewlineEscape)
-		sb.WriteString(fmt.Sprintf(astTextLabel, indent, content))
+		fmt.Fprintf(&sb, astTextLabel, indent, content)
 
 	case *internal.TagNode:
-		sb.WriteString(fmt.Sprintf(astTagLabel, indent, n.Name))
+		fmt.Fprintf(&sb, astTagLabel, indent, n.Name)
 		if len(n.Attributes.Keys()) > 0 {
 			attrs := make([]string, 0)
 			for _, k := range n.Attributes.Keys() {
 				v, _ := n.Attributes.Get(k)
 				attrs = append(attrs, fmt.Sprintf(astAttrPair, k, v))
 			}
-			sb.WriteString(fmt.Sprintf(astAttrsFmt, strings.Join(attrs, ", ")))
+			fmt.Fprintf(&sb, astAttrsFmt, strings.Join(attrs, ", "))
 		}
 		pos := n.Pos()
-		sb.WriteString(fmt.Sprintf(astLineFmt, pos.Line))
+		fmt.Fprintf(&sb, astLineFmt, pos.Line)
 
 	case *internal.ConditionalNode:
 		pos := n.Pos()
@@ -676,14 +676,14 @@ func (t *Template) formatAST(node any, depth int) string {
 		if len(n.Branches) > 0 {
 			condition = n.Branches[0].Condition
 		}
-		sb.WriteString(fmt.Sprintf(astCondFmt, indent, condition, pos.Line))
+		fmt.Fprintf(&sb, astCondFmt, indent, condition, pos.Line)
 		for i, branch := range n.Branches {
 			if i == 0 {
-				sb.WriteString(fmt.Sprintf(astThenLabel, indent))
+				fmt.Fprintf(&sb, astThenLabel, indent)
 			} else if branch.IsElse {
-				sb.WriteString(fmt.Sprintf(astElseLabel, indent))
+				fmt.Fprintf(&sb, astElseLabel, indent)
 			} else {
-				sb.WriteString(fmt.Sprintf(astElseIfFmt, indent, branch.Condition))
+				fmt.Fprintf(&sb, astElseIfFmt, indent, branch.Condition)
 			}
 			for _, child := range branch.Children {
 				sb.WriteString(t.formatAST(child, depth+2))
@@ -692,33 +692,33 @@ func (t *Template) formatAST(node any, depth int) string {
 
 	case *internal.ForNode:
 		pos := n.Pos()
-		sb.WriteString(fmt.Sprintf(astForFmt, indent, n.ItemVar, n.Source))
+		fmt.Fprintf(&sb, astForFmt, indent, n.ItemVar, n.Source)
 		if n.IndexVar != "" {
-			sb.WriteString(fmt.Sprintf(astForIndex, n.IndexVar))
+			fmt.Fprintf(&sb, astForIndex, n.IndexVar)
 		}
 		if n.Limit > 0 {
-			sb.WriteString(fmt.Sprintf(astForLimit, n.Limit))
+			fmt.Fprintf(&sb, astForLimit, n.Limit)
 		}
-		sb.WriteString(fmt.Sprintf(astLineFmt, pos.Line))
+		fmt.Fprintf(&sb, astLineFmt, pos.Line)
 		for _, child := range n.Children {
 			sb.WriteString(t.formatAST(child, depth+1))
 		}
 
 	case *internal.SwitchNode:
 		pos := n.Pos()
-		sb.WriteString(fmt.Sprintf(astSwitchFmt, indent, n.Expression, pos.Line))
+		fmt.Fprintf(&sb, astSwitchFmt, indent, n.Expression, pos.Line)
 		for _, c := range n.Cases {
 			if c.Value != "" {
-				sb.WriteString(fmt.Sprintf(astCaseVal, indent, c.Value))
+				fmt.Fprintf(&sb, astCaseVal, indent, c.Value)
 			} else {
-				sb.WriteString(fmt.Sprintf(astCaseEval, indent, c.Eval))
+				fmt.Fprintf(&sb, astCaseEval, indent, c.Eval)
 			}
 			for _, child := range c.Children {
 				sb.WriteString(t.formatAST(child, depth+2))
 			}
 		}
 		if n.Default != nil {
-			sb.WriteString(fmt.Sprintf(astDefaultLbl, indent))
+			fmt.Fprintf(&sb, astDefaultLbl, indent)
 			for _, child := range n.Default.Children {
 				sb.WriteString(t.formatAST(child, depth+2))
 			}
@@ -940,10 +940,10 @@ func (r *DryRunResult) String() string {
 	var sb strings.Builder
 
 	sb.WriteString(dryRunHeader)
-	sb.WriteString(fmt.Sprintf(dryRunValidLabel, r.Valid))
+	fmt.Fprintf(&sb, dryRunValidLabel, r.Valid)
 
 	if len(r.Variables) > 0 {
-		sb.WriteString(fmt.Sprintf(dryRunVariablesHeader, len(r.Variables)))
+		fmt.Fprintf(&sb, dryRunVariablesHeader, len(r.Variables))
 		for _, v := range r.Variables {
 			status := dryRunStatusFound
 			if !v.InData {
@@ -953,72 +953,72 @@ func (r *DryRunResult) String() string {
 					status = dryRunStatusMissing
 				}
 			}
-			sb.WriteString(fmt.Sprintf(dryRunStatusVarLine, v.Name, v.Line, status))
+			fmt.Fprintf(&sb, dryRunStatusVarLine, v.Name, v.Line, status)
 			if len(v.Suggestions) > 0 {
-				sb.WriteString(fmt.Sprintf(dryRunStatusSuggestion, strings.Join(v.Suggestions, ", ")))
+				fmt.Fprintf(&sb, dryRunStatusSuggestion, strings.Join(v.Suggestions, ", "))
 			}
 		}
 	}
 
 	if len(r.Resolvers) > 0 {
-		sb.WriteString(fmt.Sprintf(dryRunResolversHeader, len(r.Resolvers)))
+		fmt.Fprintf(&sb, dryRunResolversHeader, len(r.Resolvers))
 		for _, res := range r.Resolvers {
-			sb.WriteString(fmt.Sprintf(dryRunStatusResSummary, res.TagName, res.Line))
+			fmt.Fprintf(&sb, dryRunStatusResSummary, res.TagName, res.Line)
 		}
 	}
 
 	if len(r.Includes) > 0 {
-		sb.WriteString(fmt.Sprintf(dryRunIncludesHeader, len(r.Includes)))
+		fmt.Fprintf(&sb, dryRunIncludesHeader, len(r.Includes))
 		for _, inc := range r.Includes {
 			status := dryRunStatusFound
 			if !inc.Exists {
 				status = dryRunStatusNotFound
 			}
-			sb.WriteString(fmt.Sprintf(dryRunStatusIncLine, inc.TemplateName, inc.Line, status))
+			fmt.Fprintf(&sb, dryRunStatusIncLine, inc.TemplateName, inc.Line, status)
 		}
 	}
 
 	if len(r.Conditionals) > 0 {
-		sb.WriteString(fmt.Sprintf(dryRunConditionalsHeader, len(r.Conditionals)))
+		fmt.Fprintf(&sb, dryRunConditionalsHeader, len(r.Conditionals))
 		for _, cond := range r.Conditionals {
-			sb.WriteString(fmt.Sprintf(dryRunStatusCondLine, cond.Condition, cond.Line))
+			fmt.Fprintf(&sb, dryRunStatusCondLine, cond.Condition, cond.Line)
 		}
 	}
 
 	if len(r.Loops) > 0 {
-		sb.WriteString(fmt.Sprintf(dryRunLoopsHeader, len(r.Loops)))
+		fmt.Fprintf(&sb, dryRunLoopsHeader, len(r.Loops))
 		for _, loop := range r.Loops {
 			status := dryRunStatusLoopFound
 			if !loop.InData {
 				status = dryRunStatusLoopMiss
 			}
-			sb.WriteString(fmt.Sprintf(dryRunStatusLoopLine, loop.ItemVar, loop.Source, loop.Line, status))
+			fmt.Fprintf(&sb, dryRunStatusLoopLine, loop.ItemVar, loop.Source, loop.Line, status)
 		}
 	}
 
 	if len(r.MissingVariables) > 0 {
-		sb.WriteString(fmt.Sprintf(dryRunMissingVarsHeader, len(r.MissingVariables)))
+		fmt.Fprintf(&sb, dryRunMissingVarsHeader, len(r.MissingVariables))
 		for _, v := range r.MissingVariables {
 			sb.WriteString(dryRunListPrefix + v + dryRunNewline)
 		}
 	}
 
 	if len(r.UnusedVariables) > 0 {
-		sb.WriteString(fmt.Sprintf(dryRunUnusedVarsHeader, len(r.UnusedVariables)))
+		fmt.Fprintf(&sb, dryRunUnusedVarsHeader, len(r.UnusedVariables))
 		for _, v := range r.UnusedVariables {
 			sb.WriteString(dryRunListPrefix + v + dryRunNewline)
 		}
 	}
 
 	if len(r.Errors) > 0 {
-		sb.WriteString(fmt.Sprintf(dryRunErrorsHeader, len(r.Errors)))
+		fmt.Fprintf(&sb, dryRunErrorsHeader, len(r.Errors))
 		for _, e := range r.Errors {
 			sb.WriteString(dryRunListPrefix + e + dryRunNewline)
 		}
 	}
 
 	if len(r.Warnings) > 0 {
-		sb.WriteString(fmt.Sprintf(dryRunWarningsHeader, len(r.Warnings)))
+		fmt.Fprintf(&sb, dryRunWarningsHeader, len(r.Warnings))
 		for _, w := range r.Warnings {
 			sb.WriteString(dryRunListPrefix + w + dryRunNewline)
 		}
@@ -1053,16 +1053,16 @@ func (r *ExplainResult) String() string {
 			} else {
 				status = fmt.Sprintf(explainVarValue, v.Value)
 			}
-			sb.WriteString(fmt.Sprintf(explainVarLine, v.Line, v.Path, status))
+			fmt.Fprintf(&sb, explainVarLine, v.Line, v.Path, status)
 		}
 	}
 
 	sb.WriteString(explainTimingHeader)
-	sb.WriteString(fmt.Sprintf(explainTimingTotal, r.Timing.Total))
-	sb.WriteString(fmt.Sprintf(explainTimingExec, r.Timing.Execution))
+	fmt.Fprintf(&sb, explainTimingTotal, r.Timing.Total)
+	fmt.Fprintf(&sb, explainTimingExec, r.Timing.Execution)
 
 	if r.Error != nil {
-		sb.WriteString(fmt.Sprintf(explainErrorHeader, r.Error))
+		fmt.Fprintf(&sb, explainErrorHeader, r.Error)
 	}
 
 	sb.WriteString(explainOutputHeader)

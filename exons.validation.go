@@ -1,6 +1,8 @@
 package exons
 
 import (
+	"strings"
+
 	"github.com/itsatony/go-exons/internal"
 )
 
@@ -80,10 +82,17 @@ func (e *Engine) Validate(source string) (*ValidationResult, error) {
 		issues: make([]ValidationIssue, 0),
 	}
 
+	// Markdown fence lints run before tokenization so they surface even when
+	// the template fails to parse.
+	if e.config.markdownFences {
+		e.validateMarkdownFences(source, result)
+	}
+
 	// Create lexer with configured delimiters
 	lexerConfig := internal.LexerConfig{
-		OpenDelim:  e.config.openDelim,
-		CloseDelim: e.config.closeDelim,
+		OpenDelim:      e.config.openDelim,
+		CloseDelim:     e.config.closeDelim,
+		MarkdownFences: e.config.markdownFences,
 	}
 	lexer := internal.NewLexerWithConfig(source, lexerConfig, e.logger)
 
@@ -99,7 +108,7 @@ func (e *Engine) Validate(source string) (*ValidationResult, error) {
 	}
 
 	// Parse with source for validation
-	parser := internal.NewParserWithSource(tokens, source, e.logger)
+	parser := internal.NewParserWithSource(tokens, source, lexerConfig, e.logger)
 	ast, parseErr := parser.Parse()
 	if parseErr != nil {
 		result.issues = append(result.issues, ValidationIssue{
@@ -114,6 +123,33 @@ func (e *Engine) Validate(source string) (*ValidationResult, error) {
 	e.validateNodes(ast.Children, result)
 
 	return result, nil
+}
+
+// validateMarkdownFences lints markdown code fences (WithMarkdownFences mode):
+// tag-like syntax inside an inert fence will not render, and an unclosed
+// fence silently inerts everything to the end of input.
+func (e *Engine) validateMarkdownFences(source string, result *ValidationResult) {
+	for _, region := range internal.ScanMarkdownFences(source) {
+		pos := Position{
+			Offset: region.OpenPos.Offset,
+			Line:   region.OpenPos.Line,
+			Column: region.OpenPos.Column,
+		}
+		if !region.Live && strings.Contains(source[region.BodyStart:region.End], e.config.openDelim) {
+			result.issues = append(result.issues, ValidationIssue{
+				Severity: SeverityWarning,
+				Message:  WarnMsgTagLikeInInertFence,
+				Position: pos,
+			})
+		}
+		if region.Unclosed {
+			result.issues = append(result.issues, ValidationIssue{
+				Severity: SeverityWarning,
+				Message:  WarnMsgUnclosedMarkdownFence,
+				Position: pos,
+			})
+		}
+	}
 }
 
 // validateNodes recursively validates a slice of AST nodes.

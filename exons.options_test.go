@@ -9,6 +9,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestWithMarkdownFences(t *testing.T) {
+	engine, err := New(WithMarkdownFences())
+	require.NoError(t, err)
+	assert.True(t, engine.config.markdownFences)
+
+	// Default is off
+	plain, err := New()
+	require.NoError(t, err)
+	assert.False(t, plain.config.markdownFences)
+}
+
 func TestWithEnvDisabled(t *testing.T) {
 	engine, err := New(WithEnvDisabled())
 	require.NoError(t, err)

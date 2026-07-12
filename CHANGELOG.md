@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0-dc11] - 2026-07-12
+
+Syntax-safety cycle: templates can now safely contain examples of their own
+syntax. Normative lexical spec: [docs/template-syntax.md](docs/template-syntax.md).
+
+### Added
+
+- **Verbatim tilde fences `{~~ ... ~~}`**: a `{` + k tildes (k ≥ 2) opens a
+  fence closed by the first maximal run of exactly k tildes + `}`; the body
+  is emitted byte-for-byte with no tag/escape processing and may contain
+  lexically invalid syntax, full raw blocks, anything. Body contains `~~}`?
+  Add a tilde per side (`{~~~ ... ~~~}`), like markdown fence escalation.
+  Unterminated fences are hard lexer errors (position + tilde count).
+  Backward-compatible by construction: `{~~` was previously a hard lexer
+  error ("invalid tag name"), not literal text, so no valid template changes
+  meaning. Disabled under custom `WithDelimiters` (stays plain text).
+- **`WithMarkdownFences()` engine option**: markdown fenced code blocks
+  (CommonMark subset: ```` ``` ````/`~~~`, ≤3-space indent, ≥-length same-char
+  closer) become inert regions — tags/escapes/fences inside render as literal
+  text. A fence whose info string starts with `exons` (```` ```exons ````)
+  renders live. Unclosed fences are inert to EOF (matching markdown
+  renderers) with a `Validate()` warning. Inline code spans stay live.
+- **`Spec.ContentFormat`** (`content_format` in YAML/JSON) — content-format
+  hint; `ImportFromSkillMD` sets it to `"markdown"` so consumers know to
+  render the body with `WithMarkdownFences()`.
+- **`Validate()` markdown-fence lints** (`WarnMsgTagLikeInInertFence`,
+  `WarnMsgUnclosedMarkdownFence`), emitted even when the template fails to
+  parse.
+- VS Code grammar: verbatim-fence scope (backreference-matched tilde runs)
+  and inert/live markdown code-fence scopes (closer length approximated —
+  TextMate cannot express "at least as long").
+- `docs/template-syntax.md` (normative lexical grammar + precedence table)
+  and `docs/masterplan.md` (cycle log).
+
+### BREAKING
+
+- **Raw/comment blocks now scan verbatim at the lexer level.** Consequences:
+  - Only the canonical close (`{~/exons.raw~}`, no interior whitespace) ends
+    a block; `{~/ exons.raw ~}` is now body content.
+  - Escapes inside raw are preserved byte-for-byte (`\{~` stays `\{~`;
+    previously it was un-escaped to `{~`).
+  - Body content no longer needs to lex cleanly — broken teaching examples
+    (`{~ 5 ~}`, a lone `{~`) are now legal raw content.
+  - Unterminated raw/comment is a lexer error (was a parser mismatched-tag
+    error).
+  - Nested raw no longer errors: the first close wins and inner openers are
+    literal text. Removed `NewNestedRawBlockError` and `ErrMsgNestedRawBlock`
+    from the public API. Use `{~~ ... ~~}` to embed a complete raw block.
+- A stray top-level block close (`{~/x~}` with no open) is now a parse error;
+  previously everything after it was silently dropped.
+- Internal (pre-release): `internal.NewParserWithSource` and
+  `internal.NewInheritanceResolver` take a `LexerConfig`.
+
+### Fixed
+
+- Raw-block content round-trips byte-for-byte; the old parser-level
+  reconstruction canonicalized quotes/whitespace and hardcoded default
+  delimiters (broken under `WithDelimiters`).
+- Template inheritance re-lexed parent templates with default config,
+  ignoring `WithDelimiters` (and now `WithMarkdownFences`); the engine lexer
+  config is threaded through.
+- Migrated `.golangci.yml` to golangci-lint v2 and fixed the staticcheck
+  findings it surfaced (`fmt.Fprintf` over `WriteString(fmt.Sprintf(...))`).
+
 ## [0.14.0] - 2026-06-21
 
 ### Added

@@ -59,6 +59,9 @@ func ImportFromSkillMD(content string) (*Spec, error) {
 	}
 
 	spec.Body = body
+	// SKILL.md bodies are markdown: signal downstream consumers to render
+	// with WithMarkdownFences so fenced code examples stay inert.
+	spec.ContentFormat = ContentFormatMarkdown
 	return spec, nil
 }
 

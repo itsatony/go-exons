@@ -1497,6 +1497,7 @@ func TestKnownSpecFields_MatchesSpecStruct(t *testing.T) {
 	spec := &Spec{
 		Name:          "test",
 		Description:   "test desc",
+		ContentFormat: ContentFormatMarkdown,
 		Type:          DocumentTypeSkill,
 		Execution:     &execution.Config{Provider: "openai"},
 		Inputs:        map[string]*InputDef{"q": {Type: SchemaTypeString}},

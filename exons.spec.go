@@ -56,6 +56,11 @@ type Spec struct {
 	// Extensions — catch-all for unknown YAML keys
 	Extensions map[string]any `yaml:",inline" json:"extensions,omitempty"`
 
+	// ContentFormat hints how Body should be interpreted (e.g. "markdown").
+	// Set by ImportFromSkillMD; consumers rendering markdown bodies should
+	// enable WithMarkdownFences so fenced code examples stay inert.
+	ContentFormat string `yaml:"content_format,omitempty" json:"content_format,omitempty"`
+
 	// Body — template content after frontmatter
 	Body string `yaml:"-" json:"body,omitempty"`
 }
@@ -258,11 +263,12 @@ func (s *Spec) Clone() *Spec {
 	}
 
 	clone := &Spec{
-		Name:        s.Name,
-		Description: s.Description,
-		Type:        s.Type,
-		Credential:  s.Credential,
-		Body:        s.Body,
+		Name:          s.Name,
+		Description:   s.Description,
+		Type:          s.Type,
+		Credential:    s.Credential,
+		ContentFormat: s.ContentFormat,
+		Body:          s.Body,
 	}
 
 	// Clone execution (delegates to Config.Clone)
