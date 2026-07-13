@@ -17,7 +17,7 @@ and prompts — safe to author by hand and by LLMs.
 |---|---|---|---|
 | DC1–DC10 | 0.1–0.11 | Core engine, catalogs, compilation, A2A, hardening | shipped |
 | DC-SE0 | 0.12–0.14 | Skope migration seam: requirements block, @org/name refs | shipped |
-| DC11-verbatim | 0.15.0 | Syntax safety: nesting & examples-of-the-syntax | in progress |
+| DC11-verbatim | 0.15.0 | Syntax safety: nesting & examples-of-the-syntax | shipped 2026-07-13 |
 
 ## DC11-verbatim — Syntax safety (0.15.0)
 
