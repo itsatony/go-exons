@@ -31,12 +31,17 @@ const (
 
 // Common date format constants for documentation and examples
 const (
-	DateFormatISO     = "2006-01-02"
-	DateFormatUS      = "01/02/2006"
-	DateFormatEU      = "02/01/2006"
-	DateTimeFormatISO = "2006-01-02T15:04:05Z07:00"
-	TimeFormat24H     = "15:04:05"
-	TimeFormat12H     = "3:04:05 PM"
+	DateFormatISO        = "2006-01-02"
+	DateFormatUS         = "01/02/2006"
+	DateFormatEU         = "02/01/2006"
+	DateTimeFormatISO    = "2006-01-02T15:04:05Z07:00"
+	DateTimeFormatSpaced = "2006-01-02 15:04:05"
+	DateFormatSlashed    = "2006/01/02"
+	DateFormatEUDashed   = "02-01-2006"
+	DateFormatMonthShort = "Jan 2, 2006"
+	DateFormatMonthLong  = "January 2, 2006"
+	TimeFormat24H        = "15:04:05"
+	TimeFormat12H        = "3:04:05 PM"
 )
 
 // Common time parsing formats tried in order
@@ -51,11 +56,11 @@ var commonTimeFormats = []string{
 	time.RFC822Z,
 	DateFormatUS,
 	DateFormatEU,
-	"2006-01-02 15:04:05",
-	"2006/01/02",
-	"02-01-2006",
-	"Jan 2, 2006",
-	"January 2, 2006",
+	DateTimeFormatSpaced,
+	DateFormatSlashed,
+	DateFormatEUDashed,
+	DateFormatMonthShort,
+	DateFormatMonthLong,
 }
 
 // Time component constants

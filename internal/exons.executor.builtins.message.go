@@ -83,9 +83,9 @@ func (r *MessageResolver) Resolve(ctx context.Context, execCtx interface{}, attr
 	role = strings.ToLower(role)
 
 	// Build cache flag string
-	cacheFlag := "false"
+	cacheFlag := AttrValueFalse
 	if hasCache && strings.EqualFold(cache, AttrValueTrue) {
-		cacheFlag = "true"
+		cacheFlag = AttrValueTrue
 	}
 
 	// For block tags, the content is passed via a special attribute or we return just markers

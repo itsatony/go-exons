@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -57,7 +58,7 @@ func (r *RefResolver) Resolve(ctx context.Context, execCtx interface{}, attrs At
 	if depth >= RefMaxDepth {
 		return "", NewBuiltinError(ErrMsgRefDepthExceeded, TagNameRef).
 			WithMetadata(LogFieldSpecSlug, slug).
-			WithMetadata("depth", string(rune(depth+'0')))
+			WithMetadata(LogFieldDepth, strconv.Itoa(depth))
 	}
 
 	// Check for circular reference

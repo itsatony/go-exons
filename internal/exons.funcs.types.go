@@ -213,7 +213,7 @@ func isTruthy(v any) bool {
 		switch rv.Kind() {
 		case reflect.Slice, reflect.Array, reflect.Map:
 			return rv.Len() > 0
-		case reflect.Ptr, reflect.Interface:
+		case reflect.Pointer, reflect.Interface:
 			return !rv.IsNil()
 		default:
 			return true // Non-nil values are generally truthy

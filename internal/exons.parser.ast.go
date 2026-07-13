@@ -36,7 +36,7 @@ func (n *RootNode) String() string {
 	var sb strings.Builder
 	sb.WriteString("RootNode{\n")
 	for i, child := range n.Children {
-		sb.WriteString(fmt.Sprintf("  [%d] %s\n", i, child.String()))
+		fmt.Fprintf(&sb, "  [%d] %s\n", i, child.String())
 	}
 	sb.WriteString("}")
 	return sb.String()
@@ -103,9 +103,9 @@ func (n *TagNode) Pos() Position {
 func (n *TagNode) String() string {
 	var sb strings.Builder
 	if n.SelfClose {
-		sb.WriteString(fmt.Sprintf("TagNode{%s, self-close, attrs=%v @ %s}", n.Name, n.Attributes, n.pos))
+		fmt.Fprintf(&sb, "TagNode{%s, self-close, attrs=%v @ %s}", n.Name, n.Attributes, n.pos)
 	} else {
-		sb.WriteString(fmt.Sprintf("TagNode{%s, block, attrs=%v, children=%d @ %s}", n.Name, n.Attributes, len(n.Children), n.pos))
+		fmt.Fprintf(&sb, "TagNode{%s, block, attrs=%v, children=%d @ %s}", n.Name, n.Attributes, len(n.Children), n.pos)
 	}
 	return sb.String()
 }
@@ -249,12 +249,12 @@ func (n *ConditionalNode) Pos() Position {
 // String returns a string representation
 func (n *ConditionalNode) String() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("ConditionalNode{branches=%d @ %s", len(n.Branches), n.pos))
+	fmt.Fprintf(&sb, "ConditionalNode{branches=%d @ %s", len(n.Branches), n.pos)
 	for i, branch := range n.Branches {
 		if branch.IsElse {
-			sb.WriteString(fmt.Sprintf(", [%d]else", i))
+			fmt.Fprintf(&sb, ", [%d]else", i)
 		} else {
-			sb.WriteString(fmt.Sprintf(", [%d]if(%s)", i, branch.Condition))
+			fmt.Fprintf(&sb, ", [%d]if(%s)", i, branch.Condition)
 		}
 	}
 	sb.WriteString("}")
@@ -302,15 +302,15 @@ func (n *ForNode) Pos() Position {
 // String returns a string representation
 func (n *ForNode) String() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("ForNode{item=%s", n.ItemVar))
+	fmt.Fprintf(&sb, "ForNode{item=%s", n.ItemVar)
 	if n.IndexVar != "" {
-		sb.WriteString(fmt.Sprintf(", index=%s", n.IndexVar))
+		fmt.Fprintf(&sb, ", index=%s", n.IndexVar)
 	}
-	sb.WriteString(fmt.Sprintf(", in=%s", n.Source))
+	fmt.Fprintf(&sb, ", in=%s", n.Source)
 	if n.Limit > 0 {
-		sb.WriteString(fmt.Sprintf(", limit=%d", n.Limit))
+		fmt.Fprintf(&sb, ", limit=%d", n.Limit)
 	}
-	sb.WriteString(fmt.Sprintf(", children=%d @ %s}", len(n.Children), n.pos))
+	fmt.Fprintf(&sb, ", children=%d @ %s}", len(n.Children), n.pos)
 	return sb.String()
 }
 
@@ -356,11 +356,11 @@ func (n *SwitchNode) Pos() Position {
 // String returns a string representation
 func (n *SwitchNode) String() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("SwitchNode{expr=%s, cases=%d", n.Expression, len(n.Cases)))
+	fmt.Fprintf(&sb, "SwitchNode{expr=%s, cases=%d", n.Expression, len(n.Cases))
 	if n.Default != nil {
 		sb.WriteString(", hasDefault=true")
 	}
-	sb.WriteString(fmt.Sprintf(" @ %s}", n.pos))
+	fmt.Fprintf(&sb, " @ %s}", n.pos)
 	return sb.String()
 }
 
