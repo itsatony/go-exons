@@ -55,11 +55,14 @@ func Import(data []byte, filename string) (*ImportResult, error) {
 }
 
 // importMarkdown parses a markdown document with YAML frontmatter.
+// The parsed spec is marked ContentFormat "markdown" (same as
+// ImportFromSkillMD) so consumers know to render with WithMarkdownFences.
 func importMarkdown(data []byte) (*ImportResult, error) {
 	spec, err := Parse(data)
 	if err != nil {
 		return nil, NewImportError(ErrMsgImportReadFailed, err)
 	}
+	spec.ContentFormat = ContentFormatMarkdown
 	return &ImportResult{
 		Spec:      spec,
 		Resources: make(map[string][]byte),
@@ -127,6 +130,9 @@ func ImportDirectory(data []byte) (*ImportResult, error) {
 	if err != nil {
 		return nil, NewImportError(ErrMsgImportReadFailed, err)
 	}
+	// SKILL.md/AGENT.md/PROMPT.md documents are markdown by definition —
+	// mark the format so all import entry points agree (see ImportFromSkillMD).
+	spec.ContentFormat = ContentFormatMarkdown
 
 	return &ImportResult{
 		Spec:      spec,

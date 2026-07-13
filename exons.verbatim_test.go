@@ -272,6 +272,30 @@ func TestImportFromSkillMD_SetsContentFormat(t *testing.T) {
 	assert.Equal(t, ContentFormatMarkdown, clone.ContentFormat)
 }
 
+func TestImport_MarkdownSetsContentFormat(t *testing.T) {
+	content := "---\nname: my-skill\ndescription: test\n---\n# Body\n"
+	result, err := Import([]byte(content), "SKILL.md")
+	require.NoError(t, err)
+	assert.Equal(t, ContentFormatMarkdown, result.Spec.ContentFormat)
+}
+
+func TestExportToSkillMD_OmitsContentFormat(t *testing.T) {
+	// Agent Skills compatible export strips non-standard fields;
+	// content_format is a go-exons extension key and must not leak.
+	spec, err := ImportFromSkillMD("---\nname: my-skill\ndescription: test\n---\n# Body\n")
+	require.NoError(t, err)
+	require.Equal(t, ContentFormatMarkdown, spec.ContentFormat)
+
+	out, err := spec.ExportToSkillMD()
+	require.NoError(t, err)
+	assert.NotContains(t, string(out), SpecFieldContentFormat)
+
+	// The full export keeps it.
+	full, err := spec.ExportFull()
+	require.NoError(t, err)
+	assert.Contains(t, string(full), SpecFieldContentFormat)
+}
+
 func TestSpec_ContentFormat_SerializationRoundTrip(t *testing.T) {
 	spec := &Spec{Name: "s", ContentFormat: ContentFormatMarkdown}
 	data, err := spec.Serialize(nil)

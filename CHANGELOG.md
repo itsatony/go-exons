@@ -70,6 +70,12 @@ syntax. Normative lexical spec: [docs/template-syntax.md](docs/template-syntax.m
   config is threaded through.
 - Migrated `.golangci.yml` to golangci-lint v2 and fixed the staticcheck
   findings it surfaced (`fmt.Fprintf` over `WriteString(fmt.Sprintf(...))`).
+- All markdown import entry points now agree on `ContentFormat`: `Import`
+  (`.md`) and `ImportDirectory` (zip) mark specs `"markdown"` exactly like
+  `ImportFromSkillMD`.
+- `content_format` is serialized only when `IncludeExtensions` is set, so
+  Agent Skills compatible exports (`ExportToSkillMD`) stay free of
+  non-standard frontmatter keys.
 
 ## [0.14.0] - 2026-06-21
 

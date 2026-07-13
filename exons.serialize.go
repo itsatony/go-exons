@@ -147,7 +147,9 @@ func (s *Spec) buildSerializeMap(opts *SerializeOptions) map[string]any {
 	if s.Description != "" {
 		m[SpecFieldDescription] = s.Description
 	}
-	if s.ContentFormat != "" {
+	// content_format is a go-exons extension key: keep it out of
+	// Agent Skills compatible exports (which strip non-standard fields).
+	if opts.IncludeExtensions && s.ContentFormat != "" {
 		m[SpecFieldContentFormat] = s.ContentFormat
 	}
 

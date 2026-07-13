@@ -179,7 +179,7 @@ Three escape layers, from smallest to largest (full spec: [docs/template-syntax.
 | `{~~ ... ~~}` | any verbatim region | body is emitted byte-for-byte and may contain broken syntax, raw blocks, anything; if the body contains `~~}`, add one more tilde per side (`{~~~ ... ~~~}`, etc.) |
 | `{~exons.raw~}...{~/exons.raw~}` | self-documenting verbatim | scans to the **first** `{~/exons.raw~}` — cannot contain its own close; use a `{~~` fence for that |
 
-For markdown-format templates (SKILL.md-style bodies), enable `WithMarkdownFences()`: fenced code blocks (``` or ~~~) become inert so syntax examples never execute, and a fence renders live when its info string starts with `exons` (```` ```exons ````). `ImportFromSkillMD` marks specs with `ContentFormat: "markdown"` so consumers know to enable it. `Validate()` warns when tag-like syntax sits in an inert fence.
+For markdown-format templates (SKILL.md-style bodies), enable `WithMarkdownFences()`: fenced code blocks (```` ``` ```` or `~~~`) become inert so syntax examples never execute, and a fence renders live when its info string starts with `exons` (```` ```exons ````). `ImportFromSkillMD` marks specs with `ContentFormat: "markdown"` so consumers know to enable it. `Validate()` warns when tag-like syntax sits in an inert fence.
 
 ## Metadata Fields
 
