@@ -1,0 +1,26 @@
+---
+name: teach-exons
+description: A skill that teaches exons template syntax without executing its own examples
+type: skill
+---
+# Writing {~exons.var name="topic" default="exons templates" /~}
+
+To interpolate a variable, write:
+
+```
+{~exons.var name="user_name" default="World" /~}
+```
+
+Mark a fence with `exons` to render it live instead:
+
+```exons
+greeting: {~exons.var name="greeting" default="Hello" /~}
+```
+
+A complete raw block, shown literally via a verbatim fence:
+{~~{~exons.raw~}{~exons.var name="x" /~} is not executed{~/exons.raw~}~~}
+
+Need to show a verbatim fence itself? Add one tilde per side:
+{~~~ a fence looks like {~~ example ~~} ~~~}
+
+And a single literal delimiter is written as \{~ in the source.
