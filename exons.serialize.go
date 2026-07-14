@@ -113,27 +113,28 @@ func (s *Spec) ExportFull() ([]byte, error) {
 // knownSpecFields is the set of all known Spec struct YAML field names.
 // Extensions with these keys are skipped during serialization to prevent overwriting.
 var knownSpecFields = map[string]bool{
-	SpecFieldName:          true,
-	SpecFieldDescription:   true,
-	SpecFieldContentFormat: true,
-	SpecFieldInputs:        true,
-	SpecFieldOutputs:       true,
-	SpecFieldSample:        true,
-	SpecFieldType:          true,
-	SpecFieldExecution:     true,
-	SpecFieldExtensions:    true,
-	SpecFieldSkills:        true,
-	SpecFieldTools:         true,
-	SpecFieldContext:       true,
-	SpecFieldConstraints:   true,
-	SpecFieldMessages:      true,
-	SpecFieldCredentials:   true,
-	SpecFieldCredential:    true,
-	SpecFieldMemory:        true,
-	SpecFieldDispatch:      true,
-	SpecFieldVerifications: true,
-	SpecFieldRegistry:      true,
-	SpecFieldSafety:        true,
+	SpecFieldName:              true,
+	SpecFieldDescription:       true,
+	SpecFieldContentFormat:     true,
+	SpecFieldRecommendedAgents: true,
+	SpecFieldInputs:            true,
+	SpecFieldOutputs:           true,
+	SpecFieldSample:            true,
+	SpecFieldType:              true,
+	SpecFieldExecution:         true,
+	SpecFieldExtensions:        true,
+	SpecFieldSkills:            true,
+	SpecFieldTools:             true,
+	SpecFieldContext:           true,
+	SpecFieldConstraints:       true,
+	SpecFieldMessages:          true,
+	SpecFieldCredentials:       true,
+	SpecFieldCredential:        true,
+	SpecFieldMemory:            true,
+	SpecFieldDispatch:          true,
+	SpecFieldVerifications:     true,
+	SpecFieldRegistry:          true,
+	SpecFieldSafety:            true,
 }
 
 // buildSerializeMap creates a map for YAML serialization.
@@ -151,6 +152,11 @@ func (s *Spec) buildSerializeMap(opts *SerializeOptions) map[string]any {
 	// Agent Skills compatible exports (which strip non-standard fields).
 	if opts.IncludeExtensions && s.ContentFormat != "" {
 		m[SpecFieldContentFormat] = s.ContentFormat
+	}
+	// recommended_agents is likewise a go-exons extension key (curatorial
+	// association), excluded from stripped agent-skills exports.
+	if opts.IncludeExtensions && len(s.RecommendedAgents) > 0 {
+		m[SpecFieldRecommendedAgents] = s.RecommendedAgents
 	}
 
 	// Type (include if agent fields are included or if type is explicitly set)

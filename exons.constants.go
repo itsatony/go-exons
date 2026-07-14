@@ -277,6 +277,14 @@ const (
 	SchemaTypeObject  = "object"
 )
 
+// Enumerated InputDef.Type values whose allowed values are carried in
+// InputDef.Options (single vs. multiple selection). Free-form types use the
+// SchemaType* vocabulary above; these two additionally read Options.
+const (
+	InputTypeSelect      = "select"
+	InputTypeMultiselect = "multiselect"
+)
+
 // Model parameter map keys (for ToMap conversion)
 const (
 	ParamKeyTemperature       = "temperature"
@@ -422,6 +430,10 @@ const (
 	SpecFieldOutputs       = "outputs"
 	SpecFieldSample        = "sample"
 	SpecFieldContentFormat = "content_format"
+
+	// SpecFieldRecommendedAgents is the frontmatter key for a prompt's authored
+	// agent association (Spec.RecommendedAgents).
+	SpecFieldRecommendedAgents = "recommended_agents"
 
 	// go-exons extension fields
 	SpecFieldType        = "type"

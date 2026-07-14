@@ -33,6 +33,12 @@ type Spec struct {
 	Outputs map[string]*OutputDef `yaml:"outputs,omitempty" json:"outputs,omitempty"`
 	Sample  map[string]any        `yaml:"sample,omitempty" json:"sample,omitempty"`
 
+	// RecommendedAgents lists the agent slugs a prompt is authored for ("made for
+	// @org/name"). A curatorial association surfaced by consumers (e.g. a chat UI
+	// filtering prompts by the active coworker); never resolved or validated here —
+	// the slugs are verbatim author-declared strings. Empty for unassociated prompts.
+	RecommendedAgents []string `yaml:"recommended_agents,omitempty" json:"recommended_agents,omitempty"`
+
 	// Agent composition
 	Skills      []SkillRef                `yaml:"skills,omitempty" json:"skills,omitempty"`
 	Tools       *ToolsConfig              `yaml:"tools,omitempty" json:"tools,omitempty"`
@@ -71,6 +77,21 @@ type InputDef struct {
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 	Required    bool   `yaml:"required,omitempty" json:"required,omitempty"`
 	Default     any    `yaml:"default,omitempty" json:"default,omitempty"`
+	// Label is an optional human-facing field label for form rendering; when empty,
+	// consumers fall back to the input key. Presentation only — not used at execution.
+	Label string `yaml:"label,omitempty" json:"label,omitempty"`
+	// Options enumerates the allowed values for select/multiselect inputs (InputTypeSelect
+	// / InputTypeMultiselect). Empty for free-form types; a consumer building a typed form
+	// degrades a select with no options to a text input.
+	Options []InputOption `yaml:"options,omitempty" json:"options,omitempty"`
+}
+
+// InputOption is a single selectable value for a select/multiselect InputDef,
+// carrying the stored Value and its human-facing Label (Label falls back to Value
+// when empty).
+type InputOption struct {
+	Value string `yaml:"value" json:"value"`
+	Label string `yaml:"label,omitempty" json:"label,omitempty"`
 }
 
 // OutputDef defines an output parameter for the spec.
@@ -282,8 +303,18 @@ func (s *Spec) Clone() *Spec {
 		for k, v := range s.Inputs {
 			inputClone := *v
 			inputClone.Default = deepCopyValue(v.Default)
+			if v.Options != nil {
+				inputClone.Options = make([]InputOption, len(v.Options))
+				copy(inputClone.Options, v.Options)
+			}
 			clone.Inputs[k] = &inputClone
 		}
+	}
+
+	// Clone recommended agents
+	if s.RecommendedAgents != nil {
+		clone.RecommendedAgents = make([]string, len(s.RecommendedAgents))
+		copy(clone.RecommendedAgents, s.RecommendedAgents)
 	}
 
 	// Clone outputs
