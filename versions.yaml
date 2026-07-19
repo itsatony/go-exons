@@ -1,7 +1,16 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.16.0
+  version: 0.17.0
+# v0.17.0: A2A Agent Card upgraded to spec v1.0.1 (a2a.proto @ v1.0.1). The retired
+# v0.3 shape (url + top-level protocolVersion + metadata) is REPLACED by
+# supportedInterfaces[] (per-interface protocolVersion), capabilities.extensions[]
+# for vendor metadata, and RFC-7515 JWS signatures[] (§8.4). New in the a2a package:
+# AgentCard.CanonicalPayload (RFC-8785/JCS), EncodeProtectedHeader, JWSSigningInput,
+# AttachDetachedSignature, VerifySignatures (signer/verifier injected — go-exons
+# never holds a key), and offline AgentCard.Validate conformance. CompileAgentCard
+# now takes SupportedInterfaces/Extensions and synthesizes a skill when none declared.
+# New dep: github.com/gowebpki/jcs (RFC 8785). Consumed by aigentverse DC82-emissary.
 custom:
   description: Agent specification format for Go — exons define what agents do
   go_version: "1.24"

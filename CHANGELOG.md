@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-19
+
+A2A Agent Card upgraded to **spec v1.0.1** (`github.com/a2aproject/A2A`
+`specification/a2a.proto` @ tag v1.0.1). Consumed by aigentverse DC82-emissary as the
+enterprise-registry bridge (Google Cloud Agent Registry / AGNTCY ingest declaration cards).
+
+### Changed (breaking — pre-1.0, no compatibility shim)
+- `a2a.AgentCard` now models v1.0.1: transport moved from `url` + top-level
+  `protocolVersion` into a required `supportedInterfaces[]` (`AgentInterface{url,
+  protocolBinding, protocolVersion}`; protocol version is **per interface**). There is
+  no top-level `metadata` — vendor data rides in `capabilities.extensions[]`
+  (`AgentExtension{uri, description, required, params}`). `security` → `securityRequirements`.
+  New fields: `documentationUrl`, `iconUrl`, `signatures[]`.
+- `AgentSkill` gains required `description`/`tags` + `examples`/`securityRequirements`;
+  `AgentCapabilities` gains `extensions[]`/`extendedAgentCard` and uses `*bool` for
+  `streaming`/`pushNotifications` (unset ⇒ omitted, never an explicit default).
+- `CompileAgentCard`/`A2ACardOptions`: takes `SupportedInterfaces` + `Extensions`
+  instead of a required `URL` (removed `ErrMsgA2ACardMissingURL`); synthesizes a skill
+  from the agent when the spec declares none; skill description falls back to the
+  name so the required field is never blank; safety/dispatch/a2a-prefixed enrichment
+  now rides as one go-exons metadata extension (`A2AExtensionURIGoExonsMetadata`).
+- `A2AProtocolVersionDefault` is now `"1.0"` (the per-interface default).
+
+### Added
+- **§8.4 detached-JWS signing (RFC 7515), key-injected:** `AgentCard.CanonicalPayload`
+  (RFC-8785/JCS via `github.com/gowebpki/jcs`, signatures excluded), `EncodeProtectedHeader`
+  (`alg:EdDSA, typ:JOSE, kid, jku`), `JWSSigningInput`, `AttachDetachedSignature`,
+  `VerifySignatures` — the package produces/consumes the signature material but the key
+  operation is injected by the caller (go-exons never holds a key).
+- **Offline conformance:** `AgentCard.Validate` checks the pinned v1.0.1 required-field
+  rules (`A2ASpecSource` records the source tag); zero-network.
+
+### Dependencies
+- Added `github.com/gowebpki/jcs` v1.0.1 (RFC 8785 JSON Canonicalization).
+
 ## [0.15.0-dc11] - 2026-07-12
 
 Syntax-safety cycle: templates can now safely contain examples of their own

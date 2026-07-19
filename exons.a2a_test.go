@@ -11,812 +11,450 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- CompileAgentCard: error cases ---
+// declIface is a declaration-only supported interface, as aigentverse supplies.
+func declIface() []a2a.AgentInterface {
+	return []a2a.AgentInterface{{
+		URL:             "https://reg.example.com/@org/agent",
+		ProtocolBinding: A2AProtocolBindingHTTPS,
+	}}
+}
+
+func baseOpts() *A2ACardOptions {
+	return &A2ACardOptions{SupportedInterfaces: declIface()}
+}
+
+// goExonsMetaExt returns the go-exons enrichment extension from a card, if present.
+func goExonsMetaExt(card *a2a.AgentCard) *a2a.AgentExtension {
+	if card.Capabilities == nil {
+		return nil
+	}
+	for i := range card.Capabilities.Extensions {
+		if card.Capabilities.Extensions[i].URI == A2AExtensionURIGoExonsMetadata {
+			return &card.Capabilities.Extensions[i]
+		}
+	}
+	return nil
+}
+
+// --- CompileAgentCard: error + edge cases ---
 
 func TestCompileAgentCard_NilSpec(t *testing.T) {
 	var s *Spec
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{URL: "https://example.com"})
+	card, err := s.CompileAgentCard(context.Background(), baseOpts())
 	assert.Nil(t, card)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), ErrMsgA2ACardNilSpec)
 }
 
-func TestCompileAgentCard_NilOpts(t *testing.T) {
-	s := &Spec{Name: "test-agent", Description: "test"}
-	card, err := s.CompileAgentCard(context.Background(), nil)
-	assert.Nil(t, card)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), ErrMsgA2ACardMissingURL)
-}
-
-func TestCompileAgentCard_MissingURL(t *testing.T) {
-	s := &Spec{Name: "test-agent", Description: "test"}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{})
-	assert.Nil(t, card)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), ErrMsgA2ACardMissingURL)
-}
-
 func TestCompileAgentCard_MissingName(t *testing.T) {
 	s := &Spec{Description: "test"}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{URL: "https://example.com"})
+	card, err := s.CompileAgentCard(context.Background(), baseOpts())
 	assert.Nil(t, card)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), ErrMsgA2ACardMissingName)
 }
 
-// --- CompileAgentCard: minimal valid ---
-
-func TestCompileAgentCard_MinimalValid(t *testing.T) {
+// v1.0.1 has no required top-level URL, so nil opts no longer errors — it yields a
+// card whose (missing) interfaces Validate would flag, but compilation succeeds.
+func TestCompileAgentCard_NilOptsSucceeds(t *testing.T) {
 	s := &Spec{Name: "test-agent", Description: "A test agent"}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://agents.example.com/test",
-	})
+	card, err := s.CompileAgentCard(context.Background(), nil)
+	require.NoError(t, err)
+	require.NotNil(t, card)
+	assert.Empty(t, card.SupportedInterfaces)
+	// A synthesized skill keeps the required skills[] non-empty.
+	require.Len(t, card.Skills, 1)
+	assert.Equal(t, "test-agent", card.Skills[0].ID)
+}
+
+// --- CompileAgentCard: minimal valid + conformance ---
+
+func TestCompileAgentCard_MinimalValidIsConformant(t *testing.T) {
+	s := &Spec{Name: "test-agent", Description: "A test agent"}
+	card, err := s.CompileAgentCard(context.Background(), baseOpts())
 	require.NoError(t, err)
 	require.NotNil(t, card)
 
 	assert.Equal(t, "test-agent", card.Name)
 	assert.Equal(t, "A test agent", card.Description)
-	assert.Equal(t, "https://agents.example.com/test", card.URL)
+	require.Len(t, card.SupportedInterfaces, 1)
+	assert.Equal(t, A2AProtocolBindingHTTPS, card.SupportedInterfaces[0].ProtocolBinding)
+	// Per-interface protocol version defaulted.
+	assert.Equal(t, A2AProtocolVersionDefault, card.SupportedInterfaces[0].ProtocolVersion)
 	assert.Equal(t, A2AVersionDefault, card.Version)
-	assert.Equal(t, A2AProtocolVersionDefault, card.ProtocolVersion)
 	assert.Nil(t, card.Provider)
-	assert.NotNil(t, card.Capabilities)
-	assert.False(t, card.Capabilities.Streaming)
+	require.NotNil(t, card.Capabilities)
+	assert.Nil(t, card.Capabilities.Streaming) // unset ⇒ omitted, not explicit false
 	assert.Equal(t, []string{A2AMIMETextPlain}, card.DefaultInputModes)
 	assert.Equal(t, []string{A2AMIMETextPlain}, card.DefaultOutputModes)
-	assert.Nil(t, card.SecuritySchemes)
-	assert.Nil(t, card.Security)
-	assert.Nil(t, card.Metadata)
-	assert.Nil(t, card.Skills)
+
+	// The synthesized card must be A2A-conformant.
+	assert.Empty(t, card.Validate())
 }
 
 // --- Version resolution ---
 
-func TestCompileAgentCard_VersionFromOpts(t *testing.T) {
-	s := &Spec{Name: "test-agent", Description: "test"}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL:     "https://example.com",
-		Version: "2.0.0",
+func TestCompileAgentCard_VersionResolution(t *testing.T) {
+	t.Run("from opts", func(t *testing.T) {
+		s := &Spec{Name: "a", Description: "d"}
+		opts := baseOpts()
+		opts.Version = "2.0.0"
+		card, err := s.CompileAgentCard(context.Background(), opts)
+		require.NoError(t, err)
+		assert.Equal(t, "2.0.0", card.Version)
 	})
-	require.NoError(t, err)
-	assert.Equal(t, "2.0.0", card.Version)
+	t.Run("from registry", func(t *testing.T) {
+		s := &Spec{Name: "a", Description: "d", Registry: &RegistrySpec{Version: "3.1.0"}}
+		card, err := s.CompileAgentCard(context.Background(), baseOpts())
+		require.NoError(t, err)
+		assert.Equal(t, "3.1.0", card.Version)
+	})
+	t.Run("opts overrides registry", func(t *testing.T) {
+		s := &Spec{Name: "a", Description: "d", Registry: &RegistrySpec{Version: "3.1.0"}}
+		opts := baseOpts()
+		opts.Version = "override"
+		card, err := s.CompileAgentCard(context.Background(), opts)
+		require.NoError(t, err)
+		assert.Equal(t, "override", card.Version)
+	})
+	t.Run("default fallback", func(t *testing.T) {
+		s := &Spec{Name: "a", Description: "d"}
+		card, err := s.CompileAgentCard(context.Background(), baseOpts())
+		require.NoError(t, err)
+		assert.Equal(t, A2AVersionDefault, card.Version)
+	})
 }
 
-func TestCompileAgentCard_VersionFromRegistry(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Registry: &RegistrySpec{
-			Version: "3.1.0",
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, "3.1.0", card.Version)
-}
+// --- Per-interface protocol version ---
 
-func TestCompileAgentCard_VersionOptsOverridesRegistry(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Registry: &RegistrySpec{
-			Version: "3.1.0",
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL:     "https://example.com",
-		Version: "override",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, "override", card.Version)
-}
+func TestCompileAgentCard_ProtocolVersionPerInterface(t *testing.T) {
+	s := &Spec{Name: "a", Description: "d"}
 
-func TestCompileAgentCard_VersionDefaultFallback(t *testing.T) {
-	s := &Spec{Name: "test-agent", Description: "test"}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
+	t.Run("explicit on interface preserved", func(t *testing.T) {
+		card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
+			SupportedInterfaces: []a2a.AgentInterface{{URL: "https://x", ProtocolBinding: "GRPC", ProtocolVersion: "0.3"}},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "0.3", card.SupportedInterfaces[0].ProtocolVersion)
 	})
-	require.NoError(t, err)
-	assert.Equal(t, A2AVersionDefault, card.Version)
-}
-
-// --- Protocol version ---
-
-func TestCompileAgentCard_ProtocolVersionOverride(t *testing.T) {
-	s := &Spec{Name: "test-agent", Description: "test"}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL:             "https://example.com",
-		ProtocolVersion: "0.4.0",
+	t.Run("opts default fills empty", func(t *testing.T) {
+		card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
+			SupportedInterfaces: []a2a.AgentInterface{{URL: "https://x", ProtocolBinding: "GRPC"}},
+			ProtocolVersion:     "1.1",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "1.1", card.SupportedInterfaces[0].ProtocolVersion)
 	})
-	require.NoError(t, err)
-	assert.Equal(t, "0.4.0", card.ProtocolVersion)
-}
-
-func TestCompileAgentCard_ProtocolVersionDefault(t *testing.T) {
-	s := &Spec{Name: "test-agent", Description: "test"}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
+	t.Run("package default fills empty", func(t *testing.T) {
+		card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
+			SupportedInterfaces: []a2a.AgentInterface{{URL: "https://x", ProtocolBinding: "GRPC"}},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, A2AProtocolVersionDefault, card.SupportedInterfaces[0].ProtocolVersion)
 	})
-	require.NoError(t, err)
-	assert.Equal(t, A2AProtocolVersionDefault, card.ProtocolVersion)
 }
 
 // --- Provider ---
 
-func TestCompileAgentCard_ProviderFromOpts(t *testing.T) {
-	s := &Spec{Name: "test-agent", Description: "test"}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL:                  "https://example.com",
-		ProviderOrganization: "Acme Corp",
-		ProviderURL:          "https://acme.example.com",
+func TestCompileAgentCard_Provider(t *testing.T) {
+	s := &Spec{Name: "a", Description: "d"}
+	t.Run("from opts", func(t *testing.T) {
+		opts := baseOpts()
+		opts.ProviderOrganization = "Acme Corp"
+		opts.ProviderURL = "https://acme.example.com"
+		card, err := s.CompileAgentCard(context.Background(), opts)
+		require.NoError(t, err)
+		require.NotNil(t, card.Provider)
+		assert.Equal(t, "Acme Corp", card.Provider.Organization)
+		assert.Equal(t, "https://acme.example.com", card.Provider.URL)
 	})
-	require.NoError(t, err)
-	require.NotNil(t, card.Provider)
-	assert.Equal(t, "Acme Corp", card.Provider.Organization)
-	assert.Equal(t, "https://acme.example.com", card.Provider.URL)
-}
-
-func TestCompileAgentCard_NoProvider(t *testing.T) {
-	s := &Spec{Name: "test-agent", Description: "test"}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
+	t.Run("absent", func(t *testing.T) {
+		card, err := s.CompileAgentCard(context.Background(), baseOpts())
+		require.NoError(t, err)
+		assert.Nil(t, card.Provider)
 	})
-	require.NoError(t, err)
-	assert.Nil(t, card.Provider)
 }
 
 // --- Capabilities ---
 
-func TestCompileAgentCard_CapabilitiesAutoDetectStreamingEnabled(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Execution: &execution.Config{
-			Streaming: &execution.StreamingConfig{Enabled: true},
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
+func TestCompileAgentCard_Capabilities(t *testing.T) {
+	t.Run("auto-detect streaming enabled", func(t *testing.T) {
+		s := &Spec{Name: "a", Description: "d", Execution: &execution.Config{Streaming: &execution.StreamingConfig{Enabled: true}}}
+		card, err := s.CompileAgentCard(context.Background(), baseOpts())
+		require.NoError(t, err)
+		require.NotNil(t, card.Capabilities)
+		require.NotNil(t, card.Capabilities.Streaming)
+		assert.True(t, *card.Capabilities.Streaming)
 	})
-	require.NoError(t, err)
-	require.NotNil(t, card.Capabilities)
-	assert.True(t, card.Capabilities.Streaming)
-}
-
-func TestCompileAgentCard_CapabilitiesAutoDetectStreamingDisabled(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Execution: &execution.Config{
-			Streaming: &execution.StreamingConfig{Enabled: false},
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
+	t.Run("streaming disabled ⇒ nil (omitted)", func(t *testing.T) {
+		s := &Spec{Name: "a", Description: "d", Execution: &execution.Config{Streaming: &execution.StreamingConfig{Enabled: false}}}
+		card, err := s.CompileAgentCard(context.Background(), baseOpts())
+		require.NoError(t, err)
+		assert.Nil(t, card.Capabilities.Streaming)
 	})
-	require.NoError(t, err)
-	require.NotNil(t, card.Capabilities)
-	assert.False(t, card.Capabilities.Streaming)
-}
-
-func TestCompileAgentCard_CapabilitiesOverride(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Execution: &execution.Config{
-			Streaming: &execution.StreamingConfig{Enabled: true},
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL:          "https://example.com",
-		Capabilities: &a2a.Capabilities{PushNotifications: true},
+	t.Run("override capabilities preserved + extensions merged", func(t *testing.T) {
+		push := true
+		s := &Spec{Name: "a", Description: "d"}
+		opts := baseOpts()
+		opts.Capabilities = &a2a.AgentCapabilities{PushNotifications: &push}
+		opts.Extensions = []a2a.AgentExtension{{URI: "https://aiv/ext/provenance", Params: map[string]any{"did": "did:tessera:org:a"}}}
+		card, err := s.CompileAgentCard(context.Background(), opts)
+		require.NoError(t, err)
+		require.NotNil(t, card.Capabilities.PushNotifications)
+		assert.True(t, *card.Capabilities.PushNotifications)
+		// The provenance extension from opts is present.
+		var found bool
+		for _, e := range card.Capabilities.Extensions {
+			if e.URI == "https://aiv/ext/provenance" {
+				found = true
+				assert.Equal(t, "did:tessera:org:a", e.Params["did"])
+			}
+		}
+		assert.True(t, found, "opts.Extensions must be merged into capabilities.extensions")
 	})
-	require.NoError(t, err)
-	require.NotNil(t, card.Capabilities)
-	assert.False(t, card.Capabilities.Streaming)
-	assert.True(t, card.Capabilities.PushNotifications)
-}
-
-func TestCompileAgentCard_CapabilitiesNoExecution(t *testing.T) {
-	s := &Spec{Name: "test-agent", Description: "test"}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	require.NotNil(t, card.Capabilities)
-	assert.False(t, card.Capabilities.Streaming)
-	assert.False(t, card.Capabilities.PushNotifications)
 }
 
 // --- Skills ---
 
-func TestCompileAgentCard_SkillsFromSkillRefs(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Skills: []SkillRef{
-			{Slug: "web-search"},
-			{Slug: "summarizer"},
-		},
+func TestCompileAgentCard_Skills(t *testing.T) {
+	t.Run("from refs, description falls back to name", func(t *testing.T) {
+		s := &Spec{Name: "a", Description: "d", Skills: []SkillRef{{Slug: "web-search"}, {Slug: "summarizer"}}}
+		card, err := s.CompileAgentCard(context.Background(), baseOpts())
+		require.NoError(t, err)
+		require.Len(t, card.Skills, 2)
+		assert.Equal(t, "web-search", card.Skills[0].ID)
+		assert.Equal(t, "web-search", card.Skills[0].Name)
+		assert.Equal(t, "web-search", card.Skills[0].Description) // fallback → name (never blank)
+		assert.NotNil(t, card.Skills[0].Tags)                     // always a non-nil slice
+	})
+	t.Run("with resolver", func(t *testing.T) {
+		resolver := NewMapSpecResolver()
+		resolver.Add("web-search", &Spec{Name: "web-search", Description: "Searches the web"}, "")
+		resolver.Add("summarizer", &Spec{Name: "smart-summarizer", Description: "Summarizes"}, "")
+		s := &Spec{Name: "a", Description: "d", Skills: []SkillRef{{Slug: "web-search"}, {Slug: "summarizer"}}}
+		opts := baseOpts()
+		opts.Resolver = resolver
+		card, err := s.CompileAgentCard(context.Background(), opts)
+		require.NoError(t, err)
+		require.Len(t, card.Skills, 2)
+		assert.Equal(t, "Searches the web", card.Skills[0].Description)
+		assert.Equal(t, "smart-summarizer", card.Skills[1].Name)
+		assert.Equal(t, "Summarizes", card.Skills[1].Description)
+	})
+	t.Run("resolver failure non-fatal, description falls back", func(t *testing.T) {
+		resolver := NewMapSpecResolver()
+		resolver.Add("web-search", &Spec{Name: "web-search", Description: "Searches"}, "")
+		s := &Spec{Name: "a", Description: "d", Skills: []SkillRef{{Slug: "web-search"}, {Slug: "missing"}}}
+		opts := baseOpts()
+		opts.Resolver = resolver
+		card, err := s.CompileAgentCard(context.Background(), opts)
+		require.NoError(t, err)
+		require.Len(t, card.Skills, 2)
+		assert.Equal(t, "Searches", card.Skills[0].Description)
+		assert.Equal(t, "missing", card.Skills[1].Description) // fallback → slug/name
+	})
+	t.Run("resolver output modes", func(t *testing.T) {
+		resolver := NewMapSpecResolver()
+		resolver.Add("image-gen", &Spec{Name: "image-gen", Description: "images", Execution: &execution.Config{Modality: ModalityImage}}, "")
+		s := &Spec{Name: "a", Description: "d", Skills: []SkillRef{{Slug: "image-gen"}}}
+		opts := baseOpts()
+		opts.Resolver = resolver
+		card, err := s.CompileAgentCard(context.Background(), opts)
+		require.NoError(t, err)
+		assert.Equal(t, []string{A2AMIMEImagePNG}, card.Skills[0].OutputModes)
+	})
+	t.Run("no skills synthesizes agent skill", func(t *testing.T) {
+		s := &Spec{Name: "solo-agent", Description: "does things"}
+		card, err := s.CompileAgentCard(context.Background(), baseOpts())
+		require.NoError(t, err)
+		require.Len(t, card.Skills, 1)
+		assert.Equal(t, "solo-agent", card.Skills[0].ID)
+		assert.Equal(t, "solo-agent", card.Skills[0].Name)
+		assert.Equal(t, "does things", card.Skills[0].Description)
+		assert.NotNil(t, card.Skills[0].Tags)
+	})
+	t.Run("dispatch keywords become skill tags", func(t *testing.T) {
+		s := &Spec{Name: "a", Description: "d", Skills: []SkillRef{{Slug: "web-search"}},
+			Dispatch: &DispatchSpec{TriggerKeywords: []string{"research", "search"}}}
+		card, err := s.CompileAgentCard(context.Background(), baseOpts())
+		require.NoError(t, err)
+		assert.Equal(t, []string{"research", "search"}, card.Skills[0].Tags)
+	})
+}
+
+// --- Input / output modes (helpers unchanged from v0.3) ---
+
+func TestCompileAgentCard_InputModes(t *testing.T) {
+	cases := []struct {
+		name   string
+		inputs map[string]*InputDef
+		over   []string
+		want   []string
+	}{
+		{"string", map[string]*InputDef{"q": {Type: SchemaTypeString}}, nil, []string{A2AMIMETextPlain}},
+		{"object", map[string]*InputDef{"d": {Type: SchemaTypeObject}}, nil, []string{A2AMIMEApplicationJSON}},
+		{"mixed sorted", map[string]*InputDef{"q": {Type: SchemaTypeString}, "d": {Type: SchemaTypeObject}}, nil, []string{A2AMIMEApplicationJSON, A2AMIMETextPlain}},
+		{"override", map[string]*InputDef{"q": {Type: SchemaTypeString}}, []string{A2AMIMETextMarkdown}, []string{A2AMIMETextMarkdown}},
+		{"none", nil, nil, []string{A2AMIMETextPlain}},
+		{"nil def", map[string]*InputDef{"q": nil}, nil, []string{A2AMIMETextPlain}},
 	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	require.Len(t, card.Skills, 2)
-	assert.Equal(t, "web-search", card.Skills[0].ID)
-	assert.Equal(t, "web-search", card.Skills[0].Name)
-	assert.Empty(t, card.Skills[0].Description)
-	assert.Equal(t, "summarizer", card.Skills[1].ID)
-	assert.Equal(t, "summarizer", card.Skills[1].Name)
-}
-
-func TestCompileAgentCard_SkillsWithResolver(t *testing.T) {
-	resolver := NewMapSpecResolver()
-	resolver.Add("web-search", &Spec{
-		Name:        "web-search",
-		Description: "Searches the web for information",
-	}, "")
-	resolver.Add("summarizer", &Spec{
-		Name:        "smart-summarizer",
-		Description: "Summarizes long content",
-	}, "")
-
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Skills: []SkillRef{
-			{Slug: "web-search"},
-			{Slug: "summarizer"},
-		},
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Spec{Name: "a", Description: "d", Inputs: tc.inputs}
+			opts := baseOpts()
+			opts.DefaultInputModes = tc.over
+			card, err := s.CompileAgentCard(context.Background(), opts)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, card.DefaultInputModes)
+		})
 	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL:      "https://example.com",
-		Resolver: resolver,
-	})
-	require.NoError(t, err)
-	require.Len(t, card.Skills, 2)
-
-	assert.Equal(t, "web-search", card.Skills[0].ID)
-	assert.Equal(t, "web-search", card.Skills[0].Name)
-	assert.Equal(t, "Searches the web for information", card.Skills[0].Description)
-
-	assert.Equal(t, "summarizer", card.Skills[1].ID)
-	assert.Equal(t, "smart-summarizer", card.Skills[1].Name)
-	assert.Equal(t, "Summarizes long content", card.Skills[1].Description)
 }
 
-func TestCompileAgentCard_SkillsResolverFailureNonFatal(t *testing.T) {
-	resolver := NewMapSpecResolver()
-	// Only add one skill — the other will fail resolution
-	resolver.Add("web-search", &Spec{
-		Name:        "web-search",
-		Description: "Searches the web",
-	}, "")
-
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Skills: []SkillRef{
-			{Slug: "web-search"},
-			{Slug: "missing-skill"},
-		},
+func TestCompileAgentCard_OutputModes(t *testing.T) {
+	cases := []struct {
+		name     string
+		modality string
+		over     []string
+		want     []string
+	}{
+		{"text", ModalityText, nil, []string{A2AMIMETextPlain}},
+		{"image", ModalityImage, nil, []string{A2AMIMEImagePNG}},
+		{"audio", ModalityAudioSpeech, nil, []string{A2AMIMEAudioMPEG}},
+		{"embedding", ModalityEmbedding, nil, []string{A2AMIMEApplicationJSON}},
+		{"video", ModalityVideo, nil, []string{A2AMIMEApplicationJSON}},
+		{"unknown fallback", "hologram", nil, []string{A2AMIMETextPlain}},
+		{"override", ModalityImage, []string{A2AMIMETextMarkdown}, []string{A2AMIMETextMarkdown}},
+		{"none", "", nil, []string{A2AMIMETextPlain}},
 	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL:      "https://example.com",
-		Resolver: resolver,
-	})
-	require.NoError(t, err)
-	require.Len(t, card.Skills, 2)
-
-	assert.Equal(t, "Searches the web", card.Skills[0].Description)
-	assert.Empty(t, card.Skills[1].Description)
-	assert.Equal(t, "missing-skill", card.Skills[1].Name)
-}
-
-func TestCompileAgentCard_SkillsNilResolver(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Skills: []SkillRef{
-			{Slug: "web-search"},
-		},
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Spec{Name: "a", Description: "d"}
+			if tc.modality != "" {
+				s.Execution = &execution.Config{Modality: tc.modality}
+			}
+			opts := baseOpts()
+			opts.DefaultOutputModes = tc.over
+			card, err := s.CompileAgentCard(context.Background(), opts)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, card.DefaultOutputModes)
+		})
 	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	require.Len(t, card.Skills, 1)
-	assert.Empty(t, card.Skills[0].Description)
-}
-
-func TestCompileAgentCard_SkillsResolverOutputModes(t *testing.T) {
-	resolver := NewMapSpecResolver()
-	resolver.Add("image-gen", &Spec{
-		Name:        "image-gen",
-		Description: "Generates images",
-		Execution: &execution.Config{
-			Modality: ModalityImage,
-		},
-	}, "")
-
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Skills: []SkillRef{
-			{Slug: "image-gen"},
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL:      "https://example.com",
-		Resolver: resolver,
-	})
-	require.NoError(t, err)
-	require.Len(t, card.Skills, 1)
-	assert.Equal(t, []string{A2AMIMEImagePNG}, card.Skills[0].OutputModes)
-}
-
-func TestCompileAgentCard_NoSkills(t *testing.T) {
-	s := &Spec{Name: "test-agent", Description: "test"}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	assert.Nil(t, card.Skills)
-}
-
-// --- Dispatch keywords as skill tags ---
-
-func TestCompileAgentCard_DispatchKeywordsAsSkillTags(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Skills: []SkillRef{
-			{Slug: "web-search"},
-			{Slug: "summarizer"},
-		},
-		Dispatch: &DispatchSpec{
-			TriggerKeywords: []string{"research", "search", "find"},
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	require.Len(t, card.Skills, 2)
-
-	assert.Equal(t, []string{"research", "search", "find"}, card.Skills[0].Tags)
-	assert.Equal(t, []string{"research", "search", "find"}, card.Skills[1].Tags)
-}
-
-func TestCompileAgentCard_NoDispatchKeywords(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Skills:      []SkillRef{{Slug: "web-search"}},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	require.Len(t, card.Skills, 1)
-	assert.Nil(t, card.Skills[0].Tags)
-}
-
-// --- Input modes ---
-
-func TestCompileAgentCard_InputModesFromStringInputs(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Inputs: map[string]*InputDef{
-			"query": {Type: SchemaTypeString},
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{A2AMIMETextPlain}, card.DefaultInputModes)
-}
-
-func TestCompileAgentCard_InputModesFromObjectInputs(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Inputs: map[string]*InputDef{
-			"data": {Type: SchemaTypeObject},
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{A2AMIMEApplicationJSON}, card.DefaultInputModes)
-}
-
-func TestCompileAgentCard_InputModesMixed(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Inputs: map[string]*InputDef{
-			"query": {Type: SchemaTypeString},
-			"data":  {Type: SchemaTypeObject},
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	// Sorted: application/json, text/plain
-	assert.Equal(t, []string{A2AMIMEApplicationJSON, A2AMIMETextPlain}, card.DefaultInputModes)
-}
-
-func TestCompileAgentCard_InputModesOverride(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Inputs: map[string]*InputDef{
-			"query": {Type: SchemaTypeString},
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL:               "https://example.com",
-		DefaultInputModes: []string{A2AMIMETextMarkdown},
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{A2AMIMETextMarkdown}, card.DefaultInputModes)
-}
-
-func TestCompileAgentCard_InputModesDefaultNoInputs(t *testing.T) {
-	s := &Spec{Name: "test-agent", Description: "test"}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{A2AMIMETextPlain}, card.DefaultInputModes)
-}
-
-func TestCompileAgentCard_InputModesNilDefs(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Inputs: map[string]*InputDef{
-			"query": nil,
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{A2AMIMETextPlain}, card.DefaultInputModes)
-}
-
-// --- Output modes ---
-
-func TestCompileAgentCard_OutputModesFromTextModality(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Execution: &execution.Config{
-			Modality: ModalityText,
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{A2AMIMETextPlain}, card.DefaultOutputModes)
-}
-
-func TestCompileAgentCard_OutputModesFromImageModality(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Execution: &execution.Config{
-			Modality: ModalityImage,
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{A2AMIMEImagePNG}, card.DefaultOutputModes)
-}
-
-func TestCompileAgentCard_OutputModesFromAudioModality(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Execution: &execution.Config{
-			Modality: ModalityAudioSpeech,
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{A2AMIMEAudioMPEG}, card.DefaultOutputModes)
-}
-
-func TestCompileAgentCard_OutputModesFromEmbeddingModality(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Execution: &execution.Config{
-			Modality: ModalityEmbedding,
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{A2AMIMEApplicationJSON}, card.DefaultOutputModes)
-}
-
-func TestCompileAgentCard_OutputModesFromVideoModality(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Execution: &execution.Config{
-			Modality: ModalityVideo,
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{A2AMIMEApplicationJSON}, card.DefaultOutputModes)
-}
-
-func TestCompileAgentCard_OutputModesUnknownModalityFallback(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Execution: &execution.Config{
-			Modality: "hologram",
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{A2AMIMETextPlain}, card.DefaultOutputModes)
-}
-
-func TestCompileAgentCard_OutputModesOverride(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Execution: &execution.Config{
-			Modality: ModalityImage,
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL:                "https://example.com",
-		DefaultOutputModes: []string{A2AMIMETextMarkdown},
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{A2AMIMETextMarkdown}, card.DefaultOutputModes)
-}
-
-func TestCompileAgentCard_OutputModesDefaultNoModality(t *testing.T) {
-	s := &Spec{Name: "test-agent", Description: "test"}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{A2AMIMETextPlain}, card.DefaultOutputModes)
 }
 
 // --- Security ---
 
 func TestCompileAgentCard_SecurityPassthrough(t *testing.T) {
-	s := &Spec{Name: "test-agent", Description: "test"}
-	schemes := map[string]any{
-		"bearer": map[string]any{
-			"type":   "http",
-			"scheme": "bearer",
-		},
-	}
-	security := []map[string][]string{
-		{"bearer": {}},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL:             "https://example.com",
-		SecuritySchemes: schemes,
-		Security:        security,
-	})
+	s := &Spec{Name: "a", Description: "d"}
+	schemes := map[string]any{"bearer": map[string]any{"type": "http", "scheme": "bearer"}}
+	reqs := []map[string][]string{{"bearer": {}}}
+	opts := baseOpts()
+	opts.SecuritySchemes = schemes
+	opts.SecurityRequirements = reqs
+	card, err := s.CompileAgentCard(context.Background(), opts)
 	require.NoError(t, err)
 	assert.Equal(t, schemes, card.SecuritySchemes)
-	assert.Equal(t, security, card.Security)
+	assert.Equal(t, reqs, card.SecurityRequirements)
 }
 
-// --- Metadata ---
+// --- Enrichment extension (safety/dispatch/a2a-ext → go-exons metadata extension) ---
 
-func TestCompileAgentCard_MetadataFromA2AExtensions(t *testing.T) {
+func TestCompileAgentCard_EnrichmentExtension(t *testing.T) {
+	t.Run("a2a-prefixed extensions only", func(t *testing.T) {
+		s := &Spec{Name: "a", Description: "d", Extensions: map[string]any{
+			"a2a.custom": "v", "a2a.contact": "x@y", "other": "ignored"}}
+		card, err := s.CompileAgentCard(context.Background(), baseOpts())
+		require.NoError(t, err)
+		ext := goExonsMetaExt(card)
+		require.NotNil(t, ext)
+		assert.Equal(t, "v", ext.Params["a2a.custom"])
+		assert.Equal(t, "x@y", ext.Params["a2a.contact"])
+		_, has := ext.Params["other"]
+		assert.False(t, has)
+	})
+	t.Run("safety + dispatch", func(t *testing.T) {
+		s := &Spec{Name: "a", Description: "d",
+			Safety:   &SafetyConfig{Guardrails: GuardrailsEnabled, DenyTools: []string{"drop_table"}, RequireConfirmationFor: []string{"send_email"}},
+			Dispatch: &DispatchSpec{TriggerDescription: "route research"}}
+		card, err := s.CompileAgentCard(context.Background(), baseOpts())
+		require.NoError(t, err)
+		ext := goExonsMetaExt(card)
+		require.NotNil(t, ext)
+		assert.Equal(t, GuardrailsEnabled, ext.Params[A2AMetaKeySafetyGuardrails])
+		assert.Equal(t, []string{"drop_table"}, ext.Params[A2AMetaKeySafetyDenyTools])
+		assert.Equal(t, []string{"send_email"}, ext.Params[A2AMetaKeySafetyConfirmation])
+		assert.Equal(t, "route research", ext.Params[A2AMetaKeyDispatchDescription])
+	})
+	t.Run("no enrichment ⇒ no metadata extension", func(t *testing.T) {
+		s := &Spec{Name: "a", Description: "d"}
+		card, err := s.CompileAgentCard(context.Background(), baseOpts())
+		require.NoError(t, err)
+		assert.Nil(t, goExonsMetaExt(card))
+	})
+}
+
+// --- Full integration ---
+
+func TestCompileAgentCard_FullIntegration(t *testing.T) {
+	resolver := NewMapSpecResolver()
+	resolver.Add("web-search", &Spec{Name: "web-search", Description: "Searches the web", Execution: &execution.Config{Modality: ModalityText}}, "")
+	resolver.Add("image-gen", &Spec{Name: "image-gen", Description: "Generates images", Execution: &execution.Config{Modality: ModalityImage}}, "")
+
 	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Extensions: map[string]any{
-			"a2a.custom_field":  "custom_value",
-			"a2a.contact_email": "agent@example.com",
-			"other_extension":   "ignored",
-		},
+		Name:        "research-agent",
+		Description: "AI research assistant",
+		Type:        DocumentTypeAgent,
+		Execution:   &execution.Config{Provider: ProviderAnthropic, Model: "claude-sonnet-4-5", Modality: ModalityText, Streaming: &execution.StreamingConfig{Enabled: true}},
+		Inputs:      map[string]*InputDef{"query": {Type: SchemaTypeString, Required: true}, "context": {Type: SchemaTypeObject}},
+		Skills:      []SkillRef{{Slug: "web-search"}, {Slug: "image-gen"}},
+		Extensions:  map[string]any{"a2a.team": "platform", "internal": "ignored"},
+		Dispatch:    &DispatchSpec{TriggerKeywords: []string{"research", "analyze"}, TriggerDescription: "Route research tasks"},
+		Registry:    &RegistrySpec{Version: "2.5.0", Namespace: "acme/research"},
+		Safety:      &SafetyConfig{Guardrails: GuardrailsEnabled, DenyTools: []string{"delete_all"}},
 	}
+
 	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
+		SupportedInterfaces:  declIface(),
+		ProviderOrganization: "Acme Corp",
+		ProviderURL:          "https://acme.com",
+		Resolver:             resolver,
 	})
 	require.NoError(t, err)
-	require.NotNil(t, card.Metadata)
-	assert.Equal(t, "custom_value", card.Metadata["a2a.custom_field"])
-	assert.Equal(t, "agent@example.com", card.Metadata["a2a.contact_email"])
-	_, hasOther := card.Metadata["other_extension"]
-	assert.False(t, hasOther)
-}
+	require.NotNil(t, card)
 
-func TestCompileAgentCard_MetadataFromSafety(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Safety: &SafetyConfig{
-			Guardrails:             GuardrailsEnabled,
-			DenyTools:              []string{"delete_all", "drop_table"},
-			RequireConfirmationFor: []string{"send_email"},
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
+	assert.Equal(t, "research-agent", card.Name)
+	assert.Equal(t, "2.5.0", card.Version)
+	require.NotNil(t, card.Provider)
+	assert.Equal(t, "Acme Corp", card.Provider.Organization)
+	require.NotNil(t, card.Capabilities.Streaming)
+	assert.True(t, *card.Capabilities.Streaming)
+
+	require.Len(t, card.Skills, 2)
+	assert.Equal(t, "Searches the web", card.Skills[0].Description)
+	assert.Equal(t, []string{"research", "analyze"}, card.Skills[0].Tags)
+	assert.Equal(t, []string{A2AMIMEImagePNG}, card.Skills[1].OutputModes)
+
+	assert.Equal(t, []string{A2AMIMEApplicationJSON, A2AMIMETextPlain}, card.DefaultInputModes)
+	assert.Equal(t, []string{A2AMIMETextPlain}, card.DefaultOutputModes)
+
+	ext := goExonsMetaExt(card)
+	require.NotNil(t, ext)
+	assert.Equal(t, "platform", ext.Params["a2a.team"])
+	assert.Equal(t, GuardrailsEnabled, ext.Params[A2AMetaKeySafetyGuardrails])
+	assert.Equal(t, "Route research tasks", ext.Params[A2AMetaKeyDispatchDescription])
+
+	// The fully-populated card is conformant + serializes to valid JSON.
+	assert.Empty(t, card.Validate())
+	jsonBytes, err := card.ToJSONPretty()
 	require.NoError(t, err)
-	require.NotNil(t, card.Metadata)
-	assert.Equal(t, GuardrailsEnabled, card.Metadata[A2AMetaKeySafetyGuardrails])
-	assert.Equal(t, []string{"delete_all", "drop_table"}, card.Metadata[A2AMetaKeySafetyDenyTools])
-	assert.Equal(t, []string{"send_email"}, card.Metadata[A2AMetaKeySafetyConfirmation])
-}
-
-func TestCompileAgentCard_MetadataFromDispatchDescription(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Dispatch: &DispatchSpec{
-			TriggerDescription: "Route tasks about research and web search",
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	require.NotNil(t, card.Metadata)
-	assert.Equal(t, "Route tasks about research and web search",
-		card.Metadata[A2AMetaKeyDispatchDescription])
-}
-
-func TestCompileAgentCard_MetadataDenyToolsOnly(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Safety: &SafetyConfig{
-			DenyTools: []string{"rm_rf"},
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	require.NotNil(t, card.Metadata)
-	assert.Equal(t, []string{"rm_rf"}, card.Metadata[A2AMetaKeySafetyDenyTools])
-	_, hasGuardrails := card.Metadata[A2AMetaKeySafetyGuardrails]
-	assert.False(t, hasGuardrails)
-}
-
-func TestCompileAgentCard_MetadataRequireConfirmationOnly(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Safety: &SafetyConfig{
-			RequireConfirmationFor: []string{"send_email", "delete_user"},
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	require.NotNil(t, card.Metadata)
-	assert.Equal(t, []string{"send_email", "delete_user"}, card.Metadata[A2AMetaKeySafetyConfirmation])
-	_, hasGuardrails := card.Metadata[A2AMetaKeySafetyGuardrails]
-	assert.False(t, hasGuardrails)
-	_, hasDenyTools := card.Metadata[A2AMetaKeySafetyDenyTools]
-	assert.False(t, hasDenyTools)
-}
-
-func TestCompileAgentCard_MetadataCombinesExtensionsAndMetadata(t *testing.T) {
-	s := &Spec{
-		Name:        "test-agent",
-		Description: "test",
-		Extensions: map[string]any{
-			"a2a.team": "platform",
-		},
-		Safety: &SafetyConfig{
-			Guardrails: GuardrailsEnabled,
-		},
-	}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	require.NotNil(t, card.Metadata)
-	assert.Equal(t, "platform", card.Metadata["a2a.team"])
-	assert.Equal(t, GuardrailsEnabled, card.Metadata[A2AMetaKeySafetyGuardrails])
-}
-
-func TestCompileAgentCard_MetadataNilWithNoExtensionsOrMetadata(t *testing.T) {
-	s := &Spec{Name: "test-agent", Description: "test"}
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL: "https://example.com",
-	})
-	require.NoError(t, err)
-	assert.Nil(t, card.Metadata)
-}
-
-// --- JSON serialization ---
-
-func TestAgentCard_ToJSON(t *testing.T) {
-	card := &a2a.AgentCard{
-		Name:            "test-agent",
-		URL:             "https://example.com",
-		ProtocolVersion: A2AProtocolVersionDefault,
-	}
-	data, err := card.ToJSON()
-	require.NoError(t, err)
-	assert.Contains(t, string(data), `"name":"test-agent"`)
-	assert.Contains(t, string(data), `"url":"https://example.com"`)
-
-	// Verify it's valid JSON
 	var parsed map[string]any
-	require.NoError(t, json.Unmarshal(data, &parsed))
-}
-
-func TestAgentCard_ToJSONPretty(t *testing.T) {
-	card := &a2a.AgentCard{
-		Name:            "test-agent",
-		URL:             "https://example.com",
-		ProtocolVersion: A2AProtocolVersionDefault,
-	}
-	data, err := card.ToJSONPretty()
-	require.NoError(t, err)
-	assert.Contains(t, string(data), "\"name\": \"test-agent\"")
-	// Indented output should have newlines
-	assert.Contains(t, string(data), "\n")
-
-	var parsed map[string]any
-	require.NoError(t, json.Unmarshal(data, &parsed))
-}
-
-func TestAgentCard_ToJSON_Nil(t *testing.T) {
-	var card *a2a.AgentCard
-	data, err := card.ToJSON()
-	assert.NoError(t, err)
-	assert.Nil(t, data)
-}
-
-func TestAgentCard_ToJSONPretty_Nil(t *testing.T) {
-	var card *a2a.AgentCard
-	data, err := card.ToJSONPretty()
-	assert.NoError(t, err)
-	assert.Nil(t, data)
+	require.NoError(t, json.Unmarshal(jsonBytes, &parsed))
+	assert.Contains(t, string(jsonBytes), "research-agent")
 }
 
 // --- Helper functions ---
 
 func TestModalityToMIME(t *testing.T) {
-	tests := []struct {
-		modality string
-		expected string
-	}{
+	tests := []struct{ modality, expected string }{
 		{ModalityText, A2AMIMETextPlain},
 		{ModalityImage, A2AMIMEImagePNG},
 		{ModalityImageEdit, A2AMIMEImagePNG},
@@ -837,10 +475,7 @@ func TestModalityToMIME(t *testing.T) {
 }
 
 func TestInputTypeToMIME(t *testing.T) {
-	tests := []struct {
-		inputType string
-		expected  string
-	}{
+	tests := []struct{ inputType, expected string }{
 		{SchemaTypeString, A2AMIMETextPlain},
 		{SchemaTypeObject, A2AMIMEApplicationJSON},
 		{SchemaTypeArray, A2AMIMEApplicationJSON},
@@ -857,153 +492,18 @@ func TestInputTypeToMIME(t *testing.T) {
 }
 
 func TestSortedStringKeys(t *testing.T) {
-	t.Run("nil map", func(t *testing.T) {
-		assert.Nil(t, sortedStringKeys(nil))
-	})
-	t.Run("empty map", func(t *testing.T) {
-		assert.Nil(t, sortedStringKeys(map[string]bool{}))
-	})
-	t.Run("single key", func(t *testing.T) {
-		assert.Equal(t, []string{"a"}, sortedStringKeys(map[string]bool{"a": true}))
-	})
-	t.Run("multiple keys sorted", func(t *testing.T) {
-		m := map[string]bool{"c": true, "a": true, "b": true}
-		assert.Equal(t, []string{"a", "b", "c"}, sortedStringKeys(m))
-	})
+	assert.Nil(t, sortedStringKeys(nil))
+	assert.Nil(t, sortedStringKeys(map[string]bool{}))
+	assert.Equal(t, []string{"a"}, sortedStringKeys(map[string]bool{"a": true}))
+	assert.Equal(t, []string{"a", "b", "c"}, sortedStringKeys(map[string]bool{"c": true, "a": true, "b": true}))
 }
-
-// --- Full integration test ---
-
-func TestCompileAgentCard_FullIntegration(t *testing.T) {
-	resolver := NewMapSpecResolver()
-	resolver.Add("web-search", &Spec{
-		Name:        "web-search",
-		Description: "Searches the web for current information",
-		Execution: &execution.Config{
-			Modality: ModalityText,
-		},
-	}, "")
-	resolver.Add("image-gen", &Spec{
-		Name:        "image-gen",
-		Description: "Generates images from text prompts",
-		Execution: &execution.Config{
-			Modality: ModalityImage,
-		},
-	}, "")
-
-	s := &Spec{
-		Name:        "research-agent",
-		Description: "AI research assistant with multi-modal capabilities",
-		Type:        DocumentTypeAgent,
-		Execution: &execution.Config{
-			Provider:  ProviderAnthropic,
-			Model:     "claude-sonnet-4-5",
-			Modality:  ModalityText,
-			Streaming: &execution.StreamingConfig{Enabled: true},
-		},
-		Inputs: map[string]*InputDef{
-			"query":   {Type: SchemaTypeString, Required: true},
-			"context": {Type: SchemaTypeObject},
-		},
-		Skills: []SkillRef{
-			{Slug: "web-search", Injection: string(SkillInjectionSystemPrompt)},
-			{Slug: "image-gen"},
-		},
-		Extensions: map[string]any{
-			"a2a.team":    "platform",
-			"a2a.version": "beta",
-			"internal":    "ignored",
-		},
-		Dispatch: &DispatchSpec{
-			TriggerKeywords:    []string{"research", "search", "analyze"},
-			TriggerDescription: "Route research and analysis tasks here",
-		},
-		Registry: &RegistrySpec{
-			Version:   "2.5.0",
-			Namespace: "acme/research",
-		},
-		Safety: &SafetyConfig{
-			Guardrails: GuardrailsEnabled,
-			DenyTools:  []string{"delete_all"},
-		},
-	}
-
-	card, err := s.CompileAgentCard(context.Background(), &A2ACardOptions{
-		URL:                  "https://agents.acme.com/research",
-		ProviderOrganization: "Acme Corp",
-		ProviderURL:          "https://acme.com",
-		Resolver:             resolver,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, card)
-
-	// Identity
-	assert.Equal(t, "research-agent", card.Name)
-	assert.Equal(t, "AI research assistant with multi-modal capabilities", card.Description)
-	assert.Equal(t, "https://agents.acme.com/research", card.URL)
-
-	// Version from registry metadata
-	assert.Equal(t, "2.5.0", card.Version)
-	assert.Equal(t, A2AProtocolVersionDefault, card.ProtocolVersion)
-
-	// Provider
-	require.NotNil(t, card.Provider)
-	assert.Equal(t, "Acme Corp", card.Provider.Organization)
-	assert.Equal(t, "https://acme.com", card.Provider.URL)
-
-	// Capabilities (streaming auto-detected)
-	require.NotNil(t, card.Capabilities)
-	assert.True(t, card.Capabilities.Streaming)
-
-	// Skills with resolved descriptions and dispatch tags
-	require.Len(t, card.Skills, 2)
-	assert.Equal(t, "web-search", card.Skills[0].ID)
-	assert.Equal(t, "Searches the web for current information", card.Skills[0].Description)
-	assert.Equal(t, []string{"research", "search", "analyze"}, card.Skills[0].Tags)
-	assert.Equal(t, []string{A2AMIMETextPlain}, card.Skills[0].OutputModes)
-
-	assert.Equal(t, "image-gen", card.Skills[1].ID)
-	assert.Equal(t, "Generates images from text prompts", card.Skills[1].Description)
-	assert.Equal(t, []string{A2AMIMEImagePNG}, card.Skills[1].OutputModes)
-
-	// Input modes (sorted: application/json, text/plain)
-	assert.Equal(t, []string{A2AMIMEApplicationJSON, A2AMIMETextPlain}, card.DefaultInputModes)
-
-	// Output modes (text modality)
-	assert.Equal(t, []string{A2AMIMETextPlain}, card.DefaultOutputModes)
-
-	// Metadata
-	require.NotNil(t, card.Metadata)
-	assert.Equal(t, "platform", card.Metadata["a2a.team"])
-	assert.Equal(t, "beta", card.Metadata["a2a.version"])
-	_, hasInternal := card.Metadata["internal"]
-	assert.False(t, hasInternal)
-	assert.Equal(t, GuardrailsEnabled, card.Metadata[A2AMetaKeySafetyGuardrails])
-	assert.Equal(t, []string{"delete_all"}, card.Metadata[A2AMetaKeySafetyDenyTools])
-	assert.Equal(t, "Route research and analysis tasks here", card.Metadata[A2AMetaKeyDispatchDescription])
-
-	// JSON output
-	jsonBytes, err := card.ToJSONPretty()
-	require.NoError(t, err)
-	assert.Contains(t, string(jsonBytes), "research-agent")
-
-	var parsed map[string]any
-	require.NoError(t, json.Unmarshal(jsonBytes, &parsed))
-}
-
-// --- NewA2AError ---
 
 func TestNewA2AError(t *testing.T) {
-	t.Run("without cause", func(t *testing.T) {
-		err := NewA2AError(ErrMsgA2ACardNilSpec, nil)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), ErrMsgA2ACardNilSpec)
-	})
+	err := NewA2AError(ErrMsgA2ACardNilSpec, nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), ErrMsgA2ACardNilSpec)
 
-	t.Run("with cause", func(t *testing.T) {
-		cause := assert.AnError
-		err := NewA2AError(ErrMsgA2ACardMissingURL, cause)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), ErrMsgA2ACardMissingURL)
-	})
+	err = NewA2AError(ErrMsgA2ACardMissingName, assert.AnError)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), ErrMsgA2ACardMissingName)
 }

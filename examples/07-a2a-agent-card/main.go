@@ -12,6 +12,7 @@ import (
 	"os"
 
 	exons "github.com/itsatony/go-exons"
+	"github.com/itsatony/go-exons/a2a"
 )
 
 func main() {
@@ -47,29 +48,36 @@ func main() {
 
 	// Compile the A2A Agent Card
 	ctx := context.Background()
+	// A2A v1.0.1: transport lives in supportedInterfaces[]. This publisher is
+	// declaration-only, so it advertises a single registry/definition interface with
+	// an open-form binding (no runtime execution endpoint).
 	card, err := spec.CompileAgentCard(ctx, &exons.A2ACardOptions{
-		URL:                  "https://agents.example.com/research",
+		SupportedInterfaces: []a2a.AgentInterface{{
+			URL:             "https://agents.example.com/research",
+			ProtocolBinding: exons.A2AProtocolBindingHTTPS,
+		}},
 		ProviderOrganization: "Acme Research Corp",
 		ProviderURL:          "https://acme-research.example.com",
-		// Version is auto-derived from registry.version (2.1.0)
+		// Version is auto-derived from registry.version.
 	})
 	if err != nil {
 		log.Fatalf("failed to compile agent card: %v", err)
 	}
 
 	// Print card details
-	fmt.Println("=== A2A Agent Card ===")
+	fmt.Println("=== A2A Agent Card (v1.0.1) ===")
 	fmt.Printf("Name: %s\n", card.Name)
-	fmt.Printf("URL: %s\n", card.URL)
 	fmt.Printf("Version: %s\n", card.Version)
-	fmt.Printf("Protocol Version: %s\n", card.ProtocolVersion)
+	for i, iface := range card.SupportedInterfaces {
+		fmt.Printf("Interface[%d]: %s (%s, proto %s)\n", i, iface.URL, iface.ProtocolBinding, iface.ProtocolVersion)
+	}
 
 	if card.Provider != nil {
 		fmt.Printf("Provider: %s (%s)\n", card.Provider.Organization, card.Provider.URL)
 	}
 
-	if card.Capabilities != nil {
-		fmt.Printf("Streaming: %v\n", card.Capabilities.Streaming)
+	if card.Capabilities != nil && card.Capabilities.Streaming != nil {
+		fmt.Printf("Streaming: %v\n", *card.Capabilities.Streaming)
 	}
 
 	fmt.Printf("Input Modes: %v\n", card.DefaultInputModes)
@@ -82,10 +90,19 @@ func main() {
 		}
 	}
 
-	if len(card.Metadata) > 0 {
-		fmt.Printf("\nMetadata:\n")
-		for k, v := range card.Metadata {
-			fmt.Printf("  %s: %v\n", k, v)
+	// v1.0.1 has no top-level metadata; enrichment rides in capabilities.extensions[].
+	if card.Capabilities != nil && len(card.Capabilities.Extensions) > 0 {
+		fmt.Printf("\nExtensions:\n")
+		for _, ext := range card.Capabilities.Extensions {
+			fmt.Printf("  %s: %v\n", ext.URI, ext.Params)
+		}
+	}
+
+	// Self-check conformance before serializing.
+	if vs := card.Validate(); len(vs) > 0 {
+		fmt.Printf("\nWARNING: card has %d conformance violation(s):\n", len(vs))
+		for _, v := range vs {
+			fmt.Printf("  - %s\n", v)
 		}
 	}
 

@@ -3,6 +3,7 @@ module github.com/itsatony/go-exons
 go 1.24.0
 
 require (
+	github.com/gowebpki/jcs v1.0.1
 	github.com/itsatony/go-cuserr v0.3.0
 	github.com/itsatony/go-version v1.0.2
 	github.com/stretchr/testify v1.11.1

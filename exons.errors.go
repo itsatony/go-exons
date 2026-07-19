@@ -218,9 +218,10 @@ const (
 	ErrMsgAsyncPollTimeoutInvalid       = "async poll timeout must be positive"
 	ErrMsgAsyncPollTimeoutTooSmall      = "async poll timeout must be greater than or equal to poll interval"
 
-	// A2A Agent Card compilation messages
+	// A2A Agent Card compilation messages. (A2A v1.0.1 no longer requires a top-level
+	// service URL — transport lives in supportedInterfaces[], which the caller supplies
+	// and AgentCard.Validate checks — so there is no missing-URL compile error.)
 	ErrMsgA2ACardNilSpec     = "cannot compile agent card from nil spec"
-	ErrMsgA2ACardMissingURL  = "agent card requires a service URL in options"
 	ErrMsgA2ACardMissingName = "agent card requires a spec name"
 
 	// Requirements block validation messages

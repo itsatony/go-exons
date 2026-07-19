@@ -758,13 +758,26 @@ const (
 	MetaKeyCredentialLabel = "credential_label"
 )
 
-// A2A (Agent-to-Agent) protocol constants
+// A2A (Agent-to-Agent) protocol constants. Cards are compiled to the A2A v1.0.1
+// shape (see the a2a package). protocol_version is per-interface in v1.0.1, so
+// A2AProtocolVersionDefault is the default value for AgentInterface.ProtocolVersion.
 const (
-	// A2AProtocolVersionDefault is the default A2A protocol version
-	A2AProtocolVersionDefault = "0.3.0"
-	// A2AVersionDefault is the default agent version when not specified
+	// A2AProtocolVersionDefault is the default A2A protocol version an interface
+	// exposes (the "latest supported minor per major" per the spec).
+	A2AProtocolVersionDefault = "1.0"
+	// A2AVersionDefault is the default agent version when the spec declares none.
 	A2AVersionDefault = "1.0.0"
+	// A2AProtocolBindingJSONRPC / GRPC / HTTPJSON are the core protocol bindings.
+	A2AProtocolBindingJSONRPC = "JSONRPC"
+	A2AProtocolBindingGRPC    = "GRPC"
+	A2AProtocolBindingHTTPS   = "HTTP+JSON"
 )
+
+// A2AExtensionURIGoExonsMetadata is the extension URI under which go-exons carries
+// its safety/dispatch/a2a-prefixed enrichment on a v1.0.1 card. v1.0.1 has no
+// top-level metadata field; capabilities.extensions[] is the spec's extension point,
+// so this enrichment rides as one AgentExtension with the map under `params`.
+const A2AExtensionURIGoExonsMetadata = "https://go-exons.dev/a2a/ext/metadata"
 
 // A2A MIME type constants for input/output modes
 const (

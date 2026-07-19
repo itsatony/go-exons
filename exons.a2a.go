@@ -8,7 +8,10 @@ import (
 	"github.com/itsatony/go-exons/a2a"
 )
 
-// A2A metadata keys for safety/dispatch enrichment.
+// A2A metadata keys for safety/dispatch enrichment. On a v1.0.1 card these ride as
+// `params` of a single go-exons AgentExtension (A2AExtensionURIGoExonsMetadata),
+// because v1.0.1 has no top-level metadata field — capabilities.extensions[] is the
+// spec's only vendor-data channel.
 const (
 	A2AMetaKeySafetyGuardrails    = "safety.guardrails"
 	A2AMetaKeySafetyDenyTools     = "safety.deny_tools"
@@ -16,122 +19,109 @@ const (
 	A2AMetaKeyDispatchDescription = "dispatch.trigger_description"
 )
 
-// A2ACardOptions configures how a Spec is compiled into an A2A Agent Card.
+// A2ACardOptions configures how a Spec is compiled into an A2A v1.0.1 Agent Card.
 type A2ACardOptions struct {
-	// URL is the agent's service endpoint (required — not derivable from Spec)
-	URL string
-	// ProviderOrganization is the organization name for the Agent Card's provider field
+	// SupportedInterfaces are the transport interfaces the card advertises. A2A
+	// v1.0.1 requires at least one; a declaration-only publisher (aigentverse) passes
+	// a single interface pointing at the registry definition URL. Any interface with
+	// an empty ProtocolVersion is defaulted to opts.ProtocolVersion (else the package
+	// default). Not derivable from the Spec — the deployment endpoint is not part of
+	// the definition.
+	SupportedInterfaces []a2a.AgentInterface
+	// ProviderOrganization is the organization name for the provider field.
 	ProviderOrganization string
-	// ProviderURL is the organization's website URL
+	// ProviderURL is the organization's website URL.
 	ProviderURL string
-	// Version overrides the agent version (defaults to registry metadata version, then "1.0.0")
+	// Version overrides the agent version (defaults to registry metadata version, then A2AVersionDefault).
 	Version string
-	// ProtocolVersion overrides the A2A protocol version (defaults to "0.3.0")
+	// ProtocolVersion is the default per-interface A2A protocol version applied to
+	// any supplied interface that omits one (defaults to A2AProtocolVersionDefault).
 	ProtocolVersion string
-	// DefaultInputModes overrides auto-detected input MIME types
+	// DefaultInputModes overrides auto-detected input MIME types.
 	DefaultInputModes []string
-	// DefaultOutputModes overrides auto-detected output MIME types
+	// DefaultOutputModes overrides auto-detected output MIME types.
 	DefaultOutputModes []string
-	// SecuritySchemes defines inbound authentication configuration
+	// SecuritySchemes defines inbound authentication configuration.
 	SecuritySchemes map[string]any
-	// Security references which security schemes are required
-	Security []map[string][]string
-	// Capabilities overrides auto-detected capabilities
-	Capabilities *a2a.Capabilities
-	// Resolver resolves skill descriptions from external specs
+	// SecurityRequirements references which security schemes are required.
+	SecurityRequirements []map[string][]string
+	// Capabilities overrides auto-detected capabilities (streaming). Extensions from
+	// this value are preserved and merged with go-exons enrichment + opts.Extensions.
+	Capabilities *a2a.AgentCapabilities
+	// Extensions are additional protocol extensions to advertise (e.g. aigentverse's
+	// provenance extension carrying did/content-hash/declaration-only).
+	Extensions []a2a.AgentExtension
+	// DocumentationURL / IconURL are optional passthroughs.
+	DocumentationURL string
+	IconURL          string
+	// Resolver resolves skill descriptions from external specs.
 	Resolver SpecResolver
 }
 
-// CompileAgentCard generates an A2A Agent Card from this Spec's configuration.
+// CompileAgentCard generates an A2A v1.0.1 Agent Card from this Spec's configuration.
 // This is a pure metadata transformation — no template execution occurs.
 //
-// The URL must be provided via options (it represents the deployment endpoint,
-// which is not part of the Spec definition). Name is taken from the Spec
-// and must not be empty.
+// Name is taken from the Spec and must not be empty. Transport endpoints are not part
+// of the definition, so they come from opts.SupportedInterfaces; a declaration-only
+// card supplies a single registry-definition interface. The returned card is not
+// guaranteed to be fully conformant on its own (e.g. if the caller supplies no
+// interfaces) — call AgentCard.Validate to check.
 //
-// Skills are mapped from SkillRef entries. Descriptions are resolved via
-// opts.Resolver when available; resolution failures are non-fatal (the skill
-// appears with an empty description, following the same pattern as GenerateSkillsCatalog).
+// Skills are mapped from SkillRef entries (descriptions resolved via opts.Resolver
+// when available; resolution failures are non-fatal). When the Spec declares no
+// skills, a single skill is synthesized from the agent itself so the required,
+// non-empty skills[] is satisfied.
 //
-// Metadata enrichment:
-//   - dispatch.TriggerKeywords → appended to each A2A skill's Tags
-//   - registry.Version → used as agent card Version (if not overridden by opts)
-//   - safety.Guardrails, safety.DenyTools, safety.RequireConfirmationFor → metadata
-//   - dispatch.TriggerDescription → metadata under "dispatch.trigger_description"
-//
-// Metadata key spaces: a2a-prefixed extensions (e.g., "a2a.team") and metadata
-// fields (e.g., "safety.guardrails") use disjoint key namespaces — no collisions.
-//
-// Streaming capability is auto-detected from execution.Config.Streaming.Enabled
-// unless overridden via opts.Capabilities.
-//
-// Input modes are inferred from Spec.Inputs types (string->"text/plain",
-// object->"application/json", etc.). Output modes are inferred from the
-// execution modality. Both can be overridden via options.
+// Enrichment: dispatch.TriggerKeywords → each skill's Tags; registry.Version → the
+// agent version; safety.* + dispatch.TriggerDescription + a2a-prefixed extensions →
+// the params of a go-exons metadata AgentExtension. Streaming is auto-detected from
+// execution.Config.Streaming.Enabled unless overridden.
 func (s *Spec) CompileAgentCard(ctx context.Context, opts *A2ACardOptions) (*a2a.AgentCard, error) {
 	if s == nil {
 		return nil, NewA2AError(ErrMsgA2ACardNilSpec, nil)
 	}
-	if opts == nil || opts.URL == "" {
-		return nil, NewA2AError(ErrMsgA2ACardMissingURL, nil)
+	if opts == nil {
+		opts = &A2ACardOptions{}
 	}
 	if s.Name == "" {
 		return nil, NewA2AError(ErrMsgA2ACardMissingName, nil)
 	}
 
+	defaultProtoVersion := opts.ProtocolVersion
+	if defaultProtoVersion == "" {
+		defaultProtoVersion = A2AProtocolVersionDefault
+	}
+	interfaces := make([]a2a.AgentInterface, 0, len(opts.SupportedInterfaces))
+	for _, iface := range opts.SupportedInterfaces {
+		if iface.ProtocolVersion == "" {
+			iface.ProtocolVersion = defaultProtoVersion
+		}
+		interfaces = append(interfaces, iface)
+	}
+
 	card := &a2a.AgentCard{
-		Name:            s.Name,
-		Description:     s.Description,
-		URL:             opts.URL,
-		ProtocolVersion: A2AProtocolVersionDefault,
+		Name:                 s.Name,
+		Description:          s.Description,
+		SupportedInterfaces:  interfaces,
+		Version:              a2aResolveVersion(s, opts),
+		DocumentationURL:     opts.DocumentationURL,
+		IconURL:              opts.IconURL,
+		DefaultInputModes:    a2aInputModes(s, opts),
+		DefaultOutputModes:   a2aOutputModes(s, opts),
+		Skills:               a2aCompileSkills(ctx, s, opts.Resolver),
+		SecuritySchemes:      opts.SecuritySchemes,
+		SecurityRequirements: opts.SecurityRequirements,
 	}
 
-	// Version: opts > registry metadata > default
-	card.Version = a2aResolveVersion(s, opts)
-
-	// Protocol version override
-	if opts.ProtocolVersion != "" {
-		card.ProtocolVersion = opts.ProtocolVersion
-	}
-
-	// Provider
-	if opts.ProviderOrganization != "" {
-		card.Provider = &a2a.Provider{
+	// Provider (both url + organization are required by the spec when present).
+	if opts.ProviderOrganization != "" || opts.ProviderURL != "" {
+		card.Provider = &a2a.AgentProvider{
 			Organization: opts.ProviderOrganization,
 			URL:          opts.ProviderURL,
 		}
 	}
 
-	// Capabilities: override or auto-detect streaming
-	if opts.Capabilities != nil {
-		card.Capabilities = opts.Capabilities
-	} else {
-		card.Capabilities = a2aAutoDetectCapabilities(s)
-	}
-
-	// Skills: map SkillRefs with optional resolver and dispatch tags
-	card.Skills = a2aCompileSkills(ctx, s, opts.Resolver)
-
-	// Input modes: override or auto-detect from Inputs
-	if len(opts.DefaultInputModes) > 0 {
-		card.DefaultInputModes = opts.DefaultInputModes
-	} else {
-		card.DefaultInputModes = a2aInferInputModes(s)
-	}
-
-	// Output modes: override or auto-detect from modality
-	if len(opts.DefaultOutputModes) > 0 {
-		card.DefaultOutputModes = opts.DefaultOutputModes
-	} else {
-		card.DefaultOutputModes = a2aInferOutputModes(s)
-	}
-
-	// Security passthrough
-	card.SecuritySchemes = opts.SecuritySchemes
-	card.Security = opts.Security
-
-	// Metadata: a2a-prefixed extensions + safety/dispatch metadata
-	card.Metadata = a2aBuildMetadata(s)
+	card.Capabilities = a2aBuildCapabilities(s, opts)
 
 	return card, nil
 }
@@ -149,40 +139,68 @@ func a2aResolveVersion(s *Spec, opts *A2ACardOptions) string {
 	return A2AVersionDefault
 }
 
-// a2aAutoDetectCapabilities detects capabilities from the Spec's execution config.
-func a2aAutoDetectCapabilities(s *Spec) *a2a.Capabilities {
-	caps := &a2a.Capabilities{}
-	if s.Execution != nil && s.Execution.Streaming != nil && s.Execution.Streaming.Enabled {
-		caps.Streaming = true
+// a2aBuildCapabilities assembles the AgentCapabilities: streaming (override or
+// auto-detected) plus the merged extension list (go-exons enrichment + caller
+// extensions + any extensions on an override capability set).
+func a2aBuildCapabilities(s *Spec, opts *A2ACardOptions) *a2a.AgentCapabilities {
+	caps := &a2a.AgentCapabilities{}
+	if opts.Capabilities != nil {
+		caps = opts.Capabilities
+	} else if s.Execution != nil && s.Execution.Streaming != nil && s.Execution.Streaming.Enabled {
+		streaming := true
+		caps.Streaming = &streaming
 	}
+
+	var exts []a2a.AgentExtension
+	exts = append(exts, caps.Extensions...)
+	if meta := a2aBuildMetadata(s); len(meta) > 0 {
+		exts = append(exts, a2a.AgentExtension{
+			URI:    A2AExtensionURIGoExonsMetadata,
+			Params: meta,
+		})
+	}
+	exts = append(exts, opts.Extensions...)
+	caps.Extensions = exts
 	return caps
 }
 
-// a2aCompileSkills maps SkillRef entries to A2A skills.
-// Descriptions are resolved via SpecResolver (non-fatal on failure).
-// Dispatch keywords are appended as tags to each skill.
-func a2aCompileSkills(ctx context.Context, s *Spec, resolver SpecResolver) []a2a.Skill {
-	if len(s.Skills) == 0 {
-		return nil
-	}
-
-	// Collect dispatch keywords for tag enrichment
+// a2aCompileSkills maps SkillRef entries to A2A v1.0.1 skills. Descriptions are
+// resolved via SpecResolver (non-fatal on failure); an empty description falls back
+// to the skill name so the required description is never blank. Tags are always a
+// non-nil slice (dispatch keywords when present). When the Spec declares no skills,
+// a single skill is synthesized from the agent itself.
+func a2aCompileSkills(ctx context.Context, s *Spec, resolver SpecResolver) []a2a.AgentSkill {
 	var dispatchTags []string
 	if s.Dispatch != nil && len(s.Dispatch.TriggerKeywords) > 0 {
 		dispatchTags = s.Dispatch.TriggerKeywords
 	}
+	tagsCopy := func() []string {
+		out := make([]string, 0, len(dispatchTags))
+		return append(out, dispatchTags...)
+	}
 
-	skills := make([]a2a.Skill, 0, len(s.Skills))
+	if len(s.Skills) == 0 {
+		// Synthesize the agent's own capability so skills[] is present + non-empty.
+		desc := s.Description
+		if desc == "" {
+			desc = s.Name
+		}
+		return []a2a.AgentSkill{{
+			ID:          s.Name,
+			Name:        s.Name,
+			Description: desc,
+			Tags:        tagsCopy(),
+		}}
+	}
 
+	skills := make([]a2a.AgentSkill, 0, len(s.Skills))
 	for i := range s.Skills {
 		ref := &s.Skills[i]
-
-		skill := a2a.Skill{
+		skill := a2a.AgentSkill{
 			ID:   ref.Slug,
 			Name: ref.Slug,
+			Tags: tagsCopy(),
 		}
-
-		// Resolve description and name via SpecResolver (non-fatal)
 		if resolver != nil && ref.Slug != "" {
 			resolved, _, err := resolver.ResolveSpec(ctx, ref.Slug, "")
 			if err == nil && resolved != nil {
@@ -190,26 +208,35 @@ func a2aCompileSkills(ctx context.Context, s *Spec, resolver SpecResolver) []a2a
 				if resolved.Name != "" {
 					skill.Name = resolved.Name
 				}
-				// Infer output modes from resolved spec's execution modality
 				if resolved.Execution != nil && resolved.Execution.Modality != "" {
 					if mime := modalityToMIME(resolved.Execution.Modality); mime != "" {
 						skill.OutputModes = []string{mime}
 					}
 				}
 			}
-			// Resolution failures are non-fatal — skill appears with empty description
 		}
-
-		// Append dispatch keywords as tags
-		if len(dispatchTags) > 0 {
-			skill.Tags = make([]string, len(dispatchTags))
-			copy(skill.Tags, dispatchTags)
+		if skill.Description == "" {
+			skill.Description = skill.Name
 		}
-
 		skills = append(skills, skill)
 	}
-
 	return skills
+}
+
+// a2aInputModes resolves the default input modes (override or auto-detected).
+func a2aInputModes(s *Spec, opts *A2ACardOptions) []string {
+	if len(opts.DefaultInputModes) > 0 {
+		return opts.DefaultInputModes
+	}
+	return a2aInferInputModes(s)
+}
+
+// a2aOutputModes resolves the default output modes (override or auto-detected).
+func a2aOutputModes(s *Spec, opts *A2ACardOptions) []string {
+	if len(opts.DefaultOutputModes) > 0 {
+		return opts.DefaultOutputModes
+	}
+	return a2aInferOutputModes(s)
 }
 
 // a2aInferInputModes infers MIME types from Spec.Inputs definitions.
@@ -217,20 +244,16 @@ func a2aInferInputModes(s *Spec) []string {
 	if len(s.Inputs) == 0 {
 		return []string{A2AMIMETextPlain}
 	}
-
 	mimeSet := make(map[string]bool)
 	for _, def := range s.Inputs {
 		if def == nil {
 			continue
 		}
-		mime := inputTypeToMIME(def.Type)
-		mimeSet[mime] = true
+		mimeSet[inputTypeToMIME(def.Type)] = true
 	}
-
 	if len(mimeSet) == 0 {
 		return []string{A2AMIMETextPlain}
 	}
-
 	return sortedStringKeys(mimeSet)
 }
 
@@ -240,11 +263,9 @@ func a2aInferOutputModes(s *Spec) []string {
 	if s.Execution != nil && s.Execution.Modality != "" {
 		modality = s.Execution.Modality
 	}
-
 	if modality == "" {
 		return []string{A2AMIMETextPlain}
 	}
-
 	mime := modalityToMIME(modality)
 	if mime == "" {
 		return []string{A2AMIMETextPlain}
@@ -252,22 +273,17 @@ func a2aInferOutputModes(s *Spec) []string {
 	return []string{mime}
 }
 
-// a2aBuildMetadata merges a2a-prefixed extensions and metadata fields.
-// Extensions with the "a2a." prefix are included first, then metadata fields
-// are added under unprefixed keys (e.g., "safety.guardrails", "dispatch.trigger_description").
-// These key spaces do not overlap: extensions always have the "a2a." prefix,
-// metadata keys never do.
+// a2aBuildMetadata merges a2a-prefixed extensions and safety/dispatch enrichment into
+// a single map, carried as the params of the go-exons metadata extension. Extensions
+// with the "a2a." prefix are included first, then safety/dispatch keys (disjoint key
+// spaces: extensions always carry the "a2a." prefix, metadata keys never do).
 func a2aBuildMetadata(s *Spec) map[string]any {
 	meta := make(map[string]any)
-
-	// Merge a2a-prefixed extensions
 	for k, v := range s.Extensions {
 		if strings.HasPrefix(k, ExtensionPrefixA2A) {
 			meta[k] = v
 		}
 	}
-
-	// Safety config enrichment
 	if s.Safety != nil {
 		if s.Safety.Guardrails != "" {
 			meta[A2AMetaKeySafetyGuardrails] = s.Safety.Guardrails
@@ -279,12 +295,9 @@ func a2aBuildMetadata(s *Spec) map[string]any {
 			meta[A2AMetaKeySafetyConfirmation] = s.Safety.RequireConfirmationFor
 		}
 	}
-
-	// Dispatch description enrichment
 	if s.Dispatch != nil && s.Dispatch.TriggerDescription != "" {
 		meta[A2AMetaKeyDispatchDescription] = s.Dispatch.TriggerDescription
 	}
-
 	if len(meta) == 0 {
 		return nil
 	}
@@ -303,8 +316,8 @@ func modalityToMIME(modality string) string {
 	case ModalityEmbedding:
 		return A2AMIMEApplicationJSON
 	case ModalityVideo:
-		// Video generation APIs return structured JSON metadata (URLs, dimensions, status)
-		// rather than raw binary video streams — application/json is the correct wire type.
+		// Video generation APIs return structured JSON metadata (URLs, dimensions,
+		// status) rather than raw binary video streams — application/json is correct.
 		return A2AMIMEApplicationJSON
 	default:
 		return ""
