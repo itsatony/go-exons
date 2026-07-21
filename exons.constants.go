@@ -34,6 +34,7 @@ const (
 	TagNameParent      = "exons.parent"      // Template inheritance — call parent block content
 	TagNameMessage     = "exons.message"     // Conversation message for chat API
 	TagNameRef         = "exons.ref"         // Spec reference resolver
+	TagNameNow         = "exons.now"         // Built-in date/time OUTPUT tag
 )
 
 // YAML frontmatter constants
@@ -573,6 +574,10 @@ const (
 	ContextKeyConstraints = "constraints"
 	ContextKeySkills      = "skills"
 	ContextKeyTools       = "tools"
+	// ContextKeyReferenceTime is the reserved Execute-data key under which a caller
+	// seeds the {~exons.now~} reference time (a time.Time value) so every now-tag in
+	// one render agrees. MUST match internal.ContextKeyReferenceTime.
+	ContextKeyReferenceTime = "_refTime"
 )
 
 // Field constraints

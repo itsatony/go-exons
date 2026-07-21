@@ -1,7 +1,13 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.17.0
+  version: 0.18.0
+# v0.18.0: New {~exons.now~} built-in OUTPUT tag — prints a formatted reference time
+# into body text (curated named formats iso/date/datetime/time/year/month/day/weekday/
+# unix/rfc1123/date-de, optional tz= IANA zone, layout= raw-Go escape hatch). Distinct
+# from the eval-only date/time expression functions, which have no output path. The
+# reference time is seeded per render via the reserved ContextKeyReferenceTime data key
+# (falls back to time.Now()). Consumed by aigentverse DC92-chronos.
 # v0.17.0: A2A Agent Card upgraded to spec v1.0.1 (a2a.proto @ v1.0.1). The retired
 # v0.3 shape (url + top-level protocolVersion + metadata) is REPLACED by
 # supportedInterfaces[] (per-interface protocolVersion), capabilities.extensions[]

@@ -166,6 +166,7 @@ const (
 	TagNameRef           = "exons.ref"
 	TagNameSkillsCatalog = "exons.skills_catalog"
 	TagNameToolsCatalog  = "exons.tools_catalog"
+	TagNameNow           = "exons.now" // Built-in date/time OUTPUT tag
 	// TagNameMessage is defined separately in the message tag constants section
 )
 
@@ -186,6 +187,9 @@ const (
 	AttrRequired = "required"
 	AttrSlug     = "slug"
 	AttrVersion  = "version"
+	AttrFormat   = "format" // {~exons.now~} named format
+	AttrTz       = "tz"     // {~exons.now~} IANA timezone
+	AttrLayout   = "layout" // {~exons.now~} raw Go layout escape hatch
 )
 
 // Boolean attribute values
@@ -531,6 +535,10 @@ const (
 	ContextKeySelfBody = "_selfBody"
 	ContextKeySkills   = "skills"
 	ContextKeyTools    = "tools"
+	// ContextKeyReferenceTime is the reserved data key under which a caller seeds
+	// the {~exons.now~} reference time (a time.Time), so every now-tag in one render
+	// agrees and tests can pin an instant. Unseeded, the tag falls back to time.Now().
+	ContextKeyReferenceTime = "_refTime"
 )
 
 // Error messages for reference resolver

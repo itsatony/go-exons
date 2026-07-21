@@ -42,6 +42,33 @@ const (
 	DateFormatMonthLong  = "January 2, 2006"
 	TimeFormat24H        = "15:04:05"
 	TimeFormat12H        = "3:04:05 PM"
+	DateFormatDE         = "02.01.2006" // German day.month.year (product is German-default)
+	LayoutYear           = "2006"       // single-component: year
+	LayoutMonthNumeric   = "01"         // single-component: zero-padded month
+	LayoutDayNumeric     = "02"         // single-component: zero-padded day
+)
+
+// Named formats accepted by the {~exons.now~} OUTPUT tag's format= attribute.
+// They are curated names (never raw Go layouts, which authors should not have to
+// type); the escape-hatch layout= attribute covers anything outside this set.
+const (
+	NowFormatISO      = "iso"      // RFC-3339 (default)
+	NowFormatDate     = "date"     // 2006-01-02
+	NowFormatDateTime = "datetime" // 2006-01-02 15:04:05
+	NowFormatTime     = "time"     // 15:04:05
+	NowFormatYear     = "year"     // 2006
+	NowFormatMonth    = "month"    // 01
+	NowFormatDay      = "day"      // 02
+	NowFormatWeekday  = "weekday"  // Tuesday
+	NowFormatUnix     = "unix"     // seconds since epoch
+	NowFormatRFC1123  = "rfc1123"  // Tue, 21 Jul 2026 14:30:00 UTC
+	NowFormatDateDE   = "date-de"  // 21.07.2026
+)
+
+// Error messages for the {~exons.now~} output tag.
+const (
+	ErrMsgNowUnknownFormat   = "unknown now format"
+	ErrMsgNowInvalidTimezone = "invalid timezone"
 )
 
 // Common time parsing formats tried in order
