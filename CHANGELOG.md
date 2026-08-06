@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-08-06
+
+A prompt `subtype` discriminator and a complete input-kind vocabulary. Consumed by
+aigentverse MP-STENCIL (DC103-stencil / DC104-quill), where prompts split into
+composable *fragments* and executable *prompt-templates*.
+
+Both additions are **declaration-only and advisory**. `Spec.Validate()` gained no new
+checks and rejects nothing it previously accepted: go-exons declares, the executing
+system validates. That is a deliberate contract, not an omission — an enforced enum
+here would break every consumer pinning a newer vocabulary than the library.
+
+### Added
+- `Spec.Subtype` (`subtype:`), refining `Type`. Meaningful today only for
+  `DocumentTypePrompt`, with `SubtypePromptFragment` / `SubtypePromptTemplate`. Empty
+  means unspecified. Serialized **only alongside `type`** (same `IncludeAgentFields`
+  gate) — a subtype that refines nothing is meaningless, so the two never travel apart.
+- Input kind constants completing the `InputDef.Type` vocabulary: `InputTypeText`,
+  `InputTypeNumber`, `InputTypeBoolean`, `InputTypeFileUpload`, `InputTypeSort`,
+  `InputTypeAssociate` — joining the existing `InputTypeSelect` / `InputTypeMultiselect`.
+- `InputDef.AssociateWith` (`associate_with:`) — the right-hand set for `associate`,
+  whose bound value is a **many-to-many** set of pairs with `Options`.
+- `InputDef.Accept`, `InputDef.MaxSizeBytes`, `InputDef.MaxFiles` for `file-upload`.
+  `MaxSizeBytes` bounds each **individual** file; `MaxFiles` bounds **how many** — two
+  distinct limits, and enforcing only one of them is the bug they exist to prevent.
+- `A2AMIMEApplicationOctetStream`, for a file-upload input's opaque binary value.
+- README sections documenting both the `subtype` discriminator and the full input-kind
+  table. The `requirements` block (0.13.0) shipped with no README section; this closes
+  that pattern rather than repeating it.
+
+### Fixed
+- **`schema/exons.schema.json` rejected valid documents.** `InputDef` is
+  `additionalProperties: false` but never gained `label` / `options` when those shipped
+  in 0.16.0, so any editor validating against the published schema flagged a correct
+  `select` input as invalid. Its `type` enum was likewise missing `select` /
+  `multiselect`. The enum is now **removed** rather than extended — an enum contradicts
+  an advisory, open vocabulary — and replaced by `examples` plus a documented list.
+- The schema root was missing `content_format` and `recommended_agents`, both long
+  present on `Spec`. (The root is `additionalProperties: true`, so these were tolerated
+  rather than rejected — undocumented, not broken.)
+- `Spec.IsAgentSkillsCompatible()` now accounts for `Subtype`. Agent Skills has never
+  heard of the field, so a spec carrying one is not compatible — checked explicitly
+  rather than inferred from `Type == ""`, since a subtype can be set with no type.
+
+### Notes
+- `Spec.Clone()` deep-copies the new `AssociateWith` and `Accept` slices. A shallow
+  copy here is a silent aliasing bug, and it is asserted by test.
+- `inputTypeToMIME` now enumerates every kind instead of falling through to
+  `text/plain`. The structured kinds bind a list or a set of pairs, and reporting those
+  as `text/plain` told an A2A consumer it could send a bare string for an input that can
+  never be one. The `default:` arm stays `text/plain` because the vocabulary is open.
+
+## [0.18.0] - 2026-07-28
+
+New `{~exons.now~}` built-in **output** tag — prints a formatted reference time into
+body text (curated named formats `iso`/`date`/`datetime`/`time`/`year`/`month`/`day`/
+`weekday`/`unix`/`rfc1123`/`date-de`, optional `tz=` IANA zone, `layout=` raw-Go escape
+hatch). Distinct from the eval-only date/time expression functions, which have no output
+path. The reference time is seeded per render via the reserved `ContextKeyReferenceTime`
+data key, falling back to `time.Now()`. Consumed by aigentverse DC92-chronos.
+
+(Entry reconstructed in 0.19.0 — the 0.18.0 release shipped without one.)
+
 ## [0.17.0] - 2026-07-19
 
 A2A Agent Card upgraded to **spec v1.0.1** (`github.com/a2aproject/A2A`

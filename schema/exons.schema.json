@@ -21,6 +21,20 @@
     "type": {
       "$ref": "#/$defs/DocumentType"
     },
+    "subtype": {
+      "type": "string",
+      "description": "Refines type. Today meaningful only for type: prompt, where \"fragment\" marks a composable piece meant to be referenced and \"template\" marks a prompt carrying runtime inputs. Absent means unspecified. Advisory and open like the input kinds — the consumer that stores or executes the document enforces its own vocabulary.",
+      "examples": ["fragment", "template"]
+    },
+    "content_format": {
+      "type": "string",
+      "description": "Hints how the body should be interpreted (e.g. \"markdown\")."
+    },
+    "recommended_agents": {
+      "type": "array",
+      "description": "Agent slugs a prompt is authored for (\"made for @org/name\"). A curatorial association, never resolved or validated.",
+      "items": { "type": "string" }
+    },
     "execution": {
       "$ref": "#/$defs/ExecutionConfig"
     },
@@ -110,8 +124,17 @@
       "properties": {
         "type": {
           "type": "string",
-          "description": "Data type of the input.",
-          "enum": ["string", "number", "boolean", "array", "object"]
+          "description": "Input kind. Deliberately NOT constrained by an enum: the kind vocabulary is advisory and open, so go-exons declares and the executing system validates. A consumer that does not recognise a kind degrades it to a plain text control rather than rejecting the document. Known kinds: text, number, boolean, string, array, object, select, multiselect, file-upload, sort, associate.",
+          "examples": [
+            "text",
+            "number",
+            "boolean",
+            "select",
+            "multiselect",
+            "file-upload",
+            "sort",
+            "associate"
+          ]
         },
         "description": {
           "type": "string",
@@ -124,6 +147,49 @@
         },
         "default": {
           "description": "Default value when the input is not provided."
+        },
+        "label": {
+          "type": "string",
+          "description": "Human-facing field label for form rendering. Falls back to the input key when empty. Presentation only."
+        },
+        "options": {
+          "type": "array",
+          "description": "Selectable values for the Options-consuming kinds: allowed values for select/multiselect, the significant INITIAL ORDER for sort, and the left-hand set for associate. Ignored by other kinds.",
+          "items": { "$ref": "#/$defs/InputOption" }
+        },
+        "associate_with": {
+          "type": "array",
+          "description": "Right-hand set for the associate kind, whose bound value is a many-to-many set of (options value, associate_with value) pairs. Neither side is limited to a single match.",
+          "items": { "$ref": "#/$defs/InputOption" }
+        },
+        "accept": {
+          "type": "array",
+          "description": "Media types or extensions a file-upload input accepts (e.g. \"application/pdf\", \".csv\"), in the spirit of the HTML accept attribute. Absent means the author declared no restriction — not that any file is safe.",
+          "items": { "type": "string" }
+        },
+        "max_size_bytes": {
+          "type": "integer",
+          "description": "Maximum size of an INDIVIDUAL uploaded file for a file-upload input. Absent means unspecified."
+        },
+        "max_files": {
+          "type": "integer",
+          "description": "Maximum NUMBER of files for a file-upload input — a separate limit from max_size_bytes, which bounds each file. Absent means unspecified."
+        }
+      }
+    },
+    "InputOption": {
+      "type": "object",
+      "description": "A single selectable value for an Options-consuming input kind.",
+      "additionalProperties": false,
+      "required": ["value"],
+      "properties": {
+        "value": {
+          "type": "string",
+          "description": "The stored value."
+        },
+        "label": {
+          "type": "string",
+          "description": "Human-facing label; falls back to value when empty."
         }
       }
     },

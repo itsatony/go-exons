@@ -278,12 +278,51 @@ const (
 	SchemaTypeObject  = "object"
 )
 
-// Enumerated InputDef.Type values whose allowed values are carried in
-// InputDef.Options (single vs. multiple selection). Free-form types use the
-// SchemaType* vocabulary above; these two additionally read Options.
+// InputDef.Type vocabulary — the input kinds a consumer can render a form control
+// for. This is a DOCUMENTED, ADVISORY vocabulary, deliberately NOT an enforced enum:
+// go-exons declares, the executing system validates. Spec.Validate does not inspect
+// InputDef at all, so an unrecognised Type is legal and forward-compatible — a
+// consumer that does not know a kind degrades it to a plain text control rather than
+// rejecting the document. The SchemaType* vocabulary above remains valid here too.
+//
+// Options-consuming kinds: Select, Multiselect, Sort, Associate. The rest ignore it.
 const (
-	InputTypeSelect      = "select"
+	// InputTypeText is a free-form single-line or multi-line string.
+	InputTypeText = "text"
+	// InputTypeNumber is a numeric value. Same value as SchemaTypeNumber, spelled
+	// here so the input vocabulary reads without cross-referencing.
+	InputTypeNumber = "number"
+	// InputTypeBoolean is a true/false toggle. Same value as SchemaTypeBoolean.
+	InputTypeBoolean = "boolean"
+	// InputTypeSelect picks exactly one of Options.
+	InputTypeSelect = "select"
+	// InputTypeMultiselect picks zero or more of Options.
 	InputTypeMultiselect = "multiselect"
+	// InputTypeFileUpload accepts one or more uploaded files, constrained by
+	// InputDef.Accept, MaxSizeBytes (per file) and MaxFiles (count). go-exons never
+	// holds a file — only the declaration of what may be sent.
+	InputTypeFileUpload = "file-upload"
+	// InputTypeSort presents Options for the user to ORDER. Options order is the
+	// declared initial ordering and is significant; the bound value is the reordered
+	// list of option values.
+	InputTypeSort = "sort"
+	// InputTypeAssociate relates two lists many-to-many: Options is the left-hand
+	// set, AssociateWith the right-hand set. The bound value is a set of
+	// (left value, right value) pairs; neither side is limited to a single match.
+	InputTypeAssociate = "associate"
+)
+
+// Prompt subtype vocabulary — the discriminator separating a composable FRAGMENT
+// (exists to be referenced by something larger) from an executable TEMPLATE
+// (carries runtime inputs, rendered per-run). Meaningful only on
+// DocumentTypePrompt. Advisory here for the same reason as the input kinds above:
+// the consumer enforces it (aigentverse constrains it at its publish gate). An
+// empty Subtype means "unspecified" and every consumer must tolerate it.
+const (
+	// SubtypePromptFragment is a small composable piece meant to be referenced.
+	SubtypePromptFragment = "fragment"
+	// SubtypePromptTemplate is a pre-written prompt carrying runtime inputs.
+	SubtypePromptTemplate = "template"
 )
 
 // Model parameter map keys (for ToMap conversion)
@@ -437,7 +476,11 @@ const (
 	SpecFieldRecommendedAgents = "recommended_agents"
 
 	// go-exons extension fields
-	SpecFieldType        = "type"
+	SpecFieldType = "type"
+	// SpecFieldSubtype is the frontmatter key for Spec.Subtype. It rides with
+	// SpecFieldType on every serialization path — a subtype without its type is
+	// meaningless, so the two are never emitted independently.
+	SpecFieldSubtype     = "subtype"
 	SpecFieldExecution   = "execution"
 	SpecFieldExtensions  = "extensions"
 	SpecFieldSkills      = "skills"
@@ -791,6 +834,9 @@ const (
 	A2AMIMEImagePNG        = "image/png"
 	A2AMIMEAudioMPEG       = "audio/mpeg"
 	A2AMIMETextMarkdown    = "text/markdown"
+	// A2AMIMEApplicationOctetStream is the fallback for an input whose bound value
+	// is opaque binary — an uploaded file whose Accept list is unset or mixed.
+	A2AMIMEApplicationOctetStream = "application/octet-stream"
 )
 
 // A2A extension key prefix

@@ -120,6 +120,7 @@ var knownSpecFields = map[string]bool{
 	SpecFieldInputs:            true,
 	SpecFieldOutputs:           true,
 	SpecFieldSample:            true,
+	SpecFieldSubtype:           true,
 	SpecFieldType:              true,
 	SpecFieldExecution:         true,
 	SpecFieldExtensions:        true,
@@ -162,6 +163,12 @@ func (s *Spec) buildSerializeMap(opts *SerializeOptions) map[string]any {
 	// Type (include if agent fields are included or if type is explicitly set)
 	if opts.IncludeAgentFields && s.Type != "" {
 		m[SpecFieldType] = string(s.Type)
+	}
+	// Subtype rides with Type under the SAME gate, deliberately. A subtype refines a
+	// type; emitting `subtype: template` into an export that stripped `type:` would
+	// produce a document refining nothing. The two travel together or not at all.
+	if opts.IncludeAgentFields && s.Type != "" && s.Subtype != "" {
+		m[SpecFieldSubtype] = s.Subtype
 	}
 
 	// Execution config

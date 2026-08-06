@@ -64,6 +64,17 @@ An `.exons` file has two parts: **YAML frontmatter** (configuration) and a **tem
 | `skill` | Reusable capability with inputs/outputs. May have memory, registry, verification. |
 | `agent` | Full agent with tools, skills, constraints, metadata. All fields available. |
 
+An optional `subtype` refines `type`. Today it is meaningful only for `prompt`:
+
+| Subtype | Meaning |
+|---|---|
+| `fragment` | A small composable piece that exists to be *referenced* by something larger. |
+| `template` | A pre-written prompt carrying runtime `inputs`, rendered per-run. |
+
+`subtype` is **advisory** — go-exons records it and never rejects an unrecognised value.
+The consumer that stores or executes the document enforces its own vocabulary. It is
+serialized only alongside `type`, since a subtype that refines nothing is meaningless.
+
 ### Annotated Example
 
 ```yaml
@@ -194,6 +205,49 @@ Metadata describes agent behavior beyond prompts. These fields live at the YAML 
 | `safety` | all | Guardrails, deny-tools, require-confirmation lists |
 
 Go types: `MemorySpec`, `DispatchSpec`, `VerificationCase`, `RegistrySpec`, `SafetyConfig` — all with `Clone()` and `Validate()`.
+
+## Input Kinds
+
+`inputs` declares the parameters a document takes. Each entry is an `InputDef` whose
+`type` names an input **kind** — enough for a consumer to render a form control.
+
+| Kind | Bound value | Reads |
+|---|---|---|
+| `text` | a string | — |
+| `number` | a number | — |
+| `boolean` | true/false | — |
+| `select` | one option value | `options` |
+| `multiselect` | a list of option values | `options` |
+| `sort` | `options` reordered — declared order is the initial order | `options` |
+| `associate` | many-to-many `(options, associate_with)` pairs | `options`, `associate_with` |
+| `file-upload` | uploaded files | `accept`, `max_size_bytes`, `max_files` |
+
+`max_size_bytes` bounds each **individual** file; `max_files` bounds **how many**.
+
+```yaml
+inputs:
+  months:
+    type: multiselect
+    label: Months to analyse
+    options:
+      - { value: jan, label: January }
+      - { value: feb, label: February }
+  report:
+    type: file-upload
+    accept: ["application/pdf"]
+    max_size_bytes: 10485760
+    max_files: 3
+  owners:
+    type: associate
+    options:        [{ value: region }]
+    associate_with: [{ value: analyst }]
+```
+
+**The kind vocabulary is advisory and open.** `Spec.Validate()` does not inspect
+`inputs` at all — go-exons *declares*, the executing system *validates*. An unknown
+kind is legal and forward-compatible; a consumer that does not recognise one should
+degrade it to a plain text control rather than reject the document. `inputs` carries
+declarations only — never values, never uploaded content.
 
 ## Execution Config
 

@@ -1494,11 +1494,18 @@ func TestRegisterTemplate_ConcurrentRegistration(t *testing.T) {
 func TestKnownSpecFields_MatchesSpecStruct(t *testing.T) {
 	// knownSpecFields should only contain keys that correspond to actual Spec struct fields
 	// or the "extensions" catch-all. No orphan entries allowed.
+	//
+	// This fixture maximises SERIALIZATION coverage, not semantic realism — every
+	// field is populated so that every knownSpecFields key has something to emit.
+	// Hence a skill carrying a prompt subtype: go-exons treats Subtype as advisory
+	// and does not gate it on Type, so this exercises the emission path without
+	// asserting the combination is meaningful.
 	spec := &Spec{
 		Name:              "test",
 		Description:       "test desc",
 		ContentFormat:     ContentFormatMarkdown,
 		Type:              DocumentTypeSkill,
+		Subtype:           SubtypePromptTemplate,
 		Execution:         &execution.Config{Provider: "openai"},
 		Inputs:            map[string]*InputDef{"q": {Type: SchemaTypeString}},
 		Outputs:           map[string]*OutputDef{"a": {Type: SchemaTypeString}},

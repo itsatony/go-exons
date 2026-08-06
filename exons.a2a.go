@@ -325,14 +325,31 @@ func modalityToMIME(modality string) string {
 }
 
 // inputTypeToMIME converts an InputDef type to an A2A MIME type.
+//
+// Every kind is enumerated rather than left to the default arm: the structured
+// kinds bind a LIST or a set of PAIRS, and silently reporting those as text/plain
+// tells an A2A consumer it may send a bare string for an input that can never be
+// one. The default remains text/plain because the Type vocabulary is advisory and
+// open — an unrecognised kind is a form control we cannot describe, not an error.
+//
+// Note SchemaTypeNumber/SchemaTypeBoolean and InputTypeNumber/InputTypeBoolean are
+// the same underlying strings, so they are matched once.
 func inputTypeToMIME(inputType string) string {
 	switch inputType {
-	case SchemaTypeString:
+	case SchemaTypeString, InputTypeText:
+		return A2AMIMETextPlain
+	case SchemaTypeNumber, SchemaTypeBoolean:
+		return A2AMIMETextPlain
+	case InputTypeSelect:
+		// Exactly one option value — a plain string.
 		return A2AMIMETextPlain
 	case SchemaTypeObject, SchemaTypeArray:
 		return A2AMIMEApplicationJSON
-	case SchemaTypeNumber, SchemaTypeBoolean:
-		return A2AMIMETextPlain
+	case InputTypeMultiselect, InputTypeSort, InputTypeAssociate:
+		// A list of values, an ordered list, and a set of (left, right) pairs.
+		return A2AMIMEApplicationJSON
+	case InputTypeFileUpload:
+		return A2AMIMEApplicationOctetStream
 	default:
 		return A2AMIMETextPlain
 	}

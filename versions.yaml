@@ -1,7 +1,18 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.18.0
+  version: 0.19.0
+# v0.19.0: Prompt `subtype` discriminator (fragment|template) + the complete InputDef
+# kind vocabulary (text/number/boolean/select/multiselect/file-upload/sort/associate).
+# Both are DECLARATION-ONLY and ADVISORY — Spec.Validate gained no checks and rejects
+# nothing it previously accepted; go-exons declares, the executing system validates.
+# subtype serializes only alongside `type` (a subtype refining nothing is meaningless).
+# New InputDef fields: associate_with (right-hand set of the n:n associate kind),
+# accept + max_size_bytes (per file) + max_files (count) for file-upload. Fixes a live
+# defect: schema/exons.schema.json is additionalProperties:false on InputDef but never
+# gained label/options from v0.16.0, so the published schema REJECTED valid documents;
+# its type enum is removed rather than extended, since an enum contradicts an open
+# advisory vocabulary. Consumed by aigentverse MP-STENCIL (DC103-stencil/DC104-quill).
 # v0.18.0: New {~exons.now~} built-in OUTPUT tag — prints a formatted reference time
 # into body text (curated named formats iso/date/datetime/time/year/month/day/weekday/
 # unix/rfc1123/date-de, optional tz= IANA zone, layout= raw-Go escape hatch). Distinct

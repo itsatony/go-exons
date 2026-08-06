@@ -25,6 +25,13 @@ type Spec struct {
 	Description string       `yaml:"description,omitempty" json:"description,omitempty"`
 	Type        DocumentType `yaml:"type,omitempty" json:"type,omitempty"`
 
+	// Subtype refines Type. Today it is meaningful only for DocumentTypePrompt,
+	// where SubtypePromptFragment marks a composable piece meant to be referenced
+	// and SubtypePromptTemplate marks a prompt carrying runtime Inputs. Empty means
+	// unspecified. Advisory — go-exons does not reject an unknown value; the
+	// consumer that stores or executes the document enforces its own vocabulary.
+	Subtype string `yaml:"subtype,omitempty" json:"subtype,omitempty"`
+
 	// Execution
 	Execution *execution.Config `yaml:"execution,omitempty" json:"execution,omitempty"`
 
@@ -80,10 +87,32 @@ type InputDef struct {
 	// Label is an optional human-facing field label for form rendering; when empty,
 	// consumers fall back to the input key. Presentation only — not used at execution.
 	Label string `yaml:"label,omitempty" json:"label,omitempty"`
-	// Options enumerates the allowed values for select/multiselect inputs (InputTypeSelect
-	// / InputTypeMultiselect). Empty for free-form types; a consumer building a typed form
-	// degrades a select with no options to a text input.
+	// Options enumerates the selectable values for the Options-consuming kinds:
+	// InputTypeSelect and InputTypeMultiselect (allowed values), InputTypeSort (the
+	// declared INITIAL ORDER, which is significant), and InputTypeAssociate (the
+	// left-hand set). Empty for free-form kinds; a consumer building a typed form
+	// degrades an Options-consuming kind with no options to a text input.
 	Options []InputOption `yaml:"options,omitempty" json:"options,omitempty"`
+
+	// AssociateWith is the right-hand set for InputTypeAssociate, whose bound value
+	// is a MANY-TO-MANY set of (Options value, AssociateWith value) pairs — neither
+	// side is limited to a single match. Ignored by every other kind.
+	AssociateWith []InputOption `yaml:"associate_with,omitempty" json:"associate_with,omitempty"`
+
+	// Accept constrains InputTypeFileUpload to these media types or extensions
+	// (e.g. "application/pdf", ".csv"), verbatim author-declared strings in the
+	// spirit of the HTML accept attribute. Empty means the author declared no
+	// restriction — NOT that any file is safe; the executing system decides.
+	Accept []string `yaml:"accept,omitempty" json:"accept,omitempty"`
+
+	// MaxSizeBytes caps an individual uploaded file for InputTypeFileUpload.
+	// Zero means unspecified.
+	MaxSizeBytes int64 `yaml:"max_size_bytes,omitempty" json:"max_size_bytes,omitempty"`
+
+	// MaxFiles caps HOW MANY files may be uploaded for InputTypeFileUpload — a
+	// distinct limit from MaxSizeBytes, which bounds each file individually. Zero
+	// means unspecified.
+	MaxFiles int `yaml:"max_files,omitempty" json:"max_files,omitempty"`
 }
 
 // InputOption is a single selectable value for a select/multiselect InputDef,
@@ -287,6 +316,7 @@ func (s *Spec) Clone() *Spec {
 		Name:          s.Name,
 		Description:   s.Description,
 		Type:          s.Type,
+		Subtype:       s.Subtype,
 		Credential:    s.Credential,
 		ContentFormat: s.ContentFormat,
 		Body:          s.Body,
@@ -301,11 +331,22 @@ func (s *Spec) Clone() *Spec {
 	if s.Inputs != nil {
 		clone.Inputs = make(map[string]*InputDef, len(s.Inputs))
 		for k, v := range s.Inputs {
+			// Every slice on InputDef must be copied here, not left aliased by the
+			// struct copy above. InputOption and string are value types, so copy()
+			// is sufficient per element.
 			inputClone := *v
 			inputClone.Default = deepCopyValue(v.Default)
 			if v.Options != nil {
 				inputClone.Options = make([]InputOption, len(v.Options))
 				copy(inputClone.Options, v.Options)
+			}
+			if v.AssociateWith != nil {
+				inputClone.AssociateWith = make([]InputOption, len(v.AssociateWith))
+				copy(inputClone.AssociateWith, v.AssociateWith)
+			}
+			if v.Accept != nil {
+				inputClone.Accept = make([]string, len(v.Accept))
+				copy(inputClone.Accept, v.Accept)
 			}
 			clone.Inputs[k] = &inputClone
 		}
@@ -421,7 +462,10 @@ func (s *Spec) IsAgentSkillsCompatible() bool {
 	if s == nil {
 		return true
 	}
-	return s.Execution == nil && len(s.Extensions) == 0 && s.Type == "" &&
+	// Subtype is listed explicitly rather than leaning on `s.Type == ""` implying
+	// it: a document can carry a subtype with no type, and answering "Agent Skills
+	// compatible" for a field Agent Skills has never heard of would be a silent lie.
+	return s.Execution == nil && len(s.Extensions) == 0 && s.Type == "" && s.Subtype == "" &&
 		len(s.Skills) == 0 && s.Tools == nil && s.Constraints == nil && len(s.Messages) == 0 &&
 		len(s.Credentials) == 0 && s.Credential == "" &&
 		s.Memory == nil && s.Dispatch == nil && len(s.Verifications) == 0 &&
