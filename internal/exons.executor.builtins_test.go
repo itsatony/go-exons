@@ -140,7 +140,10 @@ func TestVarResolver_Resolve(t *testing.T) {
 		assert.Equal(t, "custom:test", result)
 	})
 
-	t.Run("fallback fmt.Sprintf", func(t *testing.T) {
+	// ⚠ THIS TEST USED TO ASSERT "[a b]" — it pinned the %v fallback as if it were the
+	// contract. It was not: `[a b]` is Go's debug formatting reaching a language model
+	// in the middle of a sentence. A list value renders as prose now.
+	t.Run("list variable renders as prose", func(t *testing.T) {
 		resolver := NewVarResolver()
 		ctx := newMockContextAccessor(map[string]any{
 			"slice": []string{"a", "b"},
@@ -149,7 +152,19 @@ func TestVarResolver_Resolve(t *testing.T) {
 
 		result, err := resolver.Resolve(context.Background(), ctx, attrs)
 		require.NoError(t, err)
-		assert.Equal(t, "[a b]", result)
+		assert.Equal(t, "a, b", result)
+	})
+
+	t.Run("list variable honours the join attribute", func(t *testing.T) {
+		resolver := NewVarResolver()
+		ctx := newMockContextAccessor(map[string]any{
+			"ranking": []any{"cost", "speed", "quality"},
+		})
+		attrs := Attributes{"name": "ranking", "join": " > "}
+
+		result, err := resolver.Resolve(context.Background(), ctx, attrs)
+		require.NoError(t, err)
+		assert.Equal(t, "cost > speed > quality", result)
 	})
 
 	t.Run("missing variable with default", func(t *testing.T) {

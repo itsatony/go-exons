@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-08-07
+
+The two halves of v0.19.0's input vocabulary that could not actually be *used*: the
+order the author asked their questions in, and a legible rendering of the values the
+new kinds bind. Both were found downstream, in atlas's typed prompt-form work, where
+each one is visible to an end user.
+
+### Fixed
+- **A list or object value reached the model as Go debug output.** `{~exons.var~}`
+  fell through to `fmt.Sprintf("%v")` for every non-scalar, so a `multiselect` or
+  `sort` value rendered as `[cost speed]` and an `associate` value as
+  `[map[left:eu right:gdpr]]` — inside a sentence, addressed to a language model.
+  Those are precisely the kinds v0.19.0 introduced. Values now render as prose: a
+  list as `cost, speed`, an object as `beta: 2, gamma: 3` (keys **sorted**, because a
+  Go map has no order and range order would make the same value produce a different
+  prompt each run), and a nested composite with delimiters (`[a, b]`,
+  `(left: eu, right: gdpr)`) so a list of pairs cannot smear into one comma-run.
+  Scalars, `nil` and `fmt.Stringer` are unchanged. A byte slice renders as text
+  (matched on the element kind, so `json.RawMessage` and other named types count);
+  a `time.Time` renders RFC 3339 rather than through its debug `String()`; a struct
+  renders `Field: value` in declaration order; only kinds that cannot contain another
+  value (chan, func, complex) still reach `%v`.
+  ⚠ **This is a behaviour change for any consumer that was parsing the `%v` form** —
+  it is a MINOR bump for that reason, and the test asserting `"[a b]"` had been
+  pinning the defect as if it were the contract.
+- **The depth bound did not bound anything a cycle could reach.** It incremented only
+  on slice elements and map entries, so `var i any; i = &i` recursed through the
+  pointer arm until the stack died — and the fallback the comment promised would
+  "terminate" was `fmt.Sprintf("%v")`, which does not detect a slice containing
+  itself either. Every recursive arm now counts, and past the bound the value is
+  elided (`…`) rather than handed to fmt. ⚠ The test that was meant to cover this
+  used a struct field, which landed on the untraversed arm — it passed against the
+  hole.
+- **`Serialize` / `ExportFull` silently re-alphabetized the inputs.** They build a Go
+  map and `yaml.Marshal` sorts a map's keys, so an export → re-import round trip
+  destroyed the authored order this release exists to preserve, on the documented
+  export path. `input_order` is now emitted. ⚠ The round-trip test missed it by
+  calling `yaml.Marshal(spec)` directly, where the struct tag does the work.
+- **A merge key inside `inputs:` made a previously-valid document fail to parse.**
+  `<<` is a literal key in the YAML node and never a key in the decoded map, so the
+  derived order contained `"<<"` and validation rejected it. The derived order is now
+  filtered against the decoded map, which is also what makes "a derived order cannot
+  fail validation" true rather than merely asserted. An `inputs: *alias` is likewise
+  followed rather than silently dropped to alphabetical.
+- **The prompty importer fabricated an alphabetical order and presented it as
+  authored.** It round-trips frontmatter through a Go map before `Parse` sees it, so
+  the order `Parse` derived was already sorted — indistinguishable downstream from an
+  author's. The order is read from the source document instead.
+- **`Spec.Inputs` is a Go map, so the authored order of the inputs was destroyed at
+  unmarshal** and no consumer could recover it. A form is a sequence of questions, and
+  every downstream projection had to sort by key and say so — asking for a zip code
+  before an address, with no way to do better. `Spec.UnmarshalYAML` now records the
+  YAML mapping's key order.
+
+### Added
+- **`Spec.InputOrder`** (`input_order:`) and **`Spec.OrderedInputKeys()`**. Existing
+  documents gain the order with no authoring change. `OrderedInputKeys()` is the
+  accessor consumers should walk: it is **total** where the field is partial —
+  ordered keys first, then any remainder sorted — so even a `Spec` assembled in Go
+  yields a stable sequence instead of randomised map iteration. The order serializes
+  in both YAML and JSON, so it survives a round-trip through a store that keeps only
+  the projection, and a hand-written `input_order` overrides the derived one.
+- **`join` attribute on `{~exons.var~}`** — the separator between a list value's
+  elements (`join=" > "` → `cost > speed > quality`, for a `sort` value whose ranking
+  is the point). Top level only: reusing it one level down would spell two different
+  relations the same way. Defaults to `", "`.
+- `Spec.Validate()` rejects a **hand-written** `input_order` that names an undeclared
+  input, or names one twice — an author's contradiction, which would otherwise silently
+  drop a field to the end of the form. A derived order cannot fail either check, and
+  no previously-parsing document can newly fail: `input_order` is a new key.
+- `input_order` declared in `schema/exons.schema.json` (the top level is
+  `additionalProperties: true`, so this is editor completion, not a validity fix).
+
+### Changed
+- `Spec` now has a custom `UnmarshalYAML`. It decodes through a `type rawSpec Spec`
+  alias — no methods, identical field tags — so every existing decode behaviour is
+  what it was, including the `yaml:",inline"` Extensions catch-all. The method only
+  adds `InputOrder`. `Clone()` copies it.
+
 ## [0.19.0] - 2026-08-06
 
 A prompt `subtype` discriminator and a complete input-kind vocabulary. Consumed by

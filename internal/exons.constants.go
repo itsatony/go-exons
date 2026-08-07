@@ -190,6 +190,7 @@ const (
 	AttrFormat   = "format" // {~exons.now~} named format
 	AttrTz       = "tz"     // {~exons.now~} IANA timezone
 	AttrLayout   = "layout" // {~exons.now~} raw Go layout escape hatch
+	AttrJoin     = "join"   // {~exons.var~} separator between a list value's elements
 )
 
 // Boolean attribute values

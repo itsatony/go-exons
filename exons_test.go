@@ -1508,6 +1508,7 @@ func TestKnownSpecFields_MatchesSpecStruct(t *testing.T) {
 		Subtype:           SubtypePromptTemplate,
 		Execution:         &execution.Config{Provider: "openai"},
 		Inputs:            map[string]*InputDef{"q": {Type: SchemaTypeString}},
+		InputOrder:        []string{"q"},
 		Outputs:           map[string]*OutputDef{"a": {Type: SchemaTypeString}},
 		Sample:            map[string]any{"q": "hello"},
 		Skills:            []SkillRef{{Slug: "s1"}},

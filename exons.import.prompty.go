@@ -118,6 +118,21 @@ func ImportPrompty(data []byte) (*Spec, error) {
 		return nil, NewImportError(ErrMsgImportPromptyFailed, err)
 	}
 
+	// ⚠ RESTORE THE ORDER FROM THE ORIGINAL DOCUMENT, NOT FROM WHAT Parse SAW.
+	// The remap above round-trips the frontmatter through a Go map, and yaml.Marshal
+	// sorts a map's keys — so by the time Parse reads it, `inputs:` is already
+	// alphabetical and the order it derives is a FABRICATION indistinguishable
+	// downstream from an authored one. A confidently wrong order is worse than none,
+	// so the order is read from the source document here. (Reading the source
+	// directly is safe: `inputs` is one of the keys remapPromptyFields passes through
+	// unrenamed.)
+	if spec != nil && len(spec.Inputs) > 0 {
+		var srcNode yaml.Node
+		if yaml.Unmarshal([]byte(fmYAML), &srcNode) == nil {
+			spec.InputOrder = inputKeyOrder(&srcNode, spec.Inputs)
+		}
+	}
+
 	return spec, nil
 }
 

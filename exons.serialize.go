@@ -118,6 +118,7 @@ var knownSpecFields = map[string]bool{
 	SpecFieldContentFormat:     true,
 	SpecFieldRecommendedAgents: true,
 	SpecFieldInputs:            true,
+	SpecFieldInputOrder:        true,
 	SpecFieldOutputs:           true,
 	SpecFieldSample:            true,
 	SpecFieldSubtype:           true,
@@ -189,6 +190,17 @@ func (s *Spec) buildSerializeMap(opts *SerializeOptions) map[string]any {
 	// Inputs/Outputs/Sample (always included)
 	if len(s.Inputs) > 0 {
 		m[SpecFieldInputs] = s.Inputs
+		// ⚠ WITHOUT THIS, AN EXPORT SILENTLY RE-ALPHABETIZES THE FORM. `s.Inputs` is a
+		// Go map and yaml.Marshal sorts a map's keys, so an export → re-import round
+		// trip through this API destroyed exactly the authored order Parse had just
+		// recovered — with nothing said, on the path consumers actually use. The
+		// round-trip test missed it by calling yaml.Marshal(spec) directly, where the
+		// struct tag does the work; there is now one that goes through ExportFull.
+		//
+		// Emitted even for a single input: an export is a document someone adds to.
+		if len(s.InputOrder) > 0 {
+			m[SpecFieldInputOrder] = s.InputOrder
+		}
 	}
 	if len(s.Outputs) > 0 {
 		m[SpecFieldOutputs] = s.Outputs

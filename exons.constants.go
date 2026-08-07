@@ -467,6 +467,7 @@ const (
 	SpecFieldName          = "name"
 	SpecFieldDescription   = "description"
 	SpecFieldInputs        = "inputs"
+	SpecFieldInputOrder    = "input_order" // authored order of `inputs` (Spec.InputOrder)
 	SpecFieldOutputs       = "outputs"
 	SpecFieldSample        = "sample"
 	SpecFieldContentFormat = "content_format"

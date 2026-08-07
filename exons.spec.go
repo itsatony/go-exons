@@ -40,6 +40,27 @@ type Spec struct {
 	Outputs map[string]*OutputDef `yaml:"outputs,omitempty" json:"outputs,omitempty"`
 	Sample  map[string]any        `yaml:"sample,omitempty" json:"sample,omitempty"`
 
+	// InputOrder is the order the author DECLARED the Inputs in — the thing a Go map
+	// destroys before any consumer sees the document.
+	//
+	// ⚠ IT IS NOT DECORATION. A form is a sequence of questions, and an author writes
+	// them in the order they want them asked; rendering them alphabetically reorders
+	// the interview ("Zip code" before "Address") and no consumer can recover the
+	// intent, because by the time it holds a Spec the order is already gone. Consumers
+	// that projected a form from Inputs therefore had to sort by key and say so — the
+	// only stable order available to them.
+	//
+	// Populated automatically from the YAML mapping's key order by UnmarshalYAML, so
+	// an existing document gains it with no authoring change. An explicitly declared
+	// `input_order:` wins over the derived one — that is the escape hatch for a Spec
+	// rebuilt from JSON, where no key order ever existed. Validate rejects a declared
+	// entry that names no input, and a duplicate; an input MISSING from a declared
+	// order is not an error, it simply sorts after the named ones.
+	//
+	// Read it through OrderedInputKeys, never directly: that method is total (it
+	// covers every declared input exactly once, ordered or not) and this field is not.
+	InputOrder []string `yaml:"input_order,omitempty" json:"input_order,omitempty"`
+
 	// RecommendedAgents lists the agent slugs a prompt is authored for ("made for
 	// @org/name"). A curatorial association surfaced by consumers (e.g. a chat UI
 	// filtering prompts by the active coworker); never resolved or validated here —
@@ -272,6 +293,9 @@ func (s *Spec) Validate() error {
 	if err := s.ValidateRequirements(); err != nil {
 		return err
 	}
+	if err := s.validateInputOrder(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -350,6 +374,13 @@ func (s *Spec) Clone() *Spec {
 			}
 			clone.Inputs[k] = &inputClone
 		}
+	}
+
+	// Clone the authored input order alongside the inputs it orders — a clone that
+	// kept the map but dropped the order would silently re-alphabetize the form.
+	if s.InputOrder != nil {
+		clone.InputOrder = make([]string, len(s.InputOrder))
+		copy(clone.InputOrder, s.InputOrder)
 	}
 
 	// Clone recommended agents

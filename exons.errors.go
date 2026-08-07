@@ -247,6 +247,10 @@ const (
 	ErrMsgSpecNameInvalidFormat   = "spec name must be slug format (lowercase letters, digits, hyphens)"
 	ErrMsgSpecDescriptionRequired = "spec description is required"
 	ErrMsgSpecDescriptionTooLong  = "spec description exceeds maximum length"
+	// input_order validation. Only a DECLARED order can fail these; a derived one is
+	// read off the mapping it orders and is correct by construction.
+	ErrMsgSpecInputOrderUnknown   = "input_order names an input that is not declared"
+	ErrMsgSpecInputOrderDuplicate = "input_order names the same input twice"
 	ErrMsgNameRequired            = "name is required"
 	ErrMsgNameInvalidSlug         = "name must match slug pattern"
 	ErrMsgDescriptionRequired     = "description is required"
@@ -617,6 +621,21 @@ func NewSpecDescriptionRequiredError() error {
 func NewSpecDescriptionTooLongError(maxLen int) error {
 	return cuserr.NewValidationError(ErrCodeSpec, ErrMsgSpecDescriptionTooLong).
 		WithMetadata(MetaKeyMaxLength, strconv.Itoa(maxLen))
+}
+
+// NewSpecInputOrderUnknownError creates an error for an input_order entry naming an
+// input the spec does not declare — an author's typo, which would otherwise drop that
+// field to the end of the form with nothing said.
+func NewSpecInputOrderUnknownError(key string) error {
+	return cuserr.NewValidationError(ErrCodeSpec, ErrMsgSpecInputOrderUnknown).
+		WithMetadata(MetaKeyInputName, key)
+}
+
+// NewSpecInputOrderDuplicateError creates an error for an input named twice in
+// input_order, where the two positions contradict each other.
+func NewSpecInputOrderDuplicateError(key string) error {
+	return cuserr.NewValidationError(ErrCodeSpec, ErrMsgSpecInputOrderDuplicate).
+		WithMetadata(MetaKeyInputName, key)
 }
 
 // NewRefNotFoundError creates an error for referenced spec not found.

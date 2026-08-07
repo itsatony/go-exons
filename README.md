@@ -163,7 +163,7 @@ The `{~...~}` delimiter was chosen to never collide with prompt content (JSON, X
 
 | Tag | Example |
 |---|---|
-| Variable | `{~exons.var name="user.name" default="Guest" /~}` |
+| Variable | `{~exons.var name="user.name" default="Guest" join=", " /~}` |
 | Conditional | `{~exons.if eval="user.isAdmin"~}...{~exons.else~}...{~/exons.if~}` |
 | Loop | `{~exons.for item="x" index="i" in="items"~}...{~/exons.for~}` |
 | Include | `{~exons.include template="header" /~}` |
@@ -179,6 +179,30 @@ The `{~...~}` delimiter was chosen to never collide with prompt content (JSON, X
 | Comment | `{~exons.comment~}removed from output{~/exons.comment~}` |
 | Escape | `\{~` produces literal `{~` |
 | Verbatim fence | `{~~ ... ~~}` emits its body byte-for-byte |
+
+### How a value renders
+
+`{~exons.var~}` substitutes text into a prompt a language model will read, so the
+rendering is prose-shaped, not Go-shaped:
+
+| Value | Renders as |
+|---|---|
+| a string, number, boolean | itself (`19.99`, `true`) |
+| `nil`, a nil slice/map | the empty string |
+| a list | `cost, speed` — element order preserved |
+| an object | `beta: 2, gamma: 3` — keys **sorted**, because a Go map has none |
+| a list of objects | `(left: eu, right: gdpr), (left: us, right: ccpa)` |
+| a `fmt.Stringer` | whatever it says |
+
+Nested composites keep delimiters (`[…]`, `(…)`) so a list of pairs cannot smear
+into one comma-run; the top level is unwrapped because that is what reads correctly
+inside a sentence. `join` overrides the top-level separator — useful for a `sort`
+value, whose ranking is the point:
+
+```
+Rank, best first: {~exons.var name="criteria" join=" > " /~}
+→ Rank, best first: cost > speed > quality
+```
 
 ### Writing exons syntax as content
 
@@ -243,11 +267,47 @@ inputs:
     associate_with: [{ value: analyst }]
 ```
 
-**The kind vocabulary is advisory and open.** `Spec.Validate()` does not inspect
-`inputs` at all — go-exons *declares*, the executing system *validates*. An unknown
-kind is legal and forward-compatible; a consumer that does not recognise one should
-degrade it to a plain text control rather than reject the document. `inputs` carries
-declarations only — never values, never uploaded content.
+**The kind vocabulary is advisory and open.** `Spec.Validate()` does not inspect an
+input's *kind* at all — go-exons *declares*, the executing system *validates*. An
+unknown kind is legal and forward-compatible; a consumer that does not recognise one
+should degrade it to a plain text control rather than reject the document. `inputs`
+carries declarations only — never values, never uploaded content.
+
+### Input order
+
+`Spec.Inputs` is a Go map, so the order you wrote the inputs in does not survive the
+YAML unmarshal — and a form is a sequence of questions, not a set. Parsing therefore
+records the authored key order in **`Spec.InputOrder`**, and consumers read it
+through **`Spec.OrderedInputKeys()`**:
+
+```go
+spec, _ := exons.ParseFile("intake.exons")
+for _, key := range spec.OrderedInputKeys() {   // authored order, not alphabetical
+    in := spec.Inputs[key]
+    // …render the control
+}
+```
+
+`OrderedInputKeys()` is **total**: it returns every declared input exactly once —
+the ordered ones first, then anything unordered sorted by key — so a `Spec` built in
+Go with no order at all still yields a stable sequence instead of Go's randomised map
+iteration. Prefer it over `range spec.Inputs` everywhere a human sees the result.
+
+The order serializes as `input_order`, so it survives a JSON or YAML round-trip
+through a store that keeps only the projection. You may also write it by hand, which
+overrides the authored order:
+
+```yaml
+input_order: [full_name, address, zip_code]
+inputs:
+  zip_code:  { type: text }
+  full_name: { type: text }
+  address:   { type: text }
+```
+
+A hand-written `input_order` is the one input-related thing `Validate()` does check:
+naming an input that is not declared, or naming one twice, is an author's
+contradiction and is rejected. A derived order cannot fail either check.
 
 ## Execution Config
 

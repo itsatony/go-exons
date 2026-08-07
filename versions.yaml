@@ -1,7 +1,20 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.19.0
+  version: 0.20.0
+# v0.20.0: The two halves of v0.19.0's input vocabulary that could not be USED.
+# (1) {~exons.var~} rendered every non-scalar with fmt.Sprintf("%v"), so a multiselect
+# or sort value reached the MODEL as `[cost speed]` and an associate value as
+# `[map[left:eu right:gdpr]]` — exactly the kinds v0.19.0 added. Values now render as
+# prose (list `a, b`; object `k: v` with keys SORTED since a Go map has no order;
+# nested composites delimited `[a, b]` / `(k: v)`), with a new `join` attribute for the
+# top-level separator. ⚠ A behaviour change for anyone parsing the %v form — the test
+# asserting "[a b]" had pinned the defect as the contract.
+# (2) Spec.Inputs is a Go map, so authored input order died at unmarshal and every form
+# projection had to sort by key. Spec.UnmarshalYAML (via a `type rawSpec Spec` alias, so
+# no existing decode behaviour changes) now records it into Spec.InputOrder; read it via
+# the TOTAL Spec.OrderedInputKeys(). Serializes as `input_order` in YAML and JSON, so it
+# survives a projection-only round-trip; a hand-written one overrides and is validated.
 # v0.19.0: Prompt `subtype` discriminator (fragment|template) + the complete InputDef
 # kind vocabulary (text/number/boolean/select/multiselect/file-upload/sort/associate).
 # Both are DECLARATION-ONLY and ADVISORY — Spec.Validate gained no checks and rejects

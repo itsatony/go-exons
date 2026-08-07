@@ -38,9 +38,14 @@
     "execution": {
       "$ref": "#/$defs/ExecutionConfig"
     },
+    "input_order": {
+      "type": "array",
+      "description": "The order the inputs are asked in. Derived from the authored key order of `inputs` at parse time; declare it by hand only to override that (or to carry order through a store that keeps no key order). Every entry must name a declared input, and none twice.",
+      "items": { "type": "string" }
+    },
     "inputs": {
       "type": "object",
-      "description": "Input parameter definitions keyed by parameter name.",
+      "description": "Input parameter definitions keyed by parameter name. Declaration order is preserved — see `input_order`.",
       "additionalProperties": {
         "$ref": "#/$defs/InputDef"
       }

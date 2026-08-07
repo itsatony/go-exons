@@ -3,7 +3,6 @@ package internal
 import (
 	"context"
 	"fmt"
-	"strconv"
 )
 
 // ContextAccessor is the interface for accessing context data.
@@ -99,8 +98,15 @@ func (r *VarResolver) Resolve(ctx context.Context, execCtx interface{}, attrs At
 		return "", NewVariableNotFoundBuiltinError(name, showHint)
 	}
 
-	// Convert value to string
-	return valueToString(val), nil
+	// Convert value to string. `join` names the separator between the elements of a
+	// list value (or the entries of a map value); absent, the default is ", ". It is
+	// read here rather than inside the renderer because it is a TAG attribute — the
+	// author of the sentence decides how the values read in it.
+	sep := DefaultValueSeparator
+	if j, ok := attrs.Get(AttrJoin); ok {
+		sep = j
+	}
+	return renderValue(val, sep), nil
 }
 
 // Validate checks that the required attributes are present.
@@ -109,28 +115,6 @@ func (r *VarResolver) Validate(attrs Attributes) error {
 		return NewBuiltinError(ErrMsgMissingNameAttr, TagNameVar)
 	}
 	return nil
-}
-
-// valueToString converts any value to its string representation.
-func valueToString(val any) string {
-	switch v := val.(type) {
-	case string:
-		return v
-	case int:
-		return strconv.Itoa(v)
-	case int64:
-		return strconv.FormatInt(v, 10)
-	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64)
-	case bool:
-		return strconv.FormatBool(v)
-	case nil:
-		return ""
-	case fmt.Stringer:
-		return v.String()
-	default:
-		return fmt.Sprintf("%v", v)
-	}
 }
 
 // RawResolver handles the exons.raw built-in tag.
