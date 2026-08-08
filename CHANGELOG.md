@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-08-08
+
+Fixes to v0.21.0's `exons.input`, found in review. No API change.
+
+### Fixed
+
+- **`exons.input`'s binary guarantee had a hole, and it was the shape a Go caller reaches for
+  first.** `withholdBinary` recursed through slices, maps and pointers but had **no
+  `reflect.Struct` arm** — while `renderValue` has an explicit one that walks exported fields,
+  and renders any uint8-element slice as `string(rv.Bytes())`. So binding a declared input to
+  `struct{ Name string; Body []byte }` pasted the **entire file body into the prompt**, through
+  the one function written to prevent precisely that. The sweep now mirrors `renderValue`'s
+  traversal kind for kind, and a new test pins that parity with a **positive** assertion on the
+  withheld marker — its predecessor asserted only that the secret string was absent, which an
+  untraversed byte array passes while leaking every byte.
+  - Byte **arrays** (`[32]byte`) escaped as well — the uint8 check was gated on
+    `Kind() == Slice` — and rendered as a list of small integers.
+  - The depth bound **failed open**: the sweep flattens pointers, so the rebuilt value can be
+    shallower than the one swept, and a byte slice handed back raw at the sweep's bound was
+    reached by `renderValue` well inside its own. It now elides at the bound.
+  - The old `reflect.Interface` arm was dead code: `reflect.ValueOf` takes an `any` and always
+    reports the dynamic kind.
+  - ⚠ A byte slice is withheld **even when it holds UTF-8 text**. The shape carries no evidence
+    of which it is, and a text file read into a `[]byte` is as much an accidental paste as a
+    PDF. A caller that means to inline a document's text binds a `string`.
+- **The file manifest claimed lists that were not files.** The recognizer required only "every
+  element is a map with a non-empty `name`", which describes a list of **named objects** — one
+  of the most ordinary shapes a caller can bind. `[{"name":"GPT-4","provider":"openai"}, …]`
+  rendered as a bullet list with `provider` **silently dropped**. It now requires every
+  element's keys to be drawn from `{name, mime_type, size_bytes}` *and* at least one element to
+  carry a file-specific key; a list of bare `{"name": …}` maps is too ambiguous to claim and
+  falls through to `renderValue`, which preserves it whole.
+- **`contextWithInputs` merged caller bindings shallowly.** `Context.Get` returns the *live*
+  value, and the map injection replaces came from `Context.Data()`, which deep-copies — so the
+  shallow merge silently weakened a thread-safety property the context documents, on the one
+  path built to run concurrently. `Spec.BindInputs`, the sibling path, already deep-copied.
+- **A nil `input` root skipped injection entirely.** `data["input"] = nil` means "nothing is
+  bound", not "`input` is my own variable", but it took the not-a-map exit — so a document's
+  declared **defaults silently did not apply**, the single outcome the feature exists to
+  prevent.
+- **An `error` bound to a declared input rendered as a struct dump.** The pointer arm
+  dereferenced `*errorString` before `renderValue` could reach its `error` case. Values that
+  render through their own method (`time.Time`, `fmt.Stringer`, `error`) now short-circuit the
+  sweep — which also makes the new struct arm safe, since `time.Time` is a struct of unexported
+  fields and would otherwise have rebuilt as an empty map.
+
 ## [0.21.0] - 2026-08-08
 
 A declared input becomes its own word — and, more consequentially, the frontmatter

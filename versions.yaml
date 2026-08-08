@@ -1,7 +1,30 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.21.0
+  version: 0.21.1
+# v0.21.1: The binary guarantee was not one. withholdBinary swept slices, maps and pointers but
+# had NO reflect.Struct arm, while renderValue has an explicit one that walks exported fields and
+# renders a uint8-element slice as string(rv.Bytes()) — so a Go caller binding the most natural
+# upload shape there is, `struct{ Name string; Body []byte }`, pasted the entire file body into
+# the prompt, through the one function written to prevent exactly that. Byte ARRAYS ([32]byte)
+# escaped too, rendering as a list of small integers, and the depth bound FAILED OPEN: the sweep
+# flattens pointers, so a byte slice it handed back raw at its bound was reached by renderValue
+# well inside its own. All three are closed; the sweep now mirrors renderValue's traversal kind
+# for kind, and TestWithholdBinaryTraversesEveryKindRenderValueDoes pins that parity with a
+# POSITIVE assertion on the withheld marker — its predecessor asserted only that the secret
+# string was absent, which an untraversed byte array passes while leaking every byte.
+# ⚠ A byte slice is withheld even when it holds UTF-8 TEXT. The shape carries no evidence of
+# which it is, and a text file read into a []byte is as much an accidental paste as a PDF; a
+# caller that means to inline a document's text binds a string.
+# Also fixed: fileManifestEntries claimed ANY list of maps carrying a `name` — which describes a
+# list of named objects, not a file list — and rendered `[{"name":"GPT-4","provider":"openai"}]`
+# as bullets with `provider` SILENTLY DROPPED; it now requires every element's keys to be drawn
+# from {name,mime_type,size_bytes} AND at least one file-specific key. contextWithInputs merged
+# caller bindings SHALLOWLY where Context.Get returns the live value, weakening a documented
+# thread-safety property (Spec.BindInputs, the sibling path, already deep-copied); and a nil
+# `input` root took the not-a-map exit, so declared defaults silently did not apply. An `error`
+# value also rendered as a struct dump, because the pointer arm dereferenced it before
+# renderValue could reach its error case. No API change. Consumed by aigentverse DC106-vocative.
 # v0.21.0: A declared input becomes its own word. New {~exons.input name="x" /~} verb, and
 # — the real change — frontmatter `inputs:` STOPS BEING INERT: nothing in Execute had ever
 # read Spec.Inputs, and InputDef.Default had no application site anywhere in the library.

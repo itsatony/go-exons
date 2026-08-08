@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // InputResolver handles the exons.input built-in tag: a reference to a value the DOCUMENT
@@ -235,33 +236,87 @@ func renderInputValue(val any, sep string, sepDeclared bool) string {
 }
 
 // withholdBinary returns val with every byte slice replaced by withheldBinaryValue,
-// recursing through slices, maps and pointers to the same bound renderValue uses.
+// recursing through slices, arrays, maps, pointers and STRUCT FIELDS to the same bound
+// renderValue uses.
 //
 // Strings are untouched: a string is text the caller chose to bind, and withholding it would
 // break every ordinary input. Only a byte slice — the shape a file body arrives in — is
-// replaced.
+// replaced. That includes a byte slice holding UTF-8 text: a text file read into a []byte is
+// exactly as much of an accidental paste as a PDF, and the shape carries no evidence of which
+// it is. A caller that means to inline a document's text binds a string.
+//
+// ⚠ THIS FUNCTION MUST TRAVERSE EVERYTHING renderValue TRAVERSES. The guarantee is not "we
+// redact the shapes we thought of", it is "no byte slice renderValue can reach survives". Its
+// first version handled Pointer/Slice/Map only, so a struct with an exported []byte field fell
+// to the `default` arm untouched — and renderValue has an explicit reflect.Struct case that
+// walks exported fields and renders a uint8-element slice as string(rv.Bytes()). A caller
+// binding `struct{ Name string; Body []byte }` therefore pasted the entire file body into the
+// prompt, through the one function written to stop precisely that.
+//
+// This is the same defect maxRenderDepth's comment records against the ORIGINAL renderValue:
+// there too the untraversed arm was the struct one, and there too the test that should have
+// caught it used a shape that never reached the hole. Traversal parity with renderValue is the
+// invariant; TestWithholdBinaryTraversesEveryKindRenderValueDoes pins it.
 func withholdBinary(val any, depth int) any {
-	if val == nil || depth >= inputMaxSweepDepth {
+	if val == nil {
 		return val
 	}
 
+	// ⚠ AT THE BOUND, ELIDE — DO NOT RETURN THE VALUE UNSWEPT.
+	//
+	// Returning val here was fail-OPEN. This function REBUILDS the value, and its pointer arm
+	// flattens each indirection away, so the rebuilt structure can be shallower than the one
+	// swept: a byte slice behind eight pointers was reached at depth 8 here (bound hit, handed
+	// back raw) and at depth 0 by renderValue, which then rendered it as text. Eliding instead
+	// costs an input nested deeper than the bound its content — which renderValue would elide
+	// anyway — and removes the whole depth-misalignment class.
+	if depth >= inputMaxSweepDepth {
+		return elidedValue
+	}
+
 	rv := reflect.ValueOf(val)
+
+	// The binary rule is absolute and is therefore decided BEFORE the self-rendering check
+	// below: a `type Blob []byte` that also implements fmt.Stringer is still a byte slice, and
+	// the guarantee does not have a "unless the type would rather print itself" clause.
+	//
+	// The ELEMENT-KIND match is the same one renderValue uses, so a named type — json.RawMessage,
+	// `type Blob []byte` — is caught too, not just the literal []byte. Arrays are matched
+	// alongside slices: a [32]byte digest is as much a byte sequence as a []byte, and gating the
+	// check on Kind()==Slice let it through to be rendered as a list of small integers.
 	switch rv.Kind() {
-	case reflect.Pointer, reflect.Interface:
+	case reflect.Slice:
+		if rv.IsNil() {
+			return val // renderValue emits "" for a nil slice; withholding would be noise
+		}
+		if rv.Type().Elem().Kind() == reflect.Uint8 {
+			return withheldBinaryValue
+		}
+	case reflect.Array:
+		if rv.Type().Elem().Kind() == reflect.Uint8 {
+			return withheldBinaryValue
+		}
+	}
+
+	// A value renderValue renders through its OWN method never exposes a field, so there is
+	// nothing to sweep — and rebuilding it would destroy the rendering. time.Time is the case
+	// that makes this mandatory rather than tidy: it is a struct of unexported fields, so the
+	// struct arm below would turn every bound timestamp into an empty map.
+	if isSelfRenderingValue(val) {
+		return val
+	}
+
+	switch rv.Kind() {
+	// No reflect.Interface arm: reflect.ValueOf takes an `any` and always reports the
+	// DYNAMIC kind, so Kind() == Interface is unreachable here. The old arm was dead code
+	// that read like coverage.
+	case reflect.Pointer:
 		if rv.IsNil() {
 			return val
 		}
 		return withholdBinary(rv.Elem().Interface(), depth+1)
 
 	case reflect.Slice, reflect.Array:
-		if rv.Kind() == reflect.Slice && rv.IsNil() {
-			return val
-		}
-		// The same ELEMENT-KIND match renderValue uses, so a named type — json.RawMessage,
-		// `type Blob []byte` — is caught too, not just the literal []byte.
-		if rv.Kind() == reflect.Slice && rv.Type().Elem().Kind() == reflect.Uint8 {
-			return withheldBinaryValue
-		}
 		out := make([]any, rv.Len())
 		for i := 0; i < rv.Len(); i++ {
 			out[i] = withholdBinary(rv.Index(i).Interface(), depth+1)
@@ -269,6 +324,9 @@ func withholdBinary(val any, depth int) any {
 		return out
 
 	case reflect.Map:
+		if rv.IsNil() {
+			return val
+		}
 		out := make(map[string]any, rv.Len())
 		iter := rv.MapRange()
 		for iter.Next() {
@@ -277,8 +335,47 @@ func withholdBinary(val any, depth int) any {
 		}
 		return out
 
+	case reflect.Struct:
+		// Rebuilt as a map, which costs the struct its DECLARATION-order rendering (a map
+		// renders sorted). That is a deliberate trade: the alternative — pre-scanning for
+		// binary and returning the struct untouched when clean — needs a second traversal
+		// that mirrors this one, and a mirror that drifts fails OPEN, which is the one
+		// direction this function may not fail in. exons.var still renders a struct in
+		// declaration order; only a declared INPUT pays the ordering.
+		//
+		// Unexported fields are skipped: renderValue skips them too (so they cannot leak),
+		// and calling Interface() on one panics.
+		rt := rv.Type()
+		out := make(map[string]any, rv.NumField())
+		for i := 0; i < rv.NumField(); i++ {
+			f := rt.Field(i)
+			if !f.IsExported() {
+				continue
+			}
+			out[f.Name] = withholdBinary(rv.Field(i).Interface(), depth+1)
+		}
+		return out
+
 	default:
+		// Only kinds that cannot contain another value reach here — the scalars, plus chan,
+		// func, complex and unsafe.Pointer, none of which can hide a byte slice from
+		// renderValue either.
 		return val
+	}
+}
+
+// isSelfRenderingValue reports whether renderValue would render val through the value's own
+// method rather than by walking its structure.
+//
+// It mirrors renderAtDepth's leading type switch, and the mirroring is the point: a value that
+// short-circuits there must short-circuit here, or withholdBinary rebuilds something whose
+// rendering it has just destroyed.
+func isSelfRenderingValue(val any) bool {
+	switch val.(type) {
+	case time.Time, fmt.Stringer, error:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -286,9 +383,21 @@ func withholdBinary(val any, depth int) any {
 // line per file. It returns ok=false for every other shape, so an ordinary list value falls
 // through to renderValue untouched.
 //
-// The recognised shape is a non-empty slice whose EVERY element is a map carrying a non-empty
-// string under InputFileKeyName. Requiring every element keeps the rule from firing on a
-// heterogeneous list that merely happens to contain one named map.
+// The recognised shape is a non-empty slice in which EVERY element is a map whose keys are all
+// drawn from the file vocabulary {name, mime_type, size_bytes}, carrying a non-empty string
+// under InputFileKeyName — AND in which at least one element actually carries a file-specific
+// key (mime_type or size_bytes).
+//
+// ⚠ BOTH EXTRA CONDITIONS EARN THEIR KEEP; "every element is a map with a name" DOES NOT
+// DESCRIBE A FILE. It describes a list of named objects, which is one of the most ordinary
+// shapes a caller can bind — `[{"name":"GPT-4","provider":"openai"}, …]` was rendered as a
+// bullet list with `provider` SILENTLY DROPPED from the prompt. Requiring the key set to be a
+// subset of the vocabulary is what rejects that, and requiring one file-specific key is what
+// keeps a list of bare `{"name": …}` maps — genuinely ambiguous, and no more a file list than a
+// person list — falling through to renderValue, which preserves it whole.
+//
+// The bar is deliberately on the side of NOT claiming the value: a missed manifest renders as
+// an ordinary map list, which is merely less pretty, while a false manifest destroys data.
 //
 // A plain []string is NOT recognised, on purpose: it is indistinguishable from an ordinary
 // multiselect value, and rendering `a, b` for a multiselect matters more than bulleting two
@@ -300,6 +409,7 @@ func fileManifestEntries(val any) ([]string, bool) {
 	}
 
 	entries := make([]string, 0, len(items))
+	sawFileKey := false
 	for _, item := range items {
 		m, ok := item.(map[string]any)
 		if !ok {
@@ -309,9 +419,32 @@ func fileManifestEntries(val any) ([]string, bool) {
 		if !ok || name == "" {
 			return nil, false
 		}
+		for k := range m {
+			if !isFileManifestKey(k) {
+				return nil, false
+			}
+			if k != InputFileKeyName {
+				sawFileKey = true
+			}
+		}
 		entries = append(entries, inputManifestBullet+name+fileManifestDetail(m))
 	}
+	if !sawFileKey {
+		return nil, false
+	}
 	return entries, true
+}
+
+// isFileManifestKey reports whether a key belongs to the file-descriptor vocabulary. A map
+// carrying anything else is not a file descriptor, and rendering it as one would discard the
+// keys the manifest has no place for.
+func isFileManifestKey(key string) bool {
+	switch key {
+	case InputFileKeyName, InputFileKeyMimeType, InputFileKeySizeBytes:
+		return true
+	default:
+		return false
+	}
 }
 
 // fileManifestDetail renders the optional parenthesised detail after a filename. Absent both

@@ -2,6 +2,7 @@ package exons
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -332,6 +333,9 @@ func TestTemplate_Inputs_BinaryIsWithheld(t *testing.T) {
 	ctx := context.Background()
 	const secret = "SENSITIVE FILE BODY"
 
+	var digest [len(secret)]byte
+	copy(digest[:], secret)
+
 	cases := map[string]any{
 		"a bare byte slice":         []byte(secret),
 		"a byte slice in a list":    []any{[]byte(secret)},
@@ -339,7 +343,20 @@ func TestTemplate_Inputs_BinaryIsWithheld(t *testing.T) {
 		"a byte slice in a nested":  []any{map[string]any{"name": "f", "body": []byte(secret)}},
 		"a named byte-slice type":   testBlob(secret),
 		"a byte slice under a file": []any{map[string]any{"name": "f.pdf", "content": []byte(secret)}},
+		// The four below are the shapes the FIRST version of the sweep did not reach. The
+		// struct is the important one: renderValue has an explicit reflect.Struct arm that
+		// walks exported fields, so the whole file body was rendered as text — through the
+		// one function written to stop exactly that.
+		"an exported struct field":  testUpload{Name: "q3.pdf", Body: []byte(secret)},
+		"a pointer to a struct":     &testUpload{Name: "q3.pdf", Body: []byte(secret)},
+		"a struct inside a list":    []any{testUpload{Name: "q3.pdf", Body: []byte(secret)}},
+		"a byte ARRAY, not a slice": digest,
 	}
+
+	// The numeric rendering of the first two bytes. An untraversed byte ARRAY renders as
+	// `83, 69, 78, …`, which contains no secret SUBSTRING — so asserting only that the string
+	// is absent would pass while every byte leaked.
+	numeric := strconv.Itoa(int(secret[0])) + ", " + strconv.Itoa(int(secret[1]))
 
 	for name, bound := range cases {
 		t.Run(name+" never reaches the output", func(t *testing.T) {
@@ -349,7 +366,9 @@ func TestTemplate_Inputs_BinaryIsWithheld(t *testing.T) {
 			})
 			require.NoError(t, err)
 			assert.NotContains(t, out, secret,
-				"a declared input rendered raw file bytes into the prompt")
+				"a declared input rendered raw file bytes into the prompt as text")
+			assert.NotContains(t, out, numeric,
+				"a declared input rendered raw file bytes into the prompt as numbers")
 		})
 	}
 
@@ -366,6 +385,65 @@ func TestTemplate_Inputs_BinaryIsWithheld(t *testing.T) {
 // testBlob is a named byte-slice type, standing in for json.RawMessage — the withholding
 // matches on element kind so a named type is caught too, not only the literal []byte.
 type testBlob []byte
+
+// testUpload is the shape a Go runtime naturally reaches for when it binds an uploaded file:
+// a struct with an exported byte-slice field. It is what the sweep originally missed.
+type testUpload struct {
+	Name string
+	Body []byte
+}
+
+// TestTemplate_Inputs_NilRootStillApplies pins the one case rule 1 must NOT claim.
+//
+// data["input"] = nil says "nothing is bound", not "input is my own variable", but the guard
+// tested only for "not a map" — so a nil root took the no-op exit and the document's declared
+// defaults silently did not apply, which is the single outcome this feature exists to prevent.
+func TestTemplate_Inputs_NilRootStillApplies(t *testing.T) {
+	engine := MustNew()
+	ctx := context.Background()
+
+	src := inputDoc("  tone:\n    type: text\n    default: neutral\n", `[{~exons.input name="tone" /~}]`)
+	out, err := engine.Execute(ctx, src, map[string]any{ContextKeyInput: nil})
+	require.NoError(t, err)
+	assert.Equal(t, "[neutral]", strings.TrimSpace(out),
+		"a nil input root must apply the declared defaults, not skip injection")
+
+	// The actual rule-1 case is unaffected: a STRING under the reserved key is a document's own
+	// variable and still renders as it did before this feature existed.
+	strSrc := inputDoc("  tone:\n    type: text\n    default: neutral\n", `[{~exons.var name="input" /~}]`)
+	strOut, err := engine.Execute(ctx, strSrc, map[string]any{ContextKeyInput: "the user's question"})
+	require.NoError(t, err)
+	assert.Equal(t, "[the user's question]", strings.TrimSpace(strOut))
+}
+
+// TestTemplate_Inputs_CallerBindingsAreNotAliased is the sibling of
+// TestTemplate_Inputs_DefaultsAreNotSharedAcrossRenders.
+//
+// Context.Get returns the LIVE value rather than a copy, and the map injection replaces came
+// from Context.Data(), which deep-copies. So merging caller bindings shallowly did not merely
+// miss an optimisation — it WEAKENED a thread-safety property the context documents, for the
+// one code path built to be executed concurrently.
+func TestTemplate_Inputs_CallerBindingsAreNotAliased(t *testing.T) {
+	engine := MustNew()
+
+	tmpl, err := engine.Parse(inputDoc("  cfg:\n    type: text\n", `{~exons.input name="cfg" /~}`))
+	require.NoError(t, err)
+
+	// The caller keeps its own reference — exactly what a concurrent caller reusing a data map
+	// across renders does.
+	nested := map[string]any{"depth": "original"}
+	injected := tmpl.contextWithInputs(NewContext(map[string]any{
+		ContextKeyInput: map[string]any{"cfg": nested},
+	}))
+
+	nested["depth"] = "mutated by the caller after injection"
+
+	got, found := injected.Get(ContextKeyInput + PathSeparator + "cfg" + PathSeparator + "depth")
+	require.True(t, found)
+	assert.Equal(t, "original", got,
+		"the caller's nested map was ALIASED into the render context — a mutation on the caller's "+
+			"side reached a context the render had already built")
+}
 
 // =============================================================================
 // Spec.BindInputs / Spec.ValidateInputBinding — the pre-render contract

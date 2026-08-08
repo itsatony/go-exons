@@ -29,6 +29,11 @@ import (
 //     {~exons.include template="x" input="y" /~} lets a DOCUMENT put a string there. Rather
 //     than fail, such a template renders exactly as it did before this feature existed.
 //
+//     An explicit NIL is not that case and must not take this exit. data["input"] = nil says
+//     "nothing is bound", not "input is my own variable", and bailing on it skipped injection
+//     entirely — so a document's declared defaults silently did not apply, which is the one
+//     outcome this whole file exists to prevent. A nil root proceeds as an empty binding.
+//
 //  2. MERGE PER KEY, CALLER WINS. Only absent (or nil, or empty-string) keys receive the
 //     declared default. Replacing the caller's map wholesale would mean that adding an input
 //     to a spec silently unbinds it for every existing caller.
@@ -54,13 +59,19 @@ func (t *Template) contextWithInputs(execCtx *Context) *Context {
 	// entirely — path lookup is all-or-nothing per scope, not a per-key overlay.
 	bound, hasBinding := execCtx.Get(ContextKeyInput)
 	binding, ok := asBindingMap(bound)
-	if hasBinding && !ok {
+	if hasBinding && bound != nil && !ok {
 		return execCtx // rule 1
 	}
 
+	// Deep-copied for the same reason the defaults below are, and it was an omission that these
+	// were not: Context.Get returns the LIVE value, not a copy, so aliasing a caller's nested map
+	// in here would share it across every render that context feeds. The map this replaces came
+	// from Context.Data(), which deep-copies — so a shallow merge here silently WEAKENED a
+	// thread-safety property the context documents. Spec.BindInputs, the sibling path, deep-copies
+	// caller values already; the two now agree.
 	merged := make(map[string]any, len(binding)+len(t.spec.Inputs))
 	for k, v := range binding {
-		merged[k] = v
+		merged[k] = deepCopyValue(v)
 	}
 	for name, def := range t.spec.Inputs {
 		if def == nil {
