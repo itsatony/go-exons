@@ -48,6 +48,11 @@ const (
 const (
 	dryRunWarnInclude = "line %d: included template '%s' not found"
 	dryRunWarnLoopSrc = "line %d: loop source '%s' not found in data"
+
+	// dryRunErrInheritance reports that the analysed AST is the child template alone, because the
+	// parent could not be resolved. It is an Error rather than a Warning: the reference collections
+	// are INCOMPLETE when it appears, and a consumer must not conclude anything is unreferenced.
+	dryRunErrInheritance = "inheritance could not be resolved, analysis covers this template only: %v"
 )
 
 // Placeholder format strings for dry-run output.
@@ -122,6 +127,41 @@ const (
 
 // DryRunResult contains the results of a dry-run execution.
 // Dry-run validates the template structure without executing resolvers.
+//
+// # The reference-completeness contract
+//
+// As of v0.22.0 the reference collections below are COMPLETE for statically-analysable references:
+// every position in the template where a context path can be named is reported. This is the
+// contract a consumer needs before it can safely conclude that a name is referenced NOWHERE — a
+// conclusion that licenses telling an author their declaration is dead. Under-reporting turns that
+// advice into an instruction to delete working code, so the guarantee is stated rather than
+// implied, and exons.debug.completeness_test.go pins each clause.
+//
+// Reported positions: {~exons.var~} and {~exons.input~} anywhere, including nested inside block
+// tags to arbitrary depth; every branch of a conditional including elseif and else; a switch's
+// dispatch expression and every case arm's eval=; a loop's in= source; an include's attributes;
+// any custom resolver's attributes; and all of the above inside {~exons.block~} bodies and inside
+// the parent body a {~exons.extends~} child splices into.
+//
+// Deliberately NOT reported, each failing in the SAFE direction:
+//
+//   - A reference inside {~exons.raw~}, {~exons.comment~} or a {~~ ~~} fence. These spans are
+//     consumed at the lexer and never become nodes. Correct: they are literal text, not references.
+//   - Names bound by a loop variable are not distinguished from document inputs. An in-loop
+//     shadow therefore reads as a reference, which over-reports USE and never under-reports it.
+//   - Includes are not recursed. The include boundary does not propagate the caller's reserved
+//     input root — buildChildData passes only the with= expansion and literal attributes — so a
+//     parent's declared inputs are structurally unreachable inside an included template. The one
+//     cross-boundary path, with="input.foo", is carried verbatim in IncludeReference.Attributes.
+//
+// The one case that is NOT closable by this library: a third-party resolver may define an
+// attribute whose value names a context path, and this library cannot know that attribute's
+// semantics. Every resolver's attributes are reported in full for exactly this reason. A consumer
+// performing unreferenced analysis should treat any attribute value containing a reference to a
+// name as a use of it — over-reporting use, never under-reporting it.
+//
+// Finally: when Errors is non-empty the collections may be partial (see dryRunErrInheritance).
+// Check it before concluding anything is unreferenced.
 type DryRunResult struct {
 	// Valid indicates if the template structure is valid
 	Valid bool
@@ -149,6 +189,15 @@ type DryRunResult struct {
 
 	// Conditionals lists all conditional blocks found
 	Conditionals []ConditionalReference
+
+	// Switches lists all {~exons.switch~} blocks found.
+	//
+	// Switches were invisible to DryRun entirely until v0.22.0 — neither the switch expression nor
+	// any case's eval= or value= was recorded anywhere, so a document branching on a context path
+	// through a switch reported that path as referenced nowhere. That is the shape of miss which
+	// turns an advisory into a false accusation, which is why this is its own reported collection
+	// rather than a flag on something else.
+	Switches []SwitchReference
 
 	// Loops lists all loop blocks found
 	Loops []LoopReference
@@ -218,11 +267,58 @@ type IncludeReference struct {
 
 // ConditionalReference represents a conditional block in a template.
 type ConditionalReference struct {
-	Condition string // The eval expression
-	Line      int    // Source line number
-	Column    int    // Source column number
-	HasElseIf bool   // Whether it has elseif branches
-	HasElse   bool   // Whether it has an else branch
+	Condition string // The eval expression of the FIRST branch; see Branches for the rest
+
+	// Identifiers are the context paths referenced by Condition, resolved by this library's own
+	// expression parser rather than by scanning the string. Convenience mirror of
+	// Branches[0].Identifiers.
+	Identifiers []string
+
+	// Branches carries EVERY branch of the conditional, in source order, including elseif and
+	// else. Before v0.22.0 only the first branch's condition survived into this struct — the rest
+	// were reduced to the two booleans below — so a path referenced only in an elseif was reported
+	// as referenced nowhere. Condition/HasElseIf/HasElse are retained unchanged for compatibility;
+	// Branches is the complete answer.
+	Branches []ConditionalBranchRef
+
+	Line      int  // Source line number
+	Column    int  // Source column number
+	HasElseIf bool // Whether it has elseif branches
+	HasElse   bool // Whether it has an else branch
+}
+
+// ConditionalBranchRef is one branch of a conditional — an if, an elseif, or an else.
+//
+// Branches carry no source position of their own in the AST, so none is reported here; the owning
+// ConditionalReference's Line/Column locate the construct.
+type ConditionalBranchRef struct {
+	Condition   string   // The eval expression; empty for the else branch
+	Identifiers []string // Context paths referenced by Condition, resolved by the expression parser
+	IsElse      bool     // True for the final else branch
+}
+
+// SwitchReference represents a {~exons.switch~} block in a template.
+type SwitchReference struct {
+	Expression  string   // The eval= expression the switch dispatches on
+	Identifiers []string // Context paths referenced by Expression
+
+	Cases      []SwitchCaseRef // Every case arm, in source order
+	HasDefault bool            // Whether a default arm is present
+
+	Line   int // Source line number
+	Column int // Source column number
+}
+
+// SwitchCaseRef is one arm of a switch.
+//
+// Value and Eval are mutually exclusive in the grammar: a case either compares the switch value
+// against a literal string, or evaluates its own boolean expression. Only Eval can reference a
+// context path, so Identifiers is always derived from Eval and is empty for a value-comparison
+// arm — a literal is a literal, not a reference.
+type SwitchCaseRef struct {
+	Value       string   // Literal compared against the switch value
+	Eval        string   // Boolean expression evaluated for this arm
+	Identifiers []string // Context paths referenced by Eval
 }
 
 // LoopReference represents a loop block in a template.
@@ -312,6 +408,7 @@ func (t *Template) DryRun(ctx context.Context, data map[string]any) *DryRunResul
 		Inputs:           make([]InputReference, 0),
 		Includes:         make([]IncludeReference, 0),
 		Conditionals:     make([]ConditionalReference, 0),
+		Switches:         make([]SwitchReference, 0),
 		Loops:            make([]LoopReference, 0),
 		Errors:           make([]string, 0),
 		Warnings:         make([]string, 0),
@@ -325,8 +422,14 @@ func (t *Template) DryRun(ctx context.Context, data map[string]any) *DryRunResul
 	// Collect available keys for suggestions
 	availableKeys := collectAllKeys(data, "")
 
-	// Walk the AST and collect references
-	t.walkASTForDryRun(t.ast, data, result, usedKeys, availableKeys)
+	// Walk the AST and collect references.
+	//
+	// The walk uses the INHERITANCE-RESOLVED AST, matching what ExecuteWithContext runs. A template
+	// that extends another is, before resolution, a handful of block definitions with none of the
+	// parent body around them — so analysing the raw AST reports the references of a document that
+	// is never the one executed.
+	astToWalk := t.dryRunAST(ctx, result)
+	t.walkASTForDryRun(astToWalk, data, result, usedKeys, availableKeys)
 
 	// Find missing variables
 	missingSet := make(map[string]bool)
@@ -351,8 +454,9 @@ func (t *Template) DryRun(ctx context.Context, data map[string]any) *DryRunResul
 	}
 	sort.Strings(result.UnusedVariables)
 
-	// Generate placeholder output
-	result.Output = t.generatePlaceholderOutput(t.ast, data)
+	// Generate placeholder output from the same AST that was analysed, so the reported references
+	// and the reported output can never describe two different documents.
+	result.Output = t.generatePlaceholderOutput(astToWalk, data)
 
 	// Set valid based on errors
 	if len(result.Errors) > 0 {
@@ -360,6 +464,39 @@ func (t *Template) DryRun(ctx context.Context, data map[string]any) *DryRunResul
 	}
 
 	return result
+}
+
+// dryRunAST returns the AST that DryRun should analyse — inheritance-resolved when the template
+// extends another, and the raw AST otherwise.
+//
+// It mirrors ExecuteWithContext deliberately. Analysis that walks a different AST than execution
+// walks is not analysis of the document that runs.
+//
+// Resolution failure is reported and then TOLERATED: the raw AST is analysed instead. DryRun's
+// purpose is to tell an author what is in their template, and degrading to a partial answer with
+// the reason attached is more useful than returning nothing. Callers deciding anything destructive
+// from the reference collections must check Errors first — a resolution failure means the
+// collections describe only the child, so a name used solely in the parent body is absent.
+func (t *Template) dryRunAST(ctx context.Context, result *DryRunResult) any {
+	if t.inheritanceInfo == nil || t.engine == nil {
+		return t.ast
+	}
+
+	sourceResolver := &engineSourceAdapter{engine: t.engine}
+	lexerConfig := internal.LexerConfig{
+		OpenDelim:      t.config.openDelim,
+		CloseDelim:     t.config.closeDelim,
+		MarkdownFences: t.config.markdownFences,
+	}
+	resolver := internal.NewInheritanceResolver(nil, sourceResolver, t.config.maxDepth, lexerConfig)
+
+	resolvedAST, err := resolver.ResolveInheritance(ctx, t.ast, t.inheritanceInfo, 0)
+	if err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf(dryRunErrInheritance, err))
+		return t.ast
+	}
+
+	return resolvedAST
 }
 
 // walkASTForDryRun recursively walks the AST to collect dry-run information.
@@ -381,6 +518,14 @@ func (t *Template) walkASTForDryRun(node any, data map[string]any, result *DryRu
 
 	case *internal.SwitchNode:
 		t.processSwitchNodeForDryRun(n, data, result, usedKeys, availableKeys)
+
+	case *internal.BlockNode:
+		// A block's body is ordinary template content and the executor executes it
+		// (executeBlockNode). Omitting this case meant every reference inside every
+		// {~exons.block~} was invisible to analysis.
+		for _, child := range n.Children {
+			t.walkASTForDryRun(child, data, result, usedKeys, availableKeys)
+		}
 	}
 }
 
@@ -472,16 +617,45 @@ func (t *Template) processTagNodeForDryRun(n *internal.TagNode, data map[string]
 			Registered: t.executor != nil && t.executor.HasResolver(n.Name),
 		})
 	}
+
+	// Recurse into a BLOCK tag's children.
+	//
+	// This is the single most consequential completeness fix in DryRun's history, and it is one
+	// line of intent. A tag may be self-closing ({~exons.var /~}, no children) or a block
+	// ({~exons.message~}…{~/exons.message~}, children the executor executes — see executeTagNode).
+	// Until v0.22.0 this function reported the tag itself and never descended, so
+	//
+	//	{~exons.message role="user"~}{~exons.input name="tone" /~}{~/exons.message~}
+	//
+	// produced ZERO input references. exons.message wraps essentially every real prompt body, so
+	// the miss was not an edge case — it was the common case, and any consumer concluding
+	// "referenced nowhere" from that would have been wrong about almost every document it saw.
+	//
+	// raw and comment are excluded because their spans are consumed at the LEXER: raw keeps its
+	// body in RawContent as literal text and comment keeps nothing. Neither has parsed children,
+	// so the exclusion is a statement of intent rather than a guard against anything reachable —
+	// and it is the structural reason a reference inside {~exons.raw~} is correctly never reported.
+	if n.Name != TagNameRaw && n.Name != TagNameComment {
+		for _, child := range n.Children {
+			t.walkASTForDryRun(child, data, result, usedKeys, availableKeys)
+		}
+	}
 }
 
 // processConditionalNodeForDryRun processes a conditional node for dry-run.
 func (t *Template) processConditionalNodeForDryRun(n *internal.ConditionalNode, data map[string]any, result *DryRunResult, usedKeys map[string]bool, availableKeys []string) {
 	pos := n.Pos()
 
-	// Count branches
+	// Capture EVERY branch, not just the first.
+	//
+	// The previous implementation reduced branches 1..n to two booleans, which threw away every
+	// elseif condition. A path referenced only in an elseif was then reported as referenced
+	// nowhere — the exact miss that turns "declared but unreferenced" advice into a false
+	// instruction to delete working code.
 	hasElseIf := false
 	hasElse := false
 	firstCondition := ""
+	branches := make([]ConditionalBranchRef, 0, len(n.Branches))
 
 	for i, branch := range n.Branches {
 		if i == 0 {
@@ -491,14 +665,27 @@ func (t *Template) processConditionalNodeForDryRun(n *internal.ConditionalNode, 
 		} else {
 			hasElseIf = true
 		}
+
+		branches = append(branches, ConditionalBranchRef{
+			Condition:   branch.Condition,
+			Identifiers: expressionIdentifiersOrEmpty(branch.Condition),
+			IsElse:      branch.IsElse,
+		})
+	}
+
+	firstIdentifiers := []string{}
+	if len(branches) > 0 {
+		firstIdentifiers = branches[0].Identifiers
 	}
 
 	result.Conditionals = append(result.Conditionals, ConditionalReference{
-		Condition: firstCondition,
-		Line:      pos.Line,
-		Column:    pos.Column,
-		HasElseIf: hasElseIf,
-		HasElse:   hasElse,
+		Condition:   firstCondition,
+		Identifiers: firstIdentifiers,
+		Branches:    branches,
+		Line:        pos.Line,
+		Column:      pos.Column,
+		HasElseIf:   hasElseIf,
+		HasElse:     hasElse,
 	})
 
 	// Walk all branches
@@ -539,6 +726,30 @@ func (t *Template) processForNodeForDryRun(n *internal.ForNode, data map[string]
 
 // processSwitchNodeForDryRun processes a switch node for dry-run.
 func (t *Template) processSwitchNodeForDryRun(n *internal.SwitchNode, data map[string]any, result *DryRunResult, usedKeys map[string]bool, availableKeys []string) {
+	pos := n.Pos()
+
+	// Record the switch itself. Until v0.22.0 this function walked case bodies and recorded
+	// nothing about the switch — not the dispatch expression, not a single case — so a document
+	// branching on a context path through a switch reported that path nowhere at all.
+	cases := make([]SwitchCaseRef, 0, len(n.Cases))
+	for _, c := range n.Cases {
+		cases = append(cases, SwitchCaseRef{
+			Value: c.Value,
+			Eval:  c.Eval,
+			// Only Eval is an expression; Value is a literal compared against the switch value.
+			Identifiers: expressionIdentifiersOrEmpty(c.Eval),
+		})
+	}
+
+	result.Switches = append(result.Switches, SwitchReference{
+		Expression:  n.Expression,
+		Identifiers: expressionIdentifiersOrEmpty(n.Expression),
+		Cases:       cases,
+		HasDefault:  n.Default != nil,
+		Line:        pos.Line,
+		Column:      pos.Column,
+	})
+
 	// Walk all cases
 	for _, c := range n.Cases {
 		for _, child := range c.Children {
@@ -597,6 +808,12 @@ func (t *Template) generatePlaceholders(node any, data map[string]any, sb *strin
 
 		default:
 			fmt.Fprintf(sb, placeholderTag, n.Name)
+			// A block tag's children are content the executor renders. Emitting only the tag
+			// placeholder made every nested reference vanish from the preview — the same omission
+			// as the analysis-side one in processTagNodeForDryRun, in the surface an author reads.
+			for _, child := range n.Children {
+				t.generatePlaceholders(child, data, sb)
+			}
 		}
 
 	case *internal.ConditionalNode:

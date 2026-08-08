@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-08-08
+
+`DryRun` becomes complete, and documents the contract it now satisfies.
+
+`DryRun` is the only sound static-analysis surface a consumer has — the AST lives in `package
+internal` and is unimportable. So a consumer deciding *"this declared input is referenced
+nowhere"* can only be as right as `DryRun` is complete, and that verdict licenses telling an author
+to delete working code. Under-reporting a reference is therefore not a milder bug here; it is a
+different and worse one. That asymmetry is why this release ships a **stated** completeness
+contract on `DryRunResult` rather than merely more coverage.
+
+### Fixed
+
+- **Block-tag children were never walked.** `processTagNodeForDryRun` reported a tag and did not
+  descend into its children, so `{~exons.message role="user"~}{~exons.input name="tone"
+  /~}{~/exons.message~}` produced **zero** input references. `exons.message` wraps essentially
+  every real prompt body, making this the common case rather than an edge case. It was entirely
+  untested — the full suite stayed green after the fix. The same omission is fixed in
+  `generatePlaceholders`, where it made nested content vanish from the preview an author reads.
+- **`elseif` conditions were discarded.** Branches after the first were reduced to two booleans, so
+  a path referenced only in an `elseif` was reported as referenced nowhere.
+- **Switches were invisible in their entirety.** Neither the dispatch expression nor any case's
+  `eval=`/`value=` was recorded anywhere, and there was no `SwitchReference` type at all.
+- **`BlockNode` had no walker arm**, so every reference inside every `{~exons.block~}` was unseen.
+- **`DryRun` analysed the raw AST** while `ExecuteWithContext` runs the inheritance-resolved one —
+  an `{~exons.extends~}` child was analysed as a document that never runs. Resolution failure is
+  now reported through `Errors` and tolerated, degrading to a partial answer with the reason
+  attached.
+
+### Added
+
+- `ExpressionIdentifiers(expression string) ([]string, error)` — returns every context path an
+  `eval=` expression references, resolved by this library's own expression parser. A consumer
+  scanning the raw condition string has to agree byte-for-byte with the lexer about how a reference
+  is spelled, and gets it wrong for dotted paths inside call arguments, identifiers adjacent to
+  operators, and paths in a boolean's right-hand branch. Identifiers are whole dotted paths,
+  de-duplicated and sorted; function names are excluded.
+- `DryRunResult.Switches` (`SwitchReference`, `SwitchCaseRef`).
+- `ConditionalReference.Branches` (`ConditionalBranchRef`) and `.Identifiers`. The existing
+  `Condition`, `HasElseIf` and `HasElse` fields keep their exact meaning — this release is additive.
+
+### Documented
+
+- The **reference-completeness contract** on `DryRunResult`: what is guaranteed reported, what is
+  deliberately not, and the one case that is not closable by this library — a third-party resolver
+  whose arbitrary attribute names a context path. Every omission fails in the *safe* direction
+  (over-reports use, never under-reports it): inert `exons.raw`/`exons.comment` spans, loop-variable
+  shadowing, and include recursion (structurally moot — the include boundary does not propagate the
+  caller's reserved `input` root, so a parent's inputs are unreachable inside an included template).
+
 ## [0.21.2] - 2026-08-08
 
 Found in re-review of v0.21.1. No API change.

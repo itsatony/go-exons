@@ -1,7 +1,27 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.21.2
+  version: 0.22.0
+# v0.22.0: DryRun becomes COMPLETE, and states the contract it now satisfies. DryRun is the only
+# sound static-analysis surface a consumer has — the AST is package-internal and unimportable — so
+# a consumer deciding "this declared input is referenced nowhere" can only be as right as DryRun is
+# complete, and that verdict licenses telling an author to delete working code. Under-reporting is
+# therefore not a smaller bug here but a different one, which is why the fix ships with a STATED
+# contract (DryRunResult's doc comment) rather than merely more coverage.
+# THE ONE THAT MATTERED: processTagNodeForDryRun never recursed into a block tag's children, so
+# {~exons.message role="user"~}{~exons.input name="tone" /~}{~/exons.message~} produced ZERO input
+# references. exons.message wraps essentially every real prompt body — the miss was the COMMON case,
+# not an edge case, and it was entirely untested (the full suite stayed green after the fix landed).
+# Also closed: elseif conditions were reduced to a boolean and discarded; switches were invisible in
+# their ENTIRETY (no dispatch expression, no case recorded anywhere); BlockNode had no walker arm;
+# and DryRun walked the RAW ast while ExecuteWithContext walks the inheritance-resolved one, so an
+# extends-child was analysed as a document that never runs. New public ExpressionIdentifiers()
+# resolves eval= identifiers through this library's own expression parser, so a consumer never
+# re-scans a grammar it cannot reach — the failure that killed the same rule downstream four times.
+# What stays open does so in the SAFE direction (over-reports USE, never under-reports it): loop-var
+# shadowing, include recursion (structurally moot — the include boundary drops the input root), and
+# the one genuinely unclosable case, a third-party resolver attribute naming a context path, for
+# which every resolver's attributes are reported in full.
 # v0.21.2: The v0.21.1 guarantee was falsely COMPLETE — the map KEY path was not swept. A slice
 # cannot be a map key, but a byte ARRAY can, so map[[16]byte]string rendered its keys as
 # `104, 101, …` while every value was correctly withheld. Found in re-review, and it is the same
