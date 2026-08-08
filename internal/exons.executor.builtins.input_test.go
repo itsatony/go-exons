@@ -71,6 +71,10 @@ func TestWithholdBinaryTraversesEveryKindRenderValueDoes(t *testing.T) {
 		"a byte slice in a list":           []any{[]byte(binarySecret)},
 		"a byte slice in a map":            map[string]any{"body": []byte(binarySecret)},
 		"a byte array in a map":            map[string]any{"digest": arr},
+		// A KEY, not a value. A slice cannot be a map key, so an array is the only byte
+		// sequence that can reach renderValue through the key path — and the key path does not
+		// go through withholdBinary unless it is told to.
+		"a byte array as a map KEY": map[[len(binarySecret)]byte]string{arr: "digest-keyed"},
 		"an exported struct field":         probe,
 		"a pointer to a struct":            &probe,
 		"a struct inside a list":           []any{probe},

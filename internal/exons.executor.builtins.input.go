@@ -270,6 +270,12 @@ func withholdBinary(val any, depth int) any {
 	// back raw) and at depth 0 by renderValue, which then rendered it as text. Eliding instead
 	// costs an input nested deeper than the bound its content — which renderValue would elide
 	// anyway — and removes the whole depth-misalignment class.
+	//
+	// That same flattening makes exons.input reach this bound at a shallower DATA depth than
+	// exons.var does, since renderValue spends a level on each deref this has already removed. So
+	// a non-binary value behind several pointers can elide here while exons.var renders it whole.
+	// Accepted: over-eliding an exotic shape is the safe direction, and the alternative — not
+	// incrementing on pointers — is what `type P *P; p = &p` turns into a hang.
 	if depth >= inputMaxSweepDepth {
 		return elidedValue
 	}
@@ -330,7 +336,12 @@ func withholdBinary(val any, depth int) any {
 		out := make(map[string]any, rv.Len())
 		iter := rv.MapRange()
 		for iter.Next() {
-			key := renderValue(iter.Key().Interface(), DefaultValueSeparator)
+			// The KEY is swept too. It is the one place a byte sequence can still reach
+			// renderValue without passing through here: a slice cannot be a map key, but a byte
+			// ARRAY can, so map[[16]byte]string — a digest-keyed map — rendered its keys as
+			// `104, 101, …`. Sweeping only values would leave the guarantee stated above
+			// FALSELY COMPLETE, which is the exact failure this function just came from.
+			key := renderValue(withholdBinary(iter.Key().Interface(), depth+1), DefaultValueSeparator)
 			out[key] = withholdBinary(iter.Value().Interface(), depth+1)
 		}
 		return out

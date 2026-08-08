@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.2] - 2026-08-08
+
+Found in re-review of v0.21.1. No API change.
+
+### Fixed
+
+- **v0.21.1's binary guarantee was falsely *complete*: map KEYS were not swept.** A slice cannot be
+  a map key, but a byte **array** can — so `map[[16]byte]string` (a digest-keyed map) rendered its
+  keys as `104, 101, …` while every value was correctly withheld. This is the v0.21.0 mistake at
+  smaller scale, and the reason it was worth another release: a redactor that states an absolute
+  and misses one path is worse than one that states a scope, because the claim is what the next
+  reader trusts instead of re-deriving it.
+
+### Documentation
+
+No behaviour change; two comments overstated what they had fixed.
+
+- `contextWithInputs` claimed to have restored a thread-safety property. What it restored is
+  **agreement** with `Spec.BindInputs`: `deepCopyValue` copies the YAML/JSON shapes exhaustively and
+  returns structs, pointers, `[]byte` and non-string-keyed maps **by reference**. Widening that
+  belongs in `deepCopyValue`, not in two call sites that would then have to agree by memory.
+- `exons.input` reaches its depth bound at a shallower *data* depth than `exons.var`, because the
+  sweep flattens pointers while `renderValue` spends a level on each deref. A non-binary value
+  behind several pointers can therefore elide under one verb and render whole under the other.
+  Accepted and now stated: over-eliding is the safe direction, and not incrementing on pointers is
+  what `type P *P; p = &p` turns into a hang.
+
 ## [0.21.1] - 2026-08-08
 
 Fixes to v0.21.0's `exons.input`, found in review. No API change.

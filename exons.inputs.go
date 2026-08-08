@@ -69,6 +69,13 @@ func (t *Template) contextWithInputs(execCtx *Context) *Context {
 	// from Context.Data(), which deep-copies — so a shallow merge here silently WEAKENED a
 	// thread-safety property the context documents. Spec.BindInputs, the sibling path, deep-copies
 	// caller values already; the two now agree.
+	//
+	// ⚠ "Agree" is the accurate claim, NOT "safe for every shape". deepCopyValue copies the
+	// YAML/JSON shapes exhaustively and returns everything else — a struct, a pointer, a []byte, a
+	// map with non-string keys — BY REFERENCE, as its own comment says. A Go caller binding one of
+	// those to a declared input therefore still shares it live across concurrent renders. That is
+	// a property of deepCopyValue, unchanged here and identical on both paths; widening it belongs
+	// there, not in two call sites that would then have to agree by memory.
 	merged := make(map[string]any, len(binding)+len(t.spec.Inputs))
 	for k, v := range binding {
 		merged[k] = deepCopyValue(v)

@@ -1,7 +1,19 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.21.1
+  version: 0.21.2
+# v0.21.2: The v0.21.1 guarantee was falsely COMPLETE — the map KEY path was not swept. A slice
+# cannot be a map key, but a byte ARRAY can, so map[[16]byte]string rendered its keys as
+# `104, 101, …` while every value was correctly withheld. Found in re-review, and it is the same
+# mistake at smaller scale: a redactor that states an absolute and misses one path is worse than one
+# that states a scope, because the claim is what the next reader trusts. Keys now go through the
+# sweep. Also corrected, no behaviour change: contextWithInputs' comment claimed a thread-safety
+# property was restored, when deepCopyValue returns structs/pointers/[]byte/non-string-keyed maps BY
+# REFERENCE — the two binding paths AGREE, which is the accurate claim, and widening belongs in
+# deepCopyValue; and exons.input's depth bound is reached at a shallower DATA depth than exons.var's
+# because the sweep flattens pointers, so a deeply pointer-nested ordinary value can elide here and
+# render whole there — accepted (over-eliding is the safe direction; not incrementing on pointers is
+# what `type P *P` turns into a hang).
 # v0.21.1: The binary guarantee was not one. withholdBinary swept slices, maps and pointers but
 # had NO reflect.Struct arm, while renderValue has an explicit one that walks exported fields and
 # renders a uint8-element slice as string(rv.Bytes()) — so a Go caller binding the most natural
