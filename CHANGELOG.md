@@ -7,6 +7,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-08-08
+
+A declared input becomes its own word — and, more consequentially, the frontmatter
+`inputs:` block stops being inert.
+
+Until now nothing in `Execute` ever read `Spec.Inputs`, and `InputDef.Default` had no
+application site anywhere in the library: a declared input was a promise to a form
+builder and nothing more. The only way to actually *use* one was `{~exons.var~}`, the
+same verb that reads arbitrary runtime data — which is why no tool could tell a mistyped
+input from a legitimate context variable, and why "this input is declared but never
+referenced" was undecidable no matter how good the analysis.
+
+### Added
+- **`{~exons.input name="x" /~}`** — a reference to a value the *document* declared.
+  `exons.var` is unchanged and is **not** deprecated: it remains the context-variable
+  verb. The defect was that it was *also* the input verb.
+- **Declared inputs are injected under the reserved `input` context root**, with
+  `InputDef.Default` applied wherever the caller bound nothing. So
+  `{~exons.input name="tone"~}` *is* the path `input.tone`, and `eval="input.verbose"` /
+  `in="input.sources"` work with **zero grammar change** to `exons.if` / `exons.for`. A
+  verb with its own private lookup space would have been invisible to control flow — a
+  half-language where you can print an input but cannot branch on it.
+- **`Spec.BindInputs`** (apply declared defaults to caller values, producing the map to
+  place under the reserved key) and **`Spec.ValidateInputBinding`** (enforce `required`,
+  declared `options` membership, and `max_files`) — the pre-render binding contract. This
+  is why `exons.input` **refuses** a `required=` attribute: render time is too late to ask
+  a user for a value, and a `required=` inside an unreached `exons.if` branch would
+  enforce or not depending on data.
+- **`DryRunResult.Inputs []InputReference`** — the sound answer to "which declared inputs
+  does this body reference?", from the parsed AST rather than a source re-scan. A consumer
+  re-scanning source must agree byte-for-byte with this library's lexer, and gets it wrong
+  for hyphenated names, names containing a quote or a backslash, multi-line tags, and
+  tildes inside attribute values. Kept separate from `Variables` on purpose: folding the
+  two together discards exactly the distinction the verb exists to create.
+- **`AttrJoin`, `AttrTz`, `AttrLayout` mirrored into the public constants.** They shipped
+  internally in v0.18.0/v0.20.0 and were never exported, so a caller reading the public
+  package could not spell an attribute the executor accepts.
+
+### Changed
+- **`DryRun`'s `ResolverReference.Registered` is now asked of the registry** instead of
+  hardcoded `true` with the comment "assume registered since it parsed". The parser never
+  consults the resolver registry — any well-formed tag name parses — so an unregistered or
+  typo'd verb was reported as registered, and the one field a caller would use to catch it
+  always said everything was fine.
+- **`Template.Explain` now applies input injection.** It calls the executor directly and
+  so bypassed the `ExecuteWithContext` funnel; without this a document declaring inputs
+  would *explain* differently than it *renders*, which is the worst failure mode there is
+  for a debugging tool, because the discrepancy looks like the bug being investigated.
+
+### Behaviour changes ⚠
+
+Enumerated by tag pattern rather than prose, because that is what a corpus can be swept
+for. Each applies **only** to a document that declares `inputs:`.
+
+| pattern | before | after |
+| --- | --- | --- |
+| `{~exons.var name="input.x"~}` | miss | hit — renders the default, or empty |
+| the same with `onerror="keepraw"` | literal tag text | the value |
+| `eval="input"` | falsy (absent) | **truthy** — a non-empty map |
+| any `exons.var` miss | did-you-mean list | now also contains `"input"` |
+| `TokenCount` | N | N + the rendered defaults |
+
+`data["input"] = "a string"` is **not** affected. Injection no-ops when the reserved root
+already holds a non-map, because `input` is the most idiomatic key name in a prompt
+library and `exons.include` copies its non-reserved attributes into the child data as
+strings — so `{~exons.include template="x" input="y" /~}` would otherwise let a
+*document* reach the failure path.
+
+A declared input with neither a bound value nor a default lands **present and nil**,
+not absent. Every consumer already does the right thing with nil — it renders empty,
+evaluates falsy, and iterates zero times — so an unbound optional multiselect behaves
+sanely with no executor change. The payoff is the equivalence **present ⇔ declared**,
+which is what lets an absent name be reported as the author typo it is.
+
+### Security
+- **`exons.input` withholds byte slices at every depth.** `renderValue` matches a slice on
+  its element *kind* and returns `string(rv.Bytes())` for `uint8` — deliberately, so
+  `json.RawMessage` renders as text. That arm is correct for `exons.var` and catastrophic
+  for an uploaded file: a caller binding the bytes would paste the entire file body into
+  the prompt, by accident rather than by misuse. Dispatch is by value *shape*, not by the
+  declared `type:`, so it fails closed even when an author mislabels an upload. A list of
+  `{name, mime_type, size_bytes}` maps renders as a filename manifest instead.
+- **Declared defaults are deep-copied at injection.** A `*Template` is built to be executed
+  many times, concurrently, and `InputDef.Default` holds YAML-decoded values — aliasing a
+  map or slice default into a live context would share it across renders.
+
+### Known gaps (documented, not fixed here)
+- A resolver's `Validate` is **never invoked by the executor**. `exons.input` therefore
+  routes its attribute checks through one helper that both `Validate` and `Resolve` call,
+  so a refusal cannot be dead code.
+- `Template.Explain` still bypasses **inheritance** resolution, so a template using
+  `extends` explains its own AST rather than the spliced one. Predates this release.
+- `exons.if` / `exons.for` / `exons.switch` fail **unconditionally** on a condition error,
+  a missing collection path, or a non-iterable value: their parse discards the tag
+  attributes, so `onerror=`/`default=` are structurally unreachable on a block tag.
+  Present-as-nil removes the common input-shaped case from that path.
+- `extends` does not merge frontmatter, so a parent's `inputs:` are invisible and the
+  parent's body resolves against the **child's** declarations.
+
 ## [0.20.0] - 2026-08-07
 
 The two halves of v0.19.0's input vocabulary that could not actually be *used*: the

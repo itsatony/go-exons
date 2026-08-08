@@ -164,6 +164,7 @@ The `{~...~}` delimiter was chosen to never collide with prompt content (JSON, X
 | Tag | Example |
 |---|---|
 | Variable | `{~exons.var name="user.name" default="Guest" join=", " /~}` |
+| Input | `{~exons.input name="tone" join=", " /~}` — a value the document **declared** |
 | Conditional | `{~exons.if eval="user.isAdmin"~}...{~exons.else~}...{~/exons.if~}` |
 | Loop | `{~exons.for item="x" index="i" in="items"~}...{~/exons.for~}` |
 | Include | `{~exons.include template="header" /~}` |
@@ -173,12 +174,66 @@ The `{~...~}` delimiter was chosen to never collide with prompt content (JSON, X
 | Skills Catalog | `{~exons.skills_catalog /~}` |
 | Tools Catalog | `{~exons.tools_catalog /~}` |
 | Env | `{~exons.env name="API_KEY" default="none" /~}` |
+| Now | `{~exons.now format="date" tz="Europe/Berlin" /~}` |
 | Extends | `{~exons.extends template="parent"~}` |
 | Block | `{~exons.block name="content"~}...{~/exons.block~}` |
 | Raw | `{~exons.raw~}not parsed{~/exons.raw~}` |
 | Comment | `{~exons.comment~}removed from output{~/exons.comment~}` |
 | Escape | `\{~` produces literal `{~` |
 | Verbatim fence | `{~~ ... ~~}` emits its body byte-for-byte |
+
+### `exons.input` vs `exons.var`
+
+They look alike and are not interchangeable. `exons.var` reads **anything in the
+execution context** — the caller's data, an include's `with=`, a loop's inherited
+scope. `exons.input` reads only what the **document declared** in its frontmatter
+`inputs:` block.
+
+```yaml
+---
+name: summarizer
+description: Summarize text into bullets.
+type: prompt
+subtype: template
+inputs:
+  text:
+    type: text
+  max_bullets:
+    type: number
+    default: 5
+---
+Summarize into at most {~exons.input name="max_bullets" /~} bullets.
+
+{~exons.input name="text" /~}
+```
+
+Declared inputs are injected into the context under the reserved root `input` before
+execution, with each `default:` applied wherever the caller bound nothing. So
+`{~exons.input name="max_bullets"~}` *is* the path `input.max_bullets`, and control
+flow reaches declared inputs with no special syntax:
+
+```
+{~exons.if eval="input.verbose"~}...{~/exons.if~}
+{~exons.for item="s" in="input.sources"~}...{~/exons.for~}
+```
+
+Why the split exists: before it, both were spelled `{~exons.var~}`, so nothing could
+distinguish a mistyped input from a legitimate context variable — which made "this
+declared input is never referenced" undecidable for any tool, however careful. With
+two verbs the question is answerable by construction, and
+`Template.DryRun(...).Inputs` is the surface that answers it.
+
+Three properties worth knowing:
+
+- A declared input that is neither bound nor defaulted is **present and nil**, so it
+  renders empty, evaluates falsy, and iterates zero times. Because *present ⇔
+  declared*, an **absent** name is an author typo, and `exons.input` says so.
+- Bind values with `Spec.BindInputs`, and check them with `Spec.ValidateInputBinding`
+  **before** rendering. That is why `exons.input` refuses a `required=` attribute —
+  render time is too late to ask a user for a value.
+- A value bound to an input is swept for byte slices at every depth and they are
+  withheld, so an uploaded file's body can never reach the prompt by accident. A list
+  of `{name, mime_type, size_bytes}` maps renders as a filename manifest.
 
 ### How a value renders
 

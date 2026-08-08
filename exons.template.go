@@ -50,6 +50,9 @@ func (t *Template) Execute(ctx context.Context, data map[string]any) (string, er
 // The engine reference is injected into the context for nested template support.
 // If the template uses extends (template inheritance), inheritance is resolved before execution.
 func (t *Template) ExecuteWithContext(ctx context.Context, execCtx *Context) (string, error) {
+	// Declared inputs become readable BEFORE anything else runs — see contextWithInputs.
+	execCtx = t.contextWithInputs(execCtx)
+
 	// Inject engine reference into context for nested template resolution
 	if t.engine != nil && execCtx.Engine() == nil {
 		execCtx = execCtx.WithEngine(t.engine)

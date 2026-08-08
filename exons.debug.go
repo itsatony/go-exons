@@ -135,6 +135,15 @@ type DryRunResult struct {
 	// Resolvers lists all resolver invocations found in the template
 	Resolvers []ResolverReference
 
+	// Inputs lists all DECLARED-INPUT references ({~exons.input~}) found in the template.
+	//
+	// This is deliberately separate from Variables. An exons.var reference names an
+	// arbitrary runtime context path and may legitimately resolve to anything the caller
+	// supplies; an exons.input reference names something the DOCUMENT declared, so a
+	// consumer can check it against the frontmatter and be right. Folding the two together
+	// would throw away exactly the distinction the verb exists to create.
+	Inputs []InputReference
+
 	// Includes lists all template includes found
 	Includes []IncludeReference
 
@@ -175,6 +184,26 @@ type ResolverReference struct {
 	Line       int               // Source line number
 	Column     int               // Source column number
 	Registered bool              // Whether resolver is registered
+}
+
+// InputReference represents a {~exons.input~} reference to a declared input.
+//
+// It is the sound answer to "which of this document's declared inputs does its body actually
+// reference?" — sound because it comes from the parsed AST rather than from re-scanning the
+// source. A consumer re-scanning source has to agree byte-for-byte with this library's lexer
+// about how a reference is spelled, and gets it wrong for hyphenated names, names containing
+// a quote or a backslash, tags spanning several lines, and tildes inside attribute values.
+//
+// Note also what CANNOT appear here: a reference inside {~exons.raw~}, {~exons.comment~} or a
+// {~~ ~~} fence. Those spans are consumed at the LEXER, so no tag node is ever built for
+// their contents — the exclusion is structural rather than a rule someone remembered to add.
+type InputReference struct {
+	Name       string // Declared input name, from the name= attribute
+	Default    string // Tag-level default= fallback, if specified
+	Line       int    // Source line number
+	Column     int    // Source column number
+	HasDefault bool   // Whether a tag-level default= was specified
+	Declared   bool   // Whether the name appears in the frontmatter `inputs:` block
 }
 
 // IncludeReference represents a template include in a template.
@@ -280,6 +309,7 @@ func (t *Template) DryRun(ctx context.Context, data map[string]any) *DryRunResul
 		Valid:            true,
 		Variables:        make([]VariableReference, 0),
 		Resolvers:        make([]ResolverReference, 0),
+		Inputs:           make([]InputReference, 0),
 		Includes:         make([]IncludeReference, 0),
 		Conditionals:     make([]ConditionalReference, 0),
 		Loops:            make([]LoopReference, 0),
@@ -412,17 +442,34 @@ func (t *Template) processTagNodeForDryRun(n *internal.TagNode, data map[string]
 			result.Warnings = append(result.Warnings, fmt.Sprintf(dryRunWarnInclude, line, tmplName))
 		}
 
+	case TagNameInput:
+		inputName, _ := n.Attributes.Get(AttrName)
+		result.Inputs = append(result.Inputs, InputReference{
+			Name:       inputName,
+			Default:    n.Attributes.GetDefault(AttrDefault, ""),
+			Line:       line,
+			Column:     col,
+			HasDefault: n.Attributes.Has(AttrDefault),
+			Declared:   t.declaresInput(inputName),
+		})
+
 	case TagNameRaw, TagNameComment:
 		// No action needed for raw/comment
 
 	default:
-		// Custom resolver
+		// Custom resolver.
+		//
+		// Registered is ASKED, not assumed. It used to be hardcoded true with the comment
+		// "assume registered since it parsed" — but the parser never consults the resolver
+		// registry (any well-formed tag name parses), so a typo'd or genuinely unregistered
+		// verb was reported as registered, and the one field a caller would use to catch it
+		// always said everything was fine.
 		result.Resolvers = append(result.Resolvers, ResolverReference{
 			TagName:    n.Name,
 			Attributes: attrs,
 			Line:       line,
 			Column:     col,
-			Registered: true, // Assume registered since it parsed
+			Registered: t.executor != nil && t.executor.HasResolver(n.Name),
 		})
 	}
 }
@@ -614,8 +661,17 @@ func (t *Template) Explain(ctx context.Context, data map[string]any) *ExplainRes
 	// Generate AST representation
 	result.AST = t.formatAST(t.ast, 0)
 
-	// Execute with tracking
-	execCtx := NewContextWithStrategy(data, t.config.errorStrategy)
+	// Execute with tracking.
+	//
+	// contextWithInputs must run here too, not only in ExecuteWithContext: Explain calls the
+	// executor DIRECTLY and so bypasses that funnel. Without this line a document declaring
+	// inputs would EXPLAIN differently than it RENDERS — the worst failure mode there is for
+	// a debugging tool, because the discrepancy looks like the bug being investigated.
+	//
+	// ⚠ Explain still bypasses INHERITANCE resolution, which ExecuteWithContext performs. A
+	// template using `extends` therefore explains its own AST rather than the spliced one.
+	// That predates this release and is left alone deliberately rather than widened here.
+	execCtx := t.contextWithInputs(NewContextWithStrategy(data, t.config.errorStrategy))
 	if t.engine != nil {
 		execCtx = execCtx.WithEngine(t.engine)
 	}

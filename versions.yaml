@@ -1,7 +1,37 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.20.0
+  version: 0.21.0
+# v0.21.0: A declared input becomes its own word. New {~exons.input name="x" /~} verb, and
+# — the real change — frontmatter `inputs:` STOPS BEING INERT: nothing in Execute had ever
+# read Spec.Inputs, and InputDef.Default had no application site anywhere in the library.
+# Declared inputs are now injected into the execution Context under the reserved `input`
+# root with their defaults applied, so {~exons.input name="tone"~} IS the path input.tone and
+# eval="input.verbose" / in="input.sources" work with no grammar change to if/for. exons.var
+# is UNCHANGED and not deprecated — it is the context-variable verb; the defect was that it
+# was ALSO the input verb, which made "declared but never referenced" undecidable no matter
+# how good the analysis. A declared input with neither a bound value nor a default is PRESENT
+# and nil, so an unbound optional list iterates zero times and an unbound boolean is falsy;
+# the payoff is PRESENT ⇔ DECLARED, which makes an absent name a reportable author typo.
+# ⚠ BEHAVIOUR CHANGES, by tag pattern, for a document that declares `inputs:`:
+#   {~exons.var name="input.x"~}   miss → hit (renders the default or empty)
+#   onerror="keepraw" on the above  literal tag text → the value
+#   eval="input"                    falsy → TRUTHY (a non-empty map)
+#   any exons.var miss              did-you-mean lists now include "input"
+#   TokenCount                      shifts by the rendered defaults
+# data["input"] = "a string" is NOT affected: injection no-ops when the reserved root holds a
+# non-map, because that is the most idiomatic key name in a prompt library and an include
+# copies its attributes down as strings, letting a DOCUMENT put one there.
+# Also: exons.input withholds byte slices at every depth (renderValue renders a uint8 slice
+# as text, correct for exons.var and catastrophic for an uploaded file) and renders a list of
+# {name,mime_type,size_bytes} maps as a filename manifest; new Spec.BindInputs /
+# Spec.ValidateInputBinding as the pre-render binding contract (which is why exons.input
+# refuses a `required=` attribute); new DryRunResult.Inputs []InputReference as the sound
+# analysis surface; DryRun's ResolverReference.Registered is now ASKED of the registry rather
+# than hardcoded true; AttrJoin/AttrTz/AttrLayout mirrored into the public constants.
+# Known gaps left alone: a resolver's Validate is never invoked by the executor (exons.input
+# therefore enforces via a helper both Validate and Resolve call), and Template.Explain
+# bypasses inheritance resolution. Consumed by aigentverse MP-LEXEME (DC106-vocative).
 # v0.20.0: The two halves of v0.19.0's input vocabulary that could not be USED.
 # (1) {~exons.var~} rendered every non-scalar with fmt.Sprintf("%v"), so a multiselect
 # or sort value reached the MODEL as `[cost speed]` and an associate value as

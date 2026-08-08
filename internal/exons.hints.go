@@ -6,7 +6,9 @@ const (
 	HintTemplateNotFound = "Hint: Register the template with engine.RegisterTemplate() or engine.MustRegisterTemplate()"
 	HintRefNoResolver    = "Hint: Configure a SpecResolver via Engine.SetSpecResolver() to resolve spec references"
 	HintRefNotFound      = "Hint: Ensure the slug exists in your DocumentResolver and check for typos"
-	HintSeparator        = "\n"
+	HintInputNotDeclared = "Hint: Add the name to the frontmatter `inputs:` block. " +
+		"{~exons.input~} reads ONLY declared inputs — for an arbitrary runtime value, use {~exons.var~}"
+	HintSeparator = "\n"
 )
 
 // ShouldShowHint returns true if the attributes do not contain a default or onerror

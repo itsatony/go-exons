@@ -274,6 +274,28 @@ func (c *Context) readState() (data map[string]any, parent *Context, errorStrat 
 	return c.data, c.parent, c.errorStrat, c.engine, c.depth, c.specResolver, c.refDepth, c.refChain
 }
 
+// withData returns a new context carrying the given data map, leaving every other field —
+// parent, error strategy, engine, depth, resolver, reference tracking — as it was.
+//
+// The caller owns the map it passes and must not have aliased it from anywhere the context
+// can reach. This exists so declared-input injection can replace the direct data without
+// mutating the caller's map (NewContext does NOT copy, so Set writes straight into it) and
+// without going through Child, which would move the current context into the parent slot and
+// leave Keys() — the "did you mean?" source — reporting one key.
+func (c *Context) withData(data map[string]any) *Context {
+	_, parent, errStrat, eng, depth, specRes, refD, refC := c.readState()
+	return &Context{
+		data:         data,
+		parent:       parent,
+		errorStrat:   errStrat,
+		engine:       eng,
+		depth:        depth,
+		specResolver: specRes,
+		refDepth:     refD,
+		refChain:     refC,
+	}
+}
+
 // WithEngine returns a new context with the given engine reference.
 // This is typically called by the engine when starting template execution.
 // The returned context has a deep copy of the data map for thread safety.

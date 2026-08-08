@@ -35,6 +35,7 @@ const (
 	TagNameMessage     = "exons.message"     // Conversation message for chat API
 	TagNameRef         = "exons.ref"         // Spec reference resolver
 	TagNameNow         = "exons.now"         // Built-in date/time OUTPUT tag
+	TagNameInput       = "exons.input"       // Declared-input reference (frontmatter `inputs:`)
 )
 
 // YAML frontmatter constants
@@ -82,6 +83,12 @@ const (
 	AttrRequired = "required" // Required flag for env resolver
 	AttrSlug     = "slug"     // Spec slug for reference
 	AttrVersion  = "version"  // Spec version for reference
+	// The three below shipped internally in v0.18.0/v0.20.0 and were never mirrored here.
+	// Two divergent attribute vocabularies is the failure mode: a caller reading the public
+	// package cannot spell an attribute the executor accepts. MUST match internal.
+	AttrTz     = "tz"     // {~exons.now~} IANA timezone
+	AttrLayout = "layout" // {~exons.now~} raw Go layout escape hatch
+	AttrJoin   = "join"   // Separator between the elements of a list value
 )
 
 // Boolean attribute values
@@ -379,6 +386,11 @@ const (
 // Error format strings for type validation
 const (
 	ErrFmtTypeMismatch = "expected %s, got %s"
+
+	// Input-binding violations reported by Spec.ValidateInputBinding.
+	ErrFmtInputRequired     = "input %q is required but no value was bound"
+	ErrFmtInputNotAnOption  = "input %q: %q is not one of the declared options"
+	ErrFmtInputTooManyFiles = "input %q: %d files bound but at most %d are allowed"
 )
 
 // Error format string constants

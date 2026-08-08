@@ -63,6 +63,13 @@ func (e *Executor) HasFunc(name string) bool {
 	return e.funcs.Has(name)
 }
 
+// HasResolver reports whether a tag resolver is registered under the given tag name.
+// This is what the executor itself consults before dispatching a tag, so a static analyser
+// asking the same question gets the same answer instead of assuming.
+func (e *Executor) HasResolver(tagName string) bool {
+	return e.registry.Has(tagName)
+}
+
 // ListFuncs returns all registered function names.
 func (e *Executor) ListFuncs() []string {
 	return e.funcs.List()

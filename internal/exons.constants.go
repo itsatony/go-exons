@@ -166,7 +166,8 @@ const (
 	TagNameRef           = "exons.ref"
 	TagNameSkillsCatalog = "exons.skills_catalog"
 	TagNameToolsCatalog  = "exons.tools_catalog"
-	TagNameNow           = "exons.now" // Built-in date/time OUTPUT tag
+	TagNameNow           = "exons.now"   // Built-in date/time OUTPUT tag
+	TagNameInput         = "exons.input" // Declared-input reference (frontmatter `inputs:`)
 	// TagNameMessage is defined separately in the message tag constants section
 )
 
@@ -190,7 +191,25 @@ const (
 	AttrFormat   = "format" // {~exons.now~} named format
 	AttrTz       = "tz"     // {~exons.now~} IANA timezone
 	AttrLayout   = "layout" // {~exons.now~} raw Go layout escape hatch
-	AttrJoin     = "join"   // {~exons.var~} separator between a list value's elements
+	AttrJoin     = "join"   // Separator between the elements of a list value
+)
+
+// PathSeparator separates the segments of a dot-notation context path.
+// MUST match exons.PathSeparator.
+const PathSeparator = "."
+
+// ContextKeyInput is the reserved execution-context root under which a template's DECLARED
+// inputs are injected before execution, so {~exons.input name="tone"~} is exactly the context
+// path "input.tone" and eval="input.verbose" / in="input.sources" need no grammar change.
+// MUST match exons.ContextKeyInput.
+const ContextKeyInput = "input"
+
+// Error messages for the exons.input resolver
+const (
+	ErrMsgInputNotDeclared  = "input is not declared in the frontmatter `inputs:` block"
+	ErrMsgInputRequiredAttr = "the 'required' attribute is not accepted on exons.input — " +
+		"declare `required: true` on the input in the frontmatter instead, and enforce it " +
+		"before rendering (render time is too late to ask a user for a value)"
 )
 
 // Boolean attribute values
