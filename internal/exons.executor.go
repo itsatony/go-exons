@@ -162,7 +162,8 @@ func (e *Executor) executeConditional(ctx context.Context, cond *ConditionalNode
 		// Evaluate the condition expression
 		result, err := e.evaluateCondition(ctx, branch.Condition, execCtx)
 		if err != nil {
-			return "", NewExecutorErrorWithCause(ErrMsgCondExprFailed, TagNameIf, branch.Pos, err)
+			return e.handleTagError(conditionalSite(cond, branch), execCtx,
+				NewExecutorErrorWithCause(ErrMsgCondExprFailed, TagNameIf, branch.Pos, err))
 		}
 
 		if result {
@@ -191,13 +192,15 @@ func (e *Executor) executeFor(ctx context.Context, forNode *ForNode, execCtx Con
 	// Get the collection to iterate over
 	collection, found := execCtx.Get(forNode.Source)
 	if !found {
-		return "", NewExecutorError(ErrMsgForCollectionPath, TagNameFor, forNode.Pos())
+		return e.handleTagError(forSite(forNode), execCtx,
+			NewExecutorError(ErrMsgForCollectionPath, TagNameFor, forNode.Pos()))
 	}
 
 	// Convert to slice
 	items, err := toIterableSlice(collection)
 	if err != nil {
-		return "", NewExecutorErrorWithCause(ErrMsgForNotIterable, TagNameFor, forNode.Pos(), err)
+		return e.handleTagError(forSite(forNode), execCtx,
+			NewExecutorErrorWithCause(ErrMsgForNotIterable, TagNameFor, forNode.Pos(), err))
 	}
 
 	// Determine iteration limit
@@ -215,7 +218,8 @@ func (e *Executor) executeFor(ctx context.Context, forNode *ForNode, execCtx Con
 	// Check if context supports child creation
 	childCreator, canCreateChild := execCtx.(ChildContextCreator)
 	if !canCreateChild {
-		return "", NewExecutorError(ErrMsgForContextNoChild, TagNameFor, forNode.Pos())
+		return e.handleTagError(forSite(forNode), execCtx,
+			NewExecutorError(ErrMsgForContextNoChild, TagNameFor, forNode.Pos()))
 	}
 
 	// Iterate and execute children for each item
@@ -235,7 +239,8 @@ func (e *Executor) executeFor(ctx context.Context, forNode *ForNode, execCtx Con
 		childCtxInterface := childCreator.Child(childData)
 		childCtx, ok := childCtxInterface.(ContextAccessor)
 		if !ok {
-			return "", NewExecutorError(ErrMsgForContextNoChild, TagNameFor, forNode.Pos())
+			return e.handleTagError(forSite(forNode), execCtx,
+				NewExecutorError(ErrMsgForContextNoChild, TagNameFor, forNode.Pos()))
 		}
 
 		// Execute children with child context
@@ -258,7 +263,8 @@ func (e *Executor) executeSwitch(ctx context.Context, switchNode *SwitchNode, ex
 	// Evaluate the switch expression to get the value to compare against
 	switchValue, err := EvaluateExpressionWithContext(ctx, switchNode.Expression, e.funcs, execCtx)
 	if err != nil {
-		return "", NewExecutorErrorWithCause(ErrMsgCondExprFailed, TagNameSwitch, switchNode.Pos(), err)
+		return e.handleTagError(switchSite(switchNode), execCtx,
+			NewExecutorErrorWithCause(ErrMsgCondExprFailed, TagNameSwitch, switchNode.Pos(), err))
 	}
 
 	// Convert switch value to string for comparison
@@ -279,7 +285,8 @@ func (e *Executor) executeSwitch(ctx context.Context, switchNode *SwitchNode, ex
 			// Boolean expression evaluation
 			result, evalErr := e.evaluateCondition(ctx, caseNode.Eval, execCtx)
 			if evalErr != nil {
-				return "", NewExecutorErrorWithCause(ErrMsgCondExprFailed, TagNameCase, caseNode.Pos, evalErr)
+				return e.handleTagError(caseSite(switchNode, caseNode), execCtx,
+					NewExecutorErrorWithCause(ErrMsgCondExprFailed, TagNameCase, caseNode.Pos, evalErr))
 			}
 			matched = result
 		}
@@ -415,13 +422,25 @@ func (e *Executor) executeTag(ctx context.Context, tag *TagNode, execCtx Context
 	// Look up resolver
 	resolver, ok := e.registry.Get(tag.Name)
 	if !ok {
-		return e.handleTagError(tag, execCtx, NewExecutorError(ErrMsgUnknownTag, tag.Name, tag.Pos()))
+		return e.handleTagError(tagSite(tag), execCtx, NewExecutorError(ErrMsgUnknownTag, tag.Name, tag.Pos()))
+	}
+
+	// Check the resolver's own attribute contract before invoking it.
+	//
+	// Until v0.24.0 Validate was never called by the executor, so a refusal expressed only
+	// there was dead code and Engine.Validate (an opt-in lint) was STRICTER than the renderer.
+	// Four of the five built-ins with a meaningful Validate already duplicated the check into
+	// Resolve; exons.message did not, and rendered a message marker carrying an empty or
+	// unrecognised role straight into ExecuteAndExtractMessages. Routing the refusal through
+	// the funnel keeps it governable by onerror= rather than making it an unconditional stop.
+	if err := resolver.Validate(tag.Attributes); err != nil {
+		return e.handleTagError(tagSite(tag), execCtx, NewExecutorErrorWithCause(ErrMsgResolverFailed, tag.Name, tag.Pos(), err))
 	}
 
 	// Execute resolver
 	result, err := resolver.Resolve(ctx, execCtx, tag.Attributes)
 	if err != nil {
-		return e.handleTagError(tag, execCtx, NewExecutorErrorWithCause(ErrMsgResolverFailed, tag.Name, tag.Pos(), err))
+		return e.handleTagError(tagSite(tag), execCtx, NewExecutorErrorWithCause(ErrMsgResolverFailed, tag.Name, tag.Pos(), err))
 	}
 
 	// For block tags with children, process children
@@ -445,13 +464,85 @@ func (e *Executor) executeTag(ctx context.Context, tag *TagNode, execCtx Context
 	return result, nil
 }
 
-// handleTagError applies the appropriate error strategy for a tag execution failure.
-func (e *Executor) handleTagError(tag *TagNode, execCtx ContextAccessor, err error) (string, error) {
+// errorSite is everything the error funnel needs to know about the construct that failed.
+//
+// It exists so that ONE funnel serves both node shapes. Before v0.24.0 handleTagError took a
+// *TagNode, which is why exons.if / exons.for / exons.switch could not reach it at all and
+// their failures were unconditionally fatal — the attributes carrying onerror=/default= were
+// parsed, handed to the block parse function, and dropped on the floor. Two implementations of
+// the error strategy would have been the easier change and the wrong one.
+type errorSite struct {
+	// Name is the tag name used for logging.
+	Name string
+	// RawSource is the construct's original source, consulted only by keepraw.
+	RawSource string
+	// attrs are consulted IN ORDER and the first map that has the key wins. A conditional
+	// branch or a switch case supplies its own attributes first and the enclosing construct's
+	// second, so onerror= on an individual elseif overrides one on the exons.if while an
+	// exons.if with no branch-level declaration still governs every branch.
+	attrs []Attributes
+}
+
+// tagSite builds an errorSite for an ordinary tag node.
+func tagSite(tag *TagNode) errorSite {
+	return errorSite{Name: tag.Name, RawSource: tag.RawSource, attrs: []Attributes{tag.Attributes}}
+}
+
+// conditionalSite builds an errorSite for a failing conditional branch. The branch's own
+// attributes are consulted before the enclosing exons.if's.
+func conditionalSite(cond *ConditionalNode, branch ConditionalBranch) errorSite {
+	return errorSite{
+		Name:      TagNameIf,
+		RawSource: cond.RawSource,
+		attrs:     []Attributes{branch.Attributes, cond.Attributes},
+	}
+}
+
+// forSite builds an errorSite for a failing for loop.
+func forSite(forNode *ForNode) errorSite {
+	return errorSite{
+		Name:      TagNameFor,
+		RawSource: forNode.RawSource,
+		attrs:     []Attributes{forNode.Attributes},
+	}
+}
+
+// switchSite builds an errorSite for a failing switch dispatch expression.
+func switchSite(switchNode *SwitchNode) errorSite {
+	return errorSite{
+		Name:      TagNameSwitch,
+		RawSource: switchNode.RawSource,
+		attrs:     []Attributes{switchNode.Attributes},
+	}
+}
+
+// caseSite builds an errorSite for a failing exons.case eval=. The case's own attributes are
+// consulted before the enclosing exons.switch's.
+func caseSite(switchNode *SwitchNode, caseNode SwitchCase) errorSite {
+	return errorSite{
+		Name:      TagNameCase,
+		RawSource: switchNode.RawSource,
+		attrs:     []Attributes{caseNode.Attributes, switchNode.Attributes},
+	}
+}
+
+// attr returns the first value found for key across the site's attribute maps.
+func (s errorSite) attr(key string) (string, bool) {
+	for _, a := range s.attrs {
+		if v, ok := a.Get(key); ok {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+// handleTagError applies the appropriate error strategy for an execution failure.
+func (e *Executor) handleTagError(site errorSite, execCtx ContextAccessor, err error) (string, error) {
 	// Determine the error strategy to use
-	strategy := e.getErrorStrategy(tag, execCtx)
+	strategy := e.getErrorStrategy(site, execCtx)
 
 	e.logger.Debug(LogMsgErrorStrategyApplied,
-		slog.String(LogFieldTag, tag.Name),
+		slog.String(LogFieldTag, site.Name),
 		slog.String(LogFieldStrategy, ErrorStrategy(strategy).String()),
 		slog.String(LogFieldErrorMsg, err.Error()))
 
@@ -462,7 +553,7 @@ func (e *Executor) handleTagError(tag *TagNode, execCtx ContextAccessor, err err
 
 	case ErrorStrategyDefault:
 		// Use the default attribute value if available
-		if defaultVal, hasDefault := tag.Attributes.Get(AttrDefault); hasDefault {
+		if defaultVal, hasDefault := site.attr(AttrDefault); hasDefault {
 			return defaultVal, nil
 		}
 		// No default specified - return empty string
@@ -474,8 +565,8 @@ func (e *Executor) handleTagError(tag *TagNode, execCtx ContextAccessor, err err
 
 	case ErrorStrategyKeepRaw:
 		// Keep the original tag source
-		if tag.RawSource != "" {
-			return tag.RawSource, nil
+		if site.RawSource != "" {
+			return site.RawSource, nil
 		}
 		// Fallback to empty if no raw source captured
 		return "", nil
@@ -483,7 +574,7 @@ func (e *Executor) handleTagError(tag *TagNode, execCtx ContextAccessor, err err
 	case ErrorStrategyLog:
 		// Log the error and continue with empty string
 		e.logger.Warn(LogMsgErrorLogged,
-			slog.String(LogFieldTag, tag.Name),
+			slog.String(LogFieldTag, site.Name),
 			slog.Any("error", err))
 		return "", nil
 
@@ -493,11 +584,11 @@ func (e *Executor) handleTagError(tag *TagNode, execCtx ContextAccessor, err err
 	}
 }
 
-// getErrorStrategy determines which error strategy to use for a tag.
+// getErrorStrategy determines which error strategy to use for a failing construct.
 // Priority: per-tag onerror attribute > context default > throw
-func (e *Executor) getErrorStrategy(tag *TagNode, execCtx ContextAccessor) int {
+func (e *Executor) getErrorStrategy(site errorSite, execCtx ContextAccessor) int {
 	// Check for per-tag onerror attribute
-	if onErrorStr, hasOnError := tag.Attributes.Get(AttrOnError); hasOnError {
+	if onErrorStr, hasOnError := site.attr(AttrOnError); hasOnError {
 		return int(ParseErrorStrategy(onErrorStr))
 	}
 

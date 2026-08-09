@@ -17,8 +17,16 @@ type Resolver interface {
 	Resolve(ctx context.Context, execCtx *Context, attrs Attributes) (string, error)
 
 	// Validate checks if the provided attributes are valid for this resolver.
-	// Called during parsing to catch errors early.
 	// Return nil if attributes are valid, or an error describing the issue.
+	//
+	// Called by Engine.Validate (the opt-in lint) AND, since v0.24.0, by the executor
+	// immediately before Resolve. Until then it was invoked only by the lint, which made a
+	// refusal expressed solely here dead code on every render — and made the lint stricter
+	// than the renderer, so a document Engine.Validate rejected would render anyway.
+	//
+	// A refusal is routed through the tag's error strategy, so onerror= governs it rather
+	// than it being an unconditional stop. Keep implementations cheap: this now runs once per
+	// tag per render, including once per iteration inside an exons.for body.
 	Validate(attrs Attributes) error
 }
 

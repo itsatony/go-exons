@@ -226,6 +226,14 @@ func (a Attributes) String() string {
 type ConditionalNode struct {
 	pos      Position
 	Branches []ConditionalBranch
+	// Attributes is the full attribute map of the opening {~exons.if~} tag, retained so the
+	// executor can reach onerror=/default= through the same funnel a TagNode uses. Before
+	// v0.24.0 the parse dropped it, which made the error strategy structurally unreachable
+	// on a block tag. Set by the parser after construction; may be nil.
+	Attributes Attributes
+	// RawSource is the original source of the whole construct, opening tag through closing
+	// tag, required by the keepraw error strategy.
+	RawSource string
 }
 
 // ConditionalBranch represents a single branch in a conditional
@@ -234,6 +242,9 @@ type ConditionalBranch struct {
 	Children  []Node // Content to render if condition is true
 	IsElse    bool   // True for the final else branch
 	Pos       Position
+	// Attributes is this branch's own tag attributes, so an onerror= on an individual
+	// elseif is honoured. Falls back to the ConditionalNode's when it declares none.
+	Attributes Attributes
 }
 
 // Type returns NodeTypeConditional
@@ -287,6 +298,11 @@ type ForNode struct {
 	Source   string // Path to collection to iterate (required)
 	Limit    int    // Max iterations (0 = use engine default)
 	Children []Node // Loop body
+	// Attributes is the full attribute map of the opening {~exons.for~} tag. See
+	// ConditionalNode.Attributes for why it is retained. Set by the parser; may be nil.
+	Attributes Attributes
+	// RawSource is the original source of the whole construct, for keepraw.
+	RawSource string
 }
 
 // Type returns NodeTypeFor
@@ -332,6 +348,11 @@ type SwitchNode struct {
 	Expression string       // The expression to switch on
 	Cases      []SwitchCase // Case branches
 	Default    *SwitchCase  // Optional default case (nil if none)
+	// Attributes is the full attribute map of the opening {~exons.switch~} tag. See
+	// ConditionalNode.Attributes for why it is retained. Set by the parser; may be nil.
+	Attributes Attributes
+	// RawSource is the original source of the whole construct, for keepraw.
+	RawSource string
 }
 
 // SwitchCase represents a single case in a switch
@@ -341,6 +362,9 @@ type SwitchCase struct {
 	Children  []Node   // Content to render if matched
 	IsDefault bool     // True for the default case
 	Pos       Position // Position of this case
+	// Attributes is this case's own tag attributes, so an onerror= on an individual
+	// exons.case is honoured. Falls back to the SwitchNode's when it declares none.
+	Attributes Attributes
 }
 
 // Type returns NodeTypeSwitch

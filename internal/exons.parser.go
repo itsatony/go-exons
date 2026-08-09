@@ -48,6 +48,28 @@ func (p *Parser) extractRawSource(startOffset, endOffset int) string {
 	return p.source[startOffset:endOffset]
 }
 
+// rawSourceThroughLastToken captures a construct's original source from startOffset through the
+// token the parser has most recently consumed.
+//
+// The three block constructs (if/for/switch) consume their closing sequence inside a body
+// helper rather than in the function that builds the node, so — unlike an ordinary block tag,
+// which still has closeTok in hand — they cannot compute the end offset inline. After the body
+// helper returns, the last consumed token IS the closing sequence's CLOSE_TAG.
+//
+// It fails CLOSED: if the last token is not a CLOSE_TAG the shape is not what this assumes, and
+// an empty string degrades keepraw to the same fallback an uncaptured tag already takes, rather
+// than emitting a wrong slice of the document.
+func (p *Parser) rawSourceThroughLastToken(startOffset int) string {
+	if p.pos == 0 {
+		return StringValueEmpty
+	}
+	last := p.tokens[p.pos-1]
+	if last.Type != TokenTypeCloseTag {
+		return StringValueEmpty
+	}
+	return p.extractRawSource(startOffset, last.Position.Offset+len(p.config.CloseDelim))
+}
+
 // Parse produces the AST root node from the token stream
 func (p *Parser) Parse() (*RootNode, error) {
 	p.logger.Debug(LogMsgParserStart)
@@ -241,6 +263,9 @@ func (p *Parser) parseConditional(ifAttrs Attributes, pos Position) (*Conditiona
 		return nil, err
 	}
 
+	// The first branch declares no attributes of its own — it IS the exons.if tag, whose
+	// attributes the ConditionalNode carries. Leaving this nil lets the error funnel fall
+	// through to them rather than storing the same map twice.
 	branches = append(branches, NewConditionalBranch(condition, children, false, pos))
 
 	// Process subsequent branches (elseif, else)
@@ -257,6 +282,11 @@ func (p *Parser) parseConditional(ifAttrs Attributes, pos Position) (*Conditiona
 			// branch expression at branch.Pos, so a runtime error in an elseif pointed at a line
 			// the author did not write it on.
 			branchPos := nextPos
+			// This branch's OWN attributes, captured for exactly the same reason and with
+			// exactly the same discipline as branchPos above: the call below overwrites
+			// nextAttrs with the next boundary tag's. Retained so an onerror= on an
+			// individual elseif is honoured.
+			branchAttrs := nextAttrs
 
 			// elseif needs an eval attribute
 			condition, ok := nextAttrs.Get(AttrEval)
@@ -269,12 +299,17 @@ func (p *Parser) parseConditional(ifAttrs Attributes, pos Position) (*Conditiona
 				return nil, err
 			}
 
-			branches = append(branches, NewConditionalBranch(condition, children, false, branchPos))
+			branch := NewConditionalBranch(condition, children, false, branchPos)
+			branch.Attributes = branchAttrs
+			branches = append(branches, branch)
 
 		case TagNameElse:
 			// The else tag's own position — see the elseif branch above for why this cannot be
 			// read after parseConditionalBranch has run.
 			branchPos := nextPos
+			// The else tag's own attributes — see the elseif branch above for why this
+			// cannot be read after parseConditionalBranch has run.
+			branchAttrs := nextAttrs
 
 			// else cannot have an eval attribute
 			if nextAttrs.Has(AttrEval) {
@@ -291,7 +326,9 @@ func (p *Parser) parseConditional(ifAttrs Attributes, pos Position) (*Conditiona
 				return nil, p.newConditionError(ErrMsgCondElseNotLast, nextPos)
 			}
 
-			branches = append(branches, NewConditionalBranch("", children, true, branchPos))
+			branch := NewConditionalBranch("", children, true, branchPos)
+			branch.Attributes = branchAttrs
+			branches = append(branches, branch)
 
 		default:
 			// Unexpected tag inside conditional
@@ -299,7 +336,10 @@ func (p *Parser) parseConditional(ifAttrs Attributes, pos Position) (*Conditiona
 		}
 	}
 
-	return NewConditionalNode(branches, pos), nil
+	node := NewConditionalNode(branches, pos)
+	node.Attributes = ifAttrs
+	node.RawSource = p.rawSourceThroughLastToken(pos.Offset)
+	return node, nil
 }
 
 // parseConditionalBranch parses nodes until we hit elseif, else, or the closing if tag
@@ -419,7 +459,10 @@ func (p *Parser) parseFor(attrs Attributes, pos Position) (*ForNode, error) {
 		return nil, err
 	}
 
-	return NewForNode(itemVar, indexVar, source, limit, children, pos), nil
+	node := NewForNode(itemVar, indexVar, source, limit, children, pos)
+	node.Attributes = attrs
+	node.RawSource = p.rawSourceThroughLastToken(pos.Offset)
+	return node, nil
 }
 
 // parseForBody parses the body of a for loop until the closing tag
@@ -503,7 +546,10 @@ func (p *Parser) parseSwitch(attrs Attributes, pos Position) (*SwitchNode, error
 					}
 					p.advance() // CLOSE_TAG
 
-					return NewSwitchNode(expression, cases, defaultCase, pos), nil
+					node := NewSwitchNode(expression, cases, defaultCase, pos)
+					node.Attributes = attrs
+					node.RawSource = p.rawSourceThroughLastToken(pos.Offset)
+					return node, nil
 				}
 			}
 		}
@@ -596,7 +642,9 @@ func (p *Parser) parseSwitchCase() (SwitchCase, bool, error) {
 		return SwitchCase{}, false, err
 	}
 
-	return NewSwitchCase(value, eval, children, isDefault, casePos), isDefault, nil
+	caseNode := NewSwitchCase(value, eval, children, isDefault, casePos)
+	caseNode.Attributes = attrs
+	return caseNode, isDefault, nil
 }
 
 // parseSwitchCaseBody parses the body of a case until its closing tag
