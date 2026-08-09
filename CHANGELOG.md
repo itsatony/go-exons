@@ -7,6 +7,135 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-08-09
+
+DC13-entail — the executor honours what the document declared.
+
+Releases 0.19.0 → 0.23.0 built the typed-input format. **The format was finished; the executor was
+not.** v0.21.0 shipped a *"Known gaps (documented, not fixed here)"* block with four entries, and
+every one of them was the same defect: **a value is computed, and then dropped on the floor between
+the phase that computed it and the phase that needs it.** Attributes parsed and discarded. A parent
+`Spec` loaded and never consulted. A refusal written and never invoked. An error stored on a struct
+field that exactly one caller reads. Two more of the same class were found while planning and had
+not been recorded anywhere. All six are fixed here.
+
+*entail*, v. — (law) to settle property on a line of heirs; (general) to have as a necessary
+consequence. Both halves of this cycle.
+
+### Changed
+
+Three behaviour changes, each deliberate and each stated rather than bulleted.
+
+- **A document that declares `{~exons.extends~}` with no engine to resolve it is now an error, not a
+  silent success.** The extends builtin was a no-op returning `nil` in that configuration, so the
+  child rendered **its own body alone** and reported success — a *different document than the author
+  wrote, presented as the document they wrote*. A discarded `inheritanceErr` did the same thing for
+  an unreadable inheritance declaration. `DryRun` reported both; `ExecuteWithContext` swallowed both.
+  They now surface as `ErrMsgInheritanceNoEngine` / `ErrMsgInheritanceUnreadable`, tagged
+  `exons.extends`. A caller relying on extends-without-an-engine being tolerated will now see the
+  error it was always entitled to.
+
+- **A resolver's `Validate` is now invoked by the executor.** It never was, so a refusal expressed
+  only in `Validate` was dead code and the attribute check a resolver author wrote was silently
+  never run. A resolver that refuses attributes it previously merely mishandled will now refuse them
+  at render. The refusal is reported as `ErrMsgResolverRefused` — distinct from
+  `ErrMsgResolverFailed`, because one names a fault in the resolver and the other names a fault in
+  the document, and an author sent to the wrong one has no path forward.
+
+- **`exons.if` / `exons.for` / `exons.switch` failures now obey the CONTEXT's error strategy, not
+  only `onerror=`.** The headline half of this is the fix — their parse discarded the tag attributes,
+  so `onerror=` and `default=` were *structurally unreachable* on a block construct and every such
+  failure was unconditionally fatal. But the funnel falls back to the configured strategy when no
+  `onerror=` is present, which means under a `remove` renderer a mistyped `in="inpt.sources"` now
+  renders an empty loop where it used to raise a typed error. **Kept deliberately.** The alternative
+  needs a site-kind discriminator inside `getErrorStrategy`, reintroducing the two-shapes fork this
+  cycle exists to remove; and a renderer that selects `remove` has explicitly asked for lenient
+  rendering. A consumer wanting the loudness back selects a stricter strategy for that surface.
+  Note for downstream: aigentverse's `renderTemplate` uses `Remove`.
+
+### Added
+
+- **`extends` merges the declaration chain.** A child now inherits its ancestors' `inputs:` with
+  **child-wins** precedence at every level, so a parent's body resolves against the declarations
+  *the parent made* rather than only the ones the child happens to repeat. `{~exons.input~}` defaults
+  from a parent apply; a child overriding one input no longer erases the rest.
+
+- **`Template.DeclaredInputs() (map[string]*InputDef, error)` and
+  `Template.DeclaredInputKeys() ([]string, error)`** — the merged, inheritance-aware input contract
+  a consumer can project to a form or a wire shape. New API, not a signature break: neither ever
+  shipped in an error-less shape. **The error is not optional to check.** Both previously returned a
+  well-formed but *partial* contract for a chain the executor refuses — a cycle, a missing parent, an
+  over-deep chain — i.e. a complete-looking contract for a document `Execute` rejects and `DryRun`
+  calls invalid: a third view of one template agreeing with neither of the other two. The rule now
+  pinned by test is **"the walk errors in exactly the cases where `ExecuteWithContext` refuses to
+  render"**, with one named carve-out (a `TemplateExecutor` that is not a `templateProvider` can
+  resolve the chain but not read its specs → `ErrMsgInheritanceSpecsUnavailable`). The partial map is
+  still returned alongside the error — *displaying* what is known is fine, *publishing it as the
+  document's contract* is not. Returned `*InputDef`s are deep copies: the accessors used to hand out
+  live pointers into a registered **parent's** parsed spec, so a caller normalising a default in
+  place could corrupt every future and concurrent render of a template it never named.
+
+- **`onerror=` is validated on block constructs and on individual `elseif` / `case` branches.**
+  `Engine.Validate` checked `TagNode` alone — correct while a block construct's `onerror=` was inert,
+  a gap the moment this release made it honoured. The failure was silent and **inverted**: resolution
+  stops as soon as the key is present, and an unrecognised value parses to `throw`, so
+  `onerror="remov"` **hard-fails under a renderer configured never to hard-fail**, with the typo as
+  the only evidence. One shared `validateOnErrorAttr` now covers the tag, all three constructs, and
+  each branch at its own position.
+
+- **`docs/template-syntax.md` gains a normative *Error recourse* section.** `onerror=`, `default=`
+  and `keepraw` were specified **nowhere** outside CHANGELOG prose — while this cycle extended them
+  to a whole new class of tags. The section fixes the vocabulary, the resolution order (tag, then
+  context), the full list of governed failures, branch-level `onerror=`, that a resolver `Validate`
+  refusal is governed too, and that **`keepraw` on a block construct emits the ENTIRE construct**
+  (one string is returned for the whole thing, so a per-branch slice has nothing to splice into).
+
+- **`examples/09-typed-inputs`** — a runnable example of the format's headline feature: declared
+  inputs, defaults, an `extends` chain, and the merged contract read back through `DeclaredInputs`.
+  Writing it found a gap, which is the point of writing it.
+
+### Fixed
+
+- **A parent with frontmatter spliced `---\n…\n---` into the child's output as literal text.** The
+  inheritance resolver lexed the parent's **raw source including frontmatter**. Unrecorded before
+  this cycle, and on the same code path as the merge above: fixing the merge without fixing the
+  splice produces a document whose inputs finally bind and whose body now carries a stray YAML block.
+- **`Template.Explain` bypassed inheritance resolution**, so a document *explained* differently than
+  it *rendered* — it explained its own AST rather than the spliced one. All four reader sites now
+  route through one resolution helper.
+
+### Superseded
+
+The four entries in v0.21.0's *"Known gaps (documented, not fixed here)"* block are resolved by this
+release and should be read as closed: the uninvoked resolver `Validate`, `Template.Explain` bypassing
+inheritance, block-tag failures being unconditionally fatal, and `extends` not merging frontmatter.
+
+### The lesson
+
+**~100 inheritance tests existed and not one covered the interaction between inheritance and
+frontmatter.** Every feature of `extends` was tested in isolation; the seam where it meets the
+frontmatter parser — which is where five of six defects lived — was tested nowhere. *Feature coverage
+is not interaction coverage.*
+
+The review pass then reproduced that lesson on its author. Decision 2 above introduced an
+equivalence rule and three tests to pin it; **all three passed while the rule was false at two
+boundaries**, one fail-open and one fail-closed. `newTemplateWithConfig` nils `inheritanceInfo`
+whenever extraction failed, so testing the info before the error made the error branch unreachable
+dead code — returning a clean contract with a **nil error** for a document `Execute` refuses, which
+is strictly worse than the gap being closed, because the new signature invites a caller to trust
+*nil error ⇒ safe to publish*. Two `if`s, and their order was the whole property. In the other
+direction, `ResolveInheritance` refuses only when a parent is *demanded* past the bound and so
+resolves `maxDepth+1` parents; bounding the new walk at `maxDepth` reported `DepthExceeded` for a
+chain the executor renders happily — **reusing the resolver's `maxDepth` VALUE is not reusing its
+RULE**, and the comment claiming "bounds are the resolver's, not a second set" was written before the
+code disagreed with it. Both fixed, each pinned by a test verified RED against the exact defect.
+
+**A test suite for a claimed equivalence must be written from the boundaries of the claim, not from
+the cases that motivated it.** And separately, from repair 4 above: **fixing a defect can create
+one** — nothing about the `onerror=` lint changed; it became wrong because the thing it declined to
+check stopped being inert. When a cycle makes an inert construct meaningful, every tool that was
+correct to ignore it becomes a candidate defect.
+
 ## [0.23.0] - 2026-08-09
 
 `DryRunResult.Errors` becomes the analysis-completeness channel, and `main` gets a clean release

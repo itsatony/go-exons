@@ -1,7 +1,62 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.23.0
+  version: 0.24.0
+# v0.24.0 (DC13-entail): the EXECUTOR honours what the document declared. 0.19.0-0.23.0 finished the
+# typed-input FORMAT; the executor was not finished, and v0.21.0's "Known gaps" block was four
+# instances of ONE defect — a value is computed, then dropped on the floor between the phase that
+# computed it and the phase that needs it. Attributes parsed and discarded; a parent Spec loaded and
+# never consulted; a refusal written and never invoked; an error stored on a field one caller reads.
+# Two more of the same class were found while planning. All six fixed.
+# ⚠ THREE BEHAVIOUR CHANGES: (1) extends with NO ENGINE is now an error instead of a no-op returning
+# nil — the child used to render its own body ALONE and report success, i.e. a different document
+# than the author wrote presented as the one they wrote; same for a discarded inheritanceErr. DryRun
+# reported both, Execute swallowed both. (2) A resolver's Validate is now INVOKED by the executor, so
+# a refusal expressed only there stops being dead code — reported as ErrMsgResolverRefused, distinct
+# from ErrMsgResolverFailed, because one names a fault in the resolver and the other in the document.
+# (3) if/for/switch failures now obey the CONTEXT's error strategy, not only onerror=. The fix half is
+# that their parse DISCARDED the tag attributes, so onerror=/default= were structurally unreachable
+# on a block construct; the fallback half means under a `remove` renderer a mistyped in="inpt.sources"
+# now renders an empty loop where it used to raise. KEPT DELIBERATELY — the alternative needs a
+# site-kind discriminator inside getErrorStrategy, reintroducing the two-shapes fork this cycle
+# removes, and a renderer choosing `remove` asked for lenient rendering. aiv's renderTemplate uses it.
+# NEW API (not a break — never shipped in an error-less shape): Template.DeclaredInputs() /
+# DeclaredInputKeys() now return (value, error), and A WIRE PROJECTION MUST CHECK IT. They used to
+# return a well-formed but PARTIAL contract for a chain the executor refuses (cycle, missing parent,
+# over-deep) — a third view of one template agreeing with neither Execute nor DryRun. Rule pinned by
+# test: the walk errors in exactly the cases ExecuteWithContext refuses to render, with one named
+# carve-out (a TemplateExecutor that is not a templateProvider resolves the chain but cannot read its
+# specs → ErrMsgInheritanceSpecsUnavailable). The partial map is still returned WITH the error:
+# displaying what is known is fine, publishing it as the contract is not. Returned *InputDefs are
+# DEEP COPIES — the accessors handed out live pointers into a registered PARENT's parsed spec, so a
+# caller normalising a default in place corrupted every future and concurrent render of a template it
+# never named.
+# ALSO: extends merges the declaration chain (child-wins at every level, so a parent's body resolves
+# against the declarations the PARENT made and parent defaults apply); a parent with frontmatter used
+# to splice ---\n…\n--- into the child's output as literal text (unrecorded, and on the same path —
+# fixing the merge alone yields a document whose inputs bind and whose body carries stray YAML);
+# Template.Explain bypassed inheritance, so a document EXPLAINED differently than it RENDERED;
+# onerror= is now validated on block constructs and on individual elseif/case branches, where the
+# old gap failed INVERTED (resolution stops once the key is present and an unrecognised value parses
+# to throw, so onerror="remov" HARD-FAILS under a renderer configured never to hard-fail);
+# docs/template-syntax.md gains a normative Error recourse section, because onerror=/default=/keepraw
+# were specified NOWHERE outside CHANGELOG prose while this cycle widened them; new runnable
+# examples/09-typed-inputs, which found a gap, which is the point of writing it.
+# THE LESSON: ~100 inheritance tests existed and NOT ONE covered the interaction between inheritance
+# and frontmatter — the seam where five of six defects lived. Feature coverage is not interaction
+# coverage. The review pass then reproduced it: three tests for a new equivalence rule, ALL GREEN
+# while the rule was false at two boundaries. Fail-open — newTemplateWithConfig nils inheritanceInfo
+# whenever extraction failed, so testing the info before the error made the error branch unreachable
+# dead code, returning a clean contract with a NIL ERROR for a document Execute refuses; strictly
+# worse than the gap being closed, since the new signature invites "nil error ⇒ safe to publish".
+# Two ifs, and their ORDER was the whole property. Fail-closed — ResolveInheritance refuses only when
+# a parent is DEMANDED past the bound and so resolves maxDepth+1, while the new walk bounded at
+# maxDepth reported DepthExceeded for a chain the executor renders: reusing the resolver's maxDepth
+# VALUE is not reusing its RULE. A test suite for a claimed equivalence must be written from the
+# BOUNDARIES OF THE CLAIM, not from the cases that motivated it. And: FIXING A DEFECT CAN CREATE ONE —
+# nothing about the onerror= lint changed; it became wrong when the construct it declined to check
+# stopped being inert.
+#
 # v0.23.0 (DC12-promulgate): Errors becomes the ANALYSIS-COMPLETENESS CHANNEL, and main gets a
 # clean release line. v0.22.0 made DryRun find everything; this makes it SAY SO when it cannot,
 # which is the other half of the same contract — a walk that gives up silently is indistinguishable

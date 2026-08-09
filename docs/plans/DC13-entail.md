@@ -1,12 +1,12 @@
 # DC13-entail — the executor honours what the document declared
 
-> **Status:** REVIEWED (2026-08-09) — all six defects + workstream C landed; `/review` at HIGH
-> effort complete and every finding addressed; `dev-cycle-end` pending.
-> Commits: `10b300d` plan · `4abab4c` B · `c0622f1` A · `294e3a6` C · the review pass.
+> **Status:** ✅ **SHIPPED as v0.24.0** (2026-08-09) — all six defects + workstream C landed;
+> `/review` at HIGH effort complete, re-reviewed, every finding addressed; `dev-cycle-end` complete.
+> Commits: `10b300d` plan · `4abab4c` B · `c0622f1` A · `294e3a6` C · `e67b879` review pass.
 > `ci-local` green, coverage 90.9% (floor 88).
 > One addition beyond plan: `Template.DeclaredInputs()` / `DeclaredInputKeys()` — see §C note and
 > the review outcomes below.
-> Target release **v0.24.0**
+> Released **v0.24.0**. Downstream: the aigentverse re-pin is a separate cycle.
 > **Theme:** two things the executor throws away — the *declarations it inherits* and the
 > *escape hatches it was handed at parse* — plus the two refusals that were never reachable.
 >

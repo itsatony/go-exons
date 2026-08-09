@@ -240,6 +240,23 @@ Three properties worth knowing:
 - A value bound to an input is swept for byte slices at every depth and they are
   withheld, so an uploaded file's body can never reach the prompt by accident. A list
   of `{name, mime_type, size_bytes}` maps renders as a filename manifest.
+- A document that `extends` another **inherits its ancestors' declarations**, with the
+  child winning on any name it redeclares. Read the merged contract with
+  `Template.DeclaredInputs()` / `DeclaredInputKeys()` — and **check the error before
+  publishing the result as the document's contract**: it is returned in exactly the
+  cases where `ExecuteWithContext` refuses to render the chain, and the accompanying
+  map is partial. Displaying what is known is fine; presenting it as complete is not.
+
+### Error recourse
+
+A tag or block construct whose resolution fails does not have to be fatal. `onerror=`
+selects the behaviour at the site (`throw` / `remove` / `keepraw`), `default=` supplies
+a fallback value, and when no `onerror=` is present the engine's configured error
+strategy decides. This applies to `exons.if` / `exons.for` / `exons.switch` and to
+individual `elseif` / `case` branches, and it governs a resolver's `Validate` refusal
+too. The normative specification — the full list of governed failures, the resolution
+order, and the rule that `keepraw` on a block construct emits the *entire* construct —
+is in [docs/template-syntax.md](docs/template-syntax.md#error-recourse-onerror-and-default).
 
 ### How a value renders
 
