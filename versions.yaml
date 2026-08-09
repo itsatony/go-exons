@@ -1,7 +1,40 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.22.0
+  version: 0.23.0
+# v0.23.0 (DC12-promulgate): Errors becomes the ANALYSIS-COMPLETENESS CHANNEL, and main gets a
+# clean release line. v0.22.0 made DryRun find everything; this makes it SAY SO when it cannot,
+# which is the other half of the same contract — a walk that gives up silently is indistinguishable
+# from a walk that found nothing, and "found nothing" is the accusation.
+# THE PREMISE THAT WAS WRONG: Valid was ASSIGNED from len(Errors) > 0, so it carried no information
+# of its own and every new reason to report an incomplete ANALYSIS silently restated itself as the
+# stronger, usually untrue claim that the TEMPLATE is invalid. The two are now separate questions
+# with separate writers — reportIncompleteAndInvalid where the cause proves ExecuteWithContext
+# fails (today only unresolvable inheritance), reportIncomplete where it only proves the walk
+# stopped short. New AnalysisComplete() gives the gate a name a consumer can call instead of a
+# paragraph they must read. Errors has exactly ONE writer and a test parses this package's own AST
+# to keep it that way: a channel written from scattered points across a recursive walk is one
+# nobody can audit, and auditability is the entire value here.
+# FIVE PLACES THE WALK GAVE UP, ONE OF WHICH REPORTED: expressionIdentifiersOrEmpty swallowed every
+# malformed eval= at three call sites, justified by a doc comment claiming the parser already
+# reported it — false on both halves, since ParseExpression runs only in the evaluator and Errors
+# had one writer. Twelve lines above it, ExpressionIdentifiers' own contract stated the rule the
+# wrapper broke. Plus: extends-with-no-engine (no signal at all), an unreadable extends declaration
+# (the error was discarded at parse), an absent name= on var/input (a reference whose target is
+# unknown, reported as if known), and a walker with no default arm — where an unhandled node kind
+# took its ENTIRE SUBTREE with it, silently.
+# FOUND WHILE FIXING, AND WORSE THAN THE BUGS WE CAME FOR: parseConditional built every branch
+# after the first with the position of the tag that TERMINATED it, and the last with the closing
+# {~/exons.if~}. executeConditional reports a failing branch expression at that field, so this was
+# reaching USERS as wrong line numbers in runtime errors long before it reached any debug surface.
+# Also: generatePlaceholders had no BlockNode arm, so one DryRunResult described two different
+# documents — references inside a block reported, the block's body rendering as empty; exons.input
+# previewed as the literal "{{exons.input}}", every input in a document the same opaque token;
+# String() printed neither Inputs nor Switches, so an author read a document with no inputs in it;
+# and Explain still carried BOTH gaps DryRun closed in v0.22.0.
+# ALSO: main was fast-forwarded from v0.16.0 and v0.17.0-v0.22.0 gained clean SemVer tags on their
+# existing commits. The format had shipped six releases with no promoted release line.
+#
 # v0.22.0: DryRun becomes COMPLETE, and states the contract it now satisfies. DryRun is the only
 # sound static-analysis surface a consumer has — the AST is package-internal and unimportable — so
 # a consumer deciding "this declared input is referenced nowhere" can only be as right as DryRun is

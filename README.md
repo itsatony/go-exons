@@ -223,6 +223,12 @@ declared input is never referenced" undecidable for any tool, however careful. W
 two verbs the question is answerable by construction, and
 `Template.DryRun(...).Inputs` is the surface that answers it.
 
+That answer is only sound when the analysis was **complete**: check
+`result.AnalysisComplete()` before concluding a declared name is referenced nowhere,
+because that conclusion licenses telling an author to delete a declaration, and a
+region the walk could not reach holds references that are *unknown*, not *absent*.
+`DryRunResult.Errors` carries the reasons.
+
 Three properties worth knowing:
 
 - A declared input that is neither bound nor defaulted is **present and nil**, so it
@@ -258,6 +264,50 @@ value, whose ranking is the point:
 Rank, best first: {~exons.var name="criteria" join=" > " /~}
 → Rank, best first: cost > speed > quality
 ```
+
+### `exons.now`
+
+`{~exons.now~}` prints a formatted timestamp into the body. The date/time *expression*
+functions (`now`, `formatDate`, `year`, …) only exist inside `eval=`, so before this tag
+there was no way to drop today's date into a prompt.
+
+`format=` names a format from a **closed vocabulary** — it is not a Go layout string:
+
+| `format=` | Renders as |
+|---|---|
+| omitted, or `iso` | `2026-07-21T14:30:00Z` (RFC-3339) |
+| `date` | `2026-07-21` |
+| `datetime` | `2026-07-21 14:30:00` |
+| `time` | `14:30:00` |
+| `year` | `2026` |
+| `month` | `07` |
+| `day` | `21` |
+| `weekday` | `Tuesday` |
+| `unix` | seconds since the epoch |
+| `rfc1123` | `Tue, 21 Jul 2026 14:30:00 UTC` |
+| `date-de` | `21.07.2026` |
+
+`layout=` is the escape hatch for anything the vocabulary does not cover, and it takes a
+raw Go layout. When both are present **`layout=` wins** and `format=` is ignored:
+
+```
+{~exons.now layout="Mon Jan 2" /~}   → Tue Jul 21
+```
+
+`tz=` takes an IANA name. The default is **UTC**, not the host's local zone: the format
+names carry no offset, so a naked wall clock would be ambiguous for a document rendered
+across locales.
+
+```
+{~exons.now format="datetime" tz="Europe/Berlin" /~}   → 2026-07-21 16:30:00
+```
+
+Every attribute is optional, and an unknown format name or unloadable timezone is reported
+from *resolve* time rather than parse time — so the engine's configured error strategy
+governs it, instead of hard-failing a template a lenient strategy would otherwise render.
+
+The reference time is seeded once per render, so every `{~exons.now~}` in one render agrees
+and a test can pin an exact instant. Unseeded, it falls back to `time.Now()`.
 
 ### Writing exons syntax as content
 
@@ -585,7 +635,7 @@ A JSON Schema for validating `.exons` YAML frontmatter ships at `schema/exons.sc
 
 ## Examples
 
-The `examples/` directory contains 7 standalone Go programs covering core workflows. Each is runnable with `go run .`:
+The `examples/` directory contains 8 standalone Go programs covering core workflows. Each is runnable with `go run .`:
 
 1. `01-basic-prompt` — Parse and execute a template
 2. `02-chat-agent` — Extract structured messages
@@ -594,6 +644,9 @@ The `examples/` directory contains 7 standalone Go programs covering core workfl
 5. `05-template-composition` — Compose agents from skills via SpecResolver
 6. `06-validation-and-debug` — Validate, dry-run, explain
 7. `07-a2a-agent-card` — Generate A2A Agent Cards
+8. `08-syntax-safety` — Write exons syntax as content: markdown fences, verbatim fences, raw blocks
+
+Alongside them, `examples/dns-specialist.exons` is a worked agent document — the full frontmatter surface (execution, inputs, tools, memory, dispatch, verifications, registry, safety, constraints) on one realistic agent, for reading rather than running.
 
 ## Editor Support
 

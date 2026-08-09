@@ -16,13 +16,22 @@ type Template struct {
 	engine          TemplateExecutor          // Engine reference for nested template execution
 	spec            *Spec                     // Parsed spec configuration from frontmatter
 	inheritanceInfo *internal.InheritanceInfo // Inheritance info (nil if no extends)
+
+	// inheritanceErr records why inheritanceInfo is nil when extraction FAILED, as opposed to
+	// the ordinary case of a template that simply does not extend anything. The two are
+	// indistinguishable from inheritanceInfo alone, and DryRun must distinguish them: "no
+	// parent" and "a parent this build could not read" produce the same reference collections
+	// but only one of them is complete. See dryRunAST.
+	inheritanceErr error
 }
 
 // newTemplateWithConfig creates a new template with spec configuration (internal use).
 func newTemplateWithConfig(source, templateBody string, ast *internal.RootNode, executor *internal.Executor, config *engineConfig, engine TemplateExecutor, spec *Spec) *Template {
-	// Extract inheritance info from AST (non-fatal — nil on error preserves fail-safe behavior)
-	inheritanceInfo, err := internal.ExtractInheritanceInfo(ast)
-	if err != nil {
+	// Extraction failure is non-fatal for RENDERING — a template that cannot state its parent can
+	// still render its own body, and nil preserves that fail-safe. It is not non-fatal for
+	// ANALYSIS, so the reason is kept rather than discarded; DryRun reports it.
+	inheritanceInfo, inheritanceErr := internal.ExtractInheritanceInfo(ast)
+	if inheritanceErr != nil {
 		inheritanceInfo = nil
 	}
 
@@ -35,6 +44,7 @@ func newTemplateWithConfig(source, templateBody string, ast *internal.RootNode, 
 		engine:          engine,
 		spec:            spec,
 		inheritanceInfo: inheritanceInfo,
+		inheritanceErr:  inheritanceErr,
 	}
 }
 

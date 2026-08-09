@@ -1,7 +1,9 @@
 # exons Template Syntax — Lexical Specification
 
-Normative reference for the exons template lexical grammar (v0.15.0+).
+Normative reference for the exons template lexical grammar (v0.23.0).
 For tag semantics (var, if, for, ...) see the [README syntax reference](../README.md#template-syntax-reference).
+The last two sections cover the two built-in tags whose attribute vocabularies
+are closed (`exons.now`, `exons.input`) and the frontmatter keys they read.
 
 ## Delimiters
 
@@ -130,3 +132,123 @@ raw block), and fence/raw content never opens markdown regions.
 | `{~exons.raw~}` / `{~exons.comment~}` without canonical close | `unterminated verbatim block: missing closing tag "..."` |
 | Stray top-level `{~/x~}` | `unexpected token` |
 | Unclosed markdown fence (fence mode) | no error; `Validate()` warning |
+
+## Built-in output tag: `{~exons.now~}` (v0.18.0)
+
+Prints a formatted reference time into body text. Distinct from the date/time
+*expression* functions (`now`, `formatDate`, `year`, ...), which are usable only
+in `eval=` and have no output path.
+
+The reference time is seeded once per render by the caller under the reserved
+data key `_refTime` (`ContextKeyReferenceTime`), so every `{~exons.now~}` in one
+render agrees and a test can pin an exact instant. Unseeded, it falls back to
+`time.Now()`.
+
+| Attribute | Meaning |
+|---|---|
+| `format` | A **name** from the closed vocabulary below — never a Go layout string. Absent or empty means `iso`. |
+| `layout` | A raw Go reference layout (`"Mon Jan 2"`). **Wins over `format`** when non-empty: the escape hatch for a format the named set does not cover. |
+| `tz` | An IANA zone name (`Europe/Berlin`), resolved with `time.LoadLocation`. |
+
+Timezone is applied first, then the format. **The default zone is UTC** — absent
+`tz`, the instant is converted to UTC rather than left in the seeded zone.
+
+| `format` | Rendering | Example |
+|---|---|---|
+| `iso` (default) | RFC 3339 | `2026-07-21T14:30:00Z` |
+| `date` | `2006-01-02` | `2026-07-21` |
+| `datetime` | `2006-01-02 15:04:05` | `2026-07-21 14:30:00` |
+| `time` | `15:04:05` | `14:30:00` |
+| `year` | `2006` | `2026` |
+| `month` | `01` (zero-padded) | `07` |
+| `day` | `02` (zero-padded) | `21` |
+| `weekday` | English weekday name | `Tuesday` |
+| `unix` | seconds since the epoch | `1784644200` |
+| `rfc1123` | RFC 1123 | `Tue, 21 Jul 2026 14:30:00 UTC` |
+| `date-de` | `02.01.2006` | `21.07.2026` |
+
+```
+{~exons.now /~}
+{~exons.now format="date" /~}
+{~exons.now format="datetime" tz="Europe/Berlin" /~}
+{~exons.now layout="Mon Jan 2" /~}
+```
+
+Every attribute is optional, so `Validate` accepts the tag unconditionally. An
+unrecognized `format` name and an unloadable `tz` are reported from `Resolve`,
+which routes them through the engine's configured error strategy — a parse-time
+error would hard-fail a template a lenient strategy would otherwise render.
+
+## Built-in output tag: `{~exons.input~}` (v0.21.0)
+
+References an input the document **declared itself**, in its frontmatter
+`inputs:` block.
+
+**`{~exons.var~}` is not deprecated and is unchanged.** It remains the
+context-variable verb and still reads any path the runtime supplies. Before
+v0.21.0 both jobs — "read a value the runtime happened to pass" and "read a value
+this document declared" — were spelled `exons.var`; the split gives two jobs two
+names. Nothing an existing document does with `exons.var` needs to change; the
+new verb is a way to say something the old one could not distinguish.
+
+Declared inputs are injected into the render context under a **reserved `input`
+root**, with each `InputDef.Default` applied wherever the caller bound nothing.
+So `{~exons.input name="tone" /~}` *is* the path `input.tone`, and
+`eval="input.verbose"` / `in="input.sources"` work on `exons.if` / `exons.for`
+with **no grammar change**. A private lookup space would have made the verb
+invisible to control flow.
+
+A declared input with neither a bound value nor a default is **present and nil**,
+not absent: it renders empty, evaluates falsy, and a loop over it runs zero
+times. The payoff is the equivalence *present ⇔ declared*, which is what makes a
+name that is absent under the root provably an author typo — reported with
+did-you-mean suggestions drawn from the declared names.
+
+| Attribute | Meaning |
+|---|---|
+| `name` | **Required.** The declared input's key. |
+| `default` | Used when the input is present but nil or empty. (Contrast `exons.var`, which consults `default=` on a lookup *miss* — after injection a declared input never misses.) |
+| `join` | Separator between the elements of a list value. |
+| `required` | **Refused** — an error, not ignored. `required:` in the frontmatter is the single source of truth; render time is too late to ask a user for a value, and a `required=` inside an unreached `exons.if` branch would enforce or not depending on data. Use `Spec.ValidateInputBinding`, which runs before any render. |
+
+```
+{~exons.input name="tone" /~}
+{~exons.input name="sources" join=" > " /~}
+{~exons.if eval="input.verbose"~}...{~/exons.if~}
+{~exons.for each="s" in="input.sources"~}...{~/exons.for~}
+```
+
+## Frontmatter keys read by these tags
+
+| Key | Since | Meaning |
+|---|---|---|
+| `subtype` | v0.19.0 | Refines `type: prompt` only: `fragment` (a composable piece meant to be *referenced*) or `template` (carries `inputs:`, meant to be *executed* with per-run values). Empty means unspecified. |
+| `recommended_agents` | v0.16.0 | A list of curatorial "made for @org/name" associations. Carried verbatim; never resolved by this library. |
+
+`inputs:` maps a name to an `InputDef`. The kind vocabulary (v0.19.0, completing
+`select`/`multiselect`) is **advisory and open** — `Spec.Validate()` rejects no
+kind, because an enforced enum would break a consumer pinning a newer vocabulary
+than the library:
+
+| `type` | Bound value |
+|---|---|
+| `text` | free-form single- or multi-line string |
+| `number` | numeric value |
+| `boolean` | true/false toggle |
+| `select` | exactly one of `options` |
+| `multiselect` | zero or more of `options` |
+| `file-upload` | one or more uploaded files |
+| `sort` | `options`, reordered — the declared order is the initial ranking |
+| `associate` | many-to-many pairs of (`options`, `associate_with`) |
+
+Modifiers, alongside `required:`, `default:` and `label:` (v0.16.0, a form label;
+presentation only, consumers fall back to the input key when it is empty):
+
+| Modifier | Applies to | Meaning |
+|---|---|---|
+| `description` | any | Human-facing help text. |
+| `options` | `select`, `multiselect`, `sort`, `associate` | Selectable values (`{value, label}`). Order is significant for `sort`. |
+| `associate_with` | `associate` | The right-hand set. |
+| `accept` | `file-upload` | Media types or extensions (`application/pdf`, `.csv`), verbatim in the spirit of the HTML `accept` attribute. Empty means the author declared no restriction — not that any file is safe. |
+| `max_size_bytes` | `file-upload` | Caps an **individual** file. Zero means unspecified. |
+| `max_files` | `file-upload` | Caps **how many** files. Zero means unspecified. |

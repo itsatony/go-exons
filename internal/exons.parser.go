@@ -247,6 +247,17 @@ func (p *Parser) parseConditional(ifAttrs Attributes, pos Position) (*Conditiona
 	for nextTag != "" {
 		switch nextTag {
 		case TagNameElseIf:
+			// This branch's OWN position, captured before the call below overwrites nextPos.
+			//
+			// parseConditionalBranch returns the position of the tag that TERMINATES the branch
+			// it just read, so on entry here nextPos is this elseif's own open tag — and after
+			// the call it is the NEXT boundary. Until v0.23.0 the append below used the
+			// post-call value, so every branch after the first recorded the following tag, and
+			// the last recorded the closing {~/exons.if~}. executeConditional reports a failing
+			// branch expression at branch.Pos, so a runtime error in an elseif pointed at a line
+			// the author did not write it on.
+			branchPos := nextPos
+
 			// elseif needs an eval attribute
 			condition, ok := nextAttrs.Get(AttrEval)
 			if !ok {
@@ -258,9 +269,13 @@ func (p *Parser) parseConditional(ifAttrs Attributes, pos Position) (*Conditiona
 				return nil, err
 			}
 
-			branches = append(branches, NewConditionalBranch(condition, children, false, nextPos))
+			branches = append(branches, NewConditionalBranch(condition, children, false, branchPos))
 
 		case TagNameElse:
+			// The else tag's own position — see the elseif branch above for why this cannot be
+			// read after parseConditionalBranch has run.
+			branchPos := nextPos
+
 			// else cannot have an eval attribute
 			if nextAttrs.Has(AttrEval) {
 				return nil, p.newConditionError(ErrMsgCondInvalidElse, nextPos)
@@ -276,7 +291,7 @@ func (p *Parser) parseConditional(ifAttrs Attributes, pos Position) (*Conditiona
 				return nil, p.newConditionError(ErrMsgCondElseNotLast, nextPos)
 			}
 
-			branches = append(branches, NewConditionalBranch("", children, true, nextPos))
+			branches = append(branches, NewConditionalBranch("", children, true, branchPos))
 
 		default:
 			// Unexpected tag inside conditional

@@ -95,16 +95,31 @@ func collectExprIdentifiers(node internal.ExprNode, seen map[string]bool, out *[
 	}
 }
 
-// expressionIdentifiersOrEmpty is the analysis-side wrapper used by DryRun.
+// expressionIdentifiers is the analysis-side wrapper used by DryRun: it resolves the context paths
+// an eval= expression references, and REPORTS through Errors when it cannot.
 //
-// DryRun is a REPORTING surface, not a validating one — a template whose condition does not parse
-// is already reported through Errors by the parser, and returning no identifiers here is the
-// truthful answer for an expression that has no well-formed identifiers to report. Callers that
-// need to distinguish "no references" from "could not tell" use ExpressionIdentifiers directly and
-// inspect the error.
-func expressionIdentifiersOrEmpty(expression string) []string {
+// It replaces expressionIdentifiersOrEmpty, which returned an empty slice on a parse failure and
+// justified it with the claim that "a template whose condition does not parse is already reported
+// through Errors by the parser". That was false on both halves. ParseExpression runs only in the
+// evaluator — the template parser stores eval= as an opaque string and Engine.Validate never
+// inspects it — so nothing else in this library diagnoses a malformed condition at analysis time.
+// The result was an empty identifier set indistinguishable from "references nothing", handed to
+// exactly the consumer this file's exprIdentifierNodeKinds comment says must never be misled that
+// way.
+//
+// The signature takes the channel rather than returning an error on purpose. The bug was never a
+// missing error value — ExpressionIdentifiers has always returned one — it was three call sites
+// each independently deciding to drop it, and `ids, _ :=` is a lint violation nowhere. Receiving
+// the result makes reporting unconditional and leaves the caller no decision to get wrong.
+//
+// site names which expression failed (see dryRunSite*); line and col locate it.
+//
+// The returned slice is still empty on failure. That is now safe, because AnalysisComplete has
+// already turned false and an empty slice can no longer be read as "references nothing".
+func (r *DryRunResult) expressionIdentifiers(expression, site string, line, col int) []string {
 	identifiers, err := ExpressionIdentifiers(expression)
 	if err != nil {
+		r.reportIncomplete(dryRunErrExpression, line, col, site, expression, err)
 		return []string{}
 	}
 	return identifiers

@@ -17,7 +17,9 @@ const (
 	dryRunVariablesHeader    = "\nVariables (%d):\n"
 	dryRunResolversHeader    = "\nResolvers (%d):\n"
 	dryRunIncludesHeader     = "\nIncludes (%d):\n"
+	dryRunInputsHeader       = "\nInputs (%d):\n"
 	dryRunConditionalsHeader = "\nConditionals (%d):\n"
+	dryRunSwitchesHeader     = "\nSwitches (%d):\n"
 	dryRunLoopsHeader        = "\nLoops (%d):\n"
 	dryRunMissingVarsHeader  = "\nMissing Variables (%d):\n"
 	dryRunUnusedVarsHeader   = "\nUnused Variables (%d):\n"
@@ -39,6 +41,10 @@ const (
 	dryRunStatusResSummary = "  - %s [line %d]\n"
 	dryRunStatusIncLine    = "  - %s [line %d]: %s\n"
 	dryRunStatusCondLine   = "  - %s [line %d]\n"
+	dryRunStatusInputDecl  = "declared"
+	dryRunStatusInputUndec = "UNDECLARED"
+	dryRunStatusInputLine  = "  - %s [line %d]: %s\n"
+	dryRunStatusSwitchLine = "  - %s [line %d]: %d case(s)\n"
 	dryRunStatusLoopFound  = "source found"
 	dryRunStatusLoopMiss   = "source NOT FOUND"
 	dryRunStatusLoopLine   = "  - for %s in %s [line %d]: %s\n"
@@ -53,6 +59,46 @@ const (
 	// parent could not be resolved. It is an Error rather than a Warning: the reference collections
 	// are INCOMPLETE when it appears, and a consumer must not conclude anything is unreferenced.
 	dryRunErrInheritance = "inheritance could not be resolved, analysis covers this template only: %v"
+
+	// dryRunErrNoEngine reports that a template which DOES extend a parent was analysed with no
+	// engine to resolve it through, so the parent body was never walked. The damage is identical
+	// to dryRunErrInheritance; until v0.23.0 there was no signal at all.
+	dryRunErrNoEngine = "template extends another but has no engine to resolve it, analysis covers this template only"
+
+	// dryRunErrInheritanceInfo reports that the {~exons.extends~} declaration itself could not be
+	// read, so analysis proceeded as though the template extends nothing. Parse-time extraction
+	// treats that as non-fatal for EXECUTION; for ANALYSIS it means the reported references
+	// describe a document that is never the one executed.
+	dryRunErrInheritanceInfo = "inheritance declaration could not be read, analysis assumes no parent: %v"
+
+	// dryRunErrUnknownNode reports an AST node kind the walker does not know. The node AND ITS
+	// ENTIRE SUBTREE go unanalysed, which is the widest incompleteness this type can carry.
+	dryRunErrUnknownNode = "unknown AST node kind %T, its subtree was not analysed"
+
+	// dryRunErrNilNode reports a nil node reached by the walk. A nil carries no type and no
+	// position, so nothing can be said about what was skipped — which is precisely why it must
+	// not be skipped silently.
+	dryRunErrNilNode = "a nil AST node was reached, the content it stood for was not analysed"
+
+	// dryRunErrMissingName reports a {~exons.var~} or {~exons.input~} carrying no name=
+	// attribute. Neither tag requires one to parse. The reference IS still recorded, with an
+	// empty Name — a reference site whose target is UNKNOWN, which must never read as a
+	// reference to nothing.
+	dryRunErrMissingName = "line %d:%d: {~%s~} has no name= attribute, its target is unknown"
+
+	// dryRunErrExpression reports that an eval= expression could not be parsed, so the context
+	// paths it references are UNKNOWN rather than absent. Nothing else in this library parses
+	// expressions at analysis time — the template parser stores eval= opaquely and
+	// Engine.Validate never inspects it — so if this does not report, nothing does.
+	dryRunErrExpression = "line %d:%d: %s expression %q could not be parsed, its references are unknown: %v"
+)
+
+// Names for the positions an eval= expression can occupy, used by dryRunErrExpression so a
+// reader is told WHICH expression failed and not merely that one did.
+const (
+	dryRunSiteConditionBranch = "conditional branch"
+	dryRunSiteSwitch          = "switch"
+	dryRunSiteSwitchCase      = "switch case"
 )
 
 // Placeholder format strings for dry-run output.
@@ -95,6 +141,7 @@ const (
 	astRootLabel  = "%sRoot\n"
 	astTextLabel  = "%sText: %q\n"
 	astTagLabel   = "%sTag: %s"
+	astBlockLabel = "%sBlock: %s (line %d)\n"
 	astAttrsFmt   = " [%s]"
 	astAttrPair   = "%s=%q"
 	astLineFmt    = " (line %d)\n"
@@ -153,17 +200,33 @@ const (
 //     input root — buildChildData passes only the with= expansion and literal attributes — so a
 //     parent's declared inputs are structurally unreachable inside an included template. The one
 //     cross-boundary path, with="input.foo", is carried verbatim in IncludeReference.Attributes.
+//   - A non-grammar attribute on a CONTROL-FLOW tag. parseConditional reads only eval=, parseFor
+//     only item/in/index/limit, parseSwitch only eval= and parseSwitchCase only value=/eval=;
+//     everything else on those tags is discarded before an AST node exists. So unlike a resolver
+//     tag, this library structurally CANNOT report a future path-bearing attribute on
+//     {~exons.if~}. Today that is vacuous because no such attribute exists — it is recorded here
+//     so that adding one is understood to be a grammar change, not an additive one.
 //
 // The one case that is NOT closable by this library: a third-party resolver may define an
 // attribute whose value names a context path, and this library cannot know that attribute's
 // semantics. Every resolver's attributes are reported in full for exactly this reason. A consumer
 // performing unreferenced analysis should treat any attribute value containing a reference to a
-// name as a use of it — over-reporting use, never under-reporting it.
+// name as a use of it — over-reporting use, never under-reporting it. As of v0.23.0 the same
+// applies to {~exons.var~} and {~exons.input~}, whose attributes were computed and then dropped.
 //
-// Finally: when Errors is non-empty the collections may be partial (see dryRunErrInheritance).
-// Check it before concluding anything is unreferenced.
+// Finally, and most importantly: the guarantee above holds only for a walk that REACHED
+// everything. Call AnalysisComplete before concluding that any name is unreferenced.
 type DryRunResult struct {
-	// Valid indicates if the template structure is valid
+	// Valid reports that DryRun has POSITIVE PROOF ExecuteWithContext would fail on this
+	// template. Today the only such proof is unresolvable inheritance, which
+	// Template.ExecuteWithContext returns on unconditionally.
+	//
+	// Valid is NOT the completeness gate — use AnalysisComplete for that. Until v0.23.0 it was
+	// derived from len(Errors), so it carried no information of its own and every new reason to
+	// report an incomplete analysis silently widened the claim "this template is invalid". The
+	// two are genuinely different questions: a template with an unparseable eval= in a branch it
+	// never takes renders perfectly, and DryRun says so by returning Valid true and
+	// AnalysisComplete false.
 	Valid bool
 
 	// Output is the template with placeholders for dynamic content
@@ -202,7 +265,18 @@ type DryRunResult struct {
 	// Loops lists all loop blocks found
 	Loops []LoopReference
 
-	// Errors contains any structural errors found
+	// Errors is the ANALYSIS-COMPLETENESS channel: each entry names a place the walk could not
+	// reach, and therefore a region of the template whose references are UNKNOWN rather than
+	// absent.
+	//
+	// It is written through exactly one function, reportIncomplete, and
+	// TestDryRunErrorsHaveExactlyOneWriter parses this package to keep it that way. The single
+	// writer is the point rather than tidiness: this is the channel a consumer gates on before
+	// concluding that a declared name is referenced NOWHERE — a conclusion whose remedy is to
+	// delete an author's declaration — and a channel written from scattered points across a
+	// recursive walk is one nobody can audit for completeness.
+	//
+	// Prefer AnalysisComplete to inspecting the length.
 	Errors []string
 
 	// Warnings contains non-fatal issues
@@ -215,10 +289,61 @@ type DryRunResult struct {
 	UnusedVariables []string
 }
 
+// AnalysisComplete reports whether the walk reached every part of the template — that is,
+// whether the reference collections may be treated as exhaustive.
+//
+// This is the check to make BEFORE concluding that a declared name is referenced nowhere. That
+// conclusion licenses telling an author to delete a declaration, so it may only be drawn from a
+// complete walk; when this returns false some region went unanalysed and its references are
+// unknown, not absent. Errors carries the reasons.
+//
+// It is deliberately not Valid. A template can be perfectly executable and still be incompletely
+// analysable, and the two are reported separately for that reason.
+func (r *DryRunResult) AnalysisComplete() bool {
+	return len(r.Errors) == 0
+}
+
+// reportIncomplete records that the walk could not analyse something, so the reference
+// collections are INCOMPLETE.
+//
+// This is the ONLY writer of Errors in this package, and TestDryRunErrorsHaveExactlyOneWriter
+// parses the package's own source to keep it that way. See the Errors field for why a single
+// auditable door matters more here than it would for an ordinary diagnostic list.
+//
+// It does NOT touch Valid. Incompleteness of the ANALYSIS and invalidity of the TEMPLATE are
+// different claims; use reportIncompleteAndInvalid where one condition proves both.
+func (r *DryRunResult) reportIncomplete(format string, args ...any) {
+	r.Errors = append(r.Errors, fmt.Sprintf(format, args...))
+}
+
+// reportIncompleteAndInvalid records an analysis-completeness failure whose cause ALSO proves
+// that ExecuteWithContext would return an error for this template.
+//
+// Use it only where execution failure is CERTAIN, not merely possible. A malformed eval= in a
+// branch that is never taken renders perfectly, and reporting such a template invalid is a false
+// claim with no remedy attached. Today the only qualifying condition is unresolvable
+// inheritance, which Template.ExecuteWithContext fails on unconditionally.
+func (r *DryRunResult) reportIncompleteAndInvalid(format string, args ...any) {
+	r.reportIncomplete(format, args...)
+	r.Valid = false
+}
+
 // VariableReference represents a variable reference in a template.
 type VariableReference struct {
-	Name        string   // Variable path (e.g., "user.name")
-	Default     string   // Default value if specified
+	Name    string // Variable path (e.g., "user.name")
+	Default string // Default value if specified
+
+	// Attributes is the tag's full attribute map, verbatim.
+	//
+	// It is carried for the same reason ResolverReference and IncludeReference carry theirs: a
+	// consumer performing unreferenced analysis must treat any attribute value naming a context
+	// path as a USE of that name, and it cannot do so for attributes this library never handed
+	// it. Today no attribute on {~exons.var~} names a path — name= is reported as Name, and
+	// join= and format= take literals — so this is a guarantee held in reserve rather than one
+	// currently load-bearing. It was computed and then dropped until v0.23.0, which is the shape
+	// of asymmetry that becomes a false accusation the day an attribute does take a path.
+	Attributes map[string]string
+
 	Line        int      // Source line number
 	Column      int      // Source column number
 	HasDefault  bool     // Whether a default was specified
@@ -247,12 +372,27 @@ type ResolverReference struct {
 // {~~ ~~} fence. Those spans are consumed at the LEXER, so no tag node is ever built for
 // their contents — the exclusion is structural rather than a rule someone remembered to add.
 type InputReference struct {
-	Name       string // Declared input name, from the name= attribute
-	Default    string // Tag-level default= fallback, if specified
-	Line       int    // Source line number
-	Column     int    // Source column number
-	HasDefault bool   // Whether a tag-level default= was specified
-	Declared   bool   // Whether the name appears in the frontmatter `inputs:` block
+	Name    string // Declared input name, from the name= attribute
+	Default string // Tag-level default= fallback, if specified
+
+	// Attributes is the tag's full attribute map, verbatim. See VariableReference.Attributes for
+	// why it is carried even though no attribute on {~exons.input~} names a context path today.
+	Attributes map[string]string
+
+	Line       int  // Source line number
+	Column     int  // Source column number
+	HasDefault bool // Whether a tag-level default= was specified
+
+	// Declared reports whether the name appears in the frontmatter `inputs:` block.
+	//
+	// KNOWN LIMIT, and it errs toward accusation: this is answered from THIS template's spec,
+	// while the walked AST is the inheritance-RESOLVED one and therefore contains the parent's
+	// {~exons.input~} nodes too. An input declared by a parent and referenced in the parent body
+	// reports Declared false — "the author mistyped this" — when the truth is "declared one
+	// document up". Resolving parent specs is a separate design; until then a consumer treating
+	// Declared false as a defect should require AnalysisComplete AND a template that does not
+	// extend.
+	Declared bool
 }
 
 // IncludeReference represents a template include in a template.
@@ -289,12 +429,18 @@ type ConditionalReference struct {
 
 // ConditionalBranchRef is one branch of a conditional — an if, an elseif, or an else.
 //
-// Branches carry no source position of their own in the AST, so none is reported here; the owning
-// ConditionalReference's Line/Column locate the construct.
+// Until v0.23.0 this said branches carry no source position of their own. They always did; the
+// position was simply WRONG for every branch after the first, because parseConditional built each
+// one with the position of the tag that TERMINATED it — and the last branch with the position of
+// the closing {~/exons.if~}. That same field is what executeConditional reports a failing branch
+// expression at, so the defect was reaching users as wrong line numbers in runtime errors long
+// before it reached this struct. Both are fixed; Line/Column below are the branch's own tag.
 type ConditionalBranchRef struct {
 	Condition   string   // The eval expression; empty for the else branch
 	Identifiers []string // Context paths referenced by Condition, resolved by the expression parser
 	IsElse      bool     // True for the final else branch
+	Line        int      // Source line of this branch's own if/elseif/else tag
+	Column      int      // Source column of this branch's own if/elseif/else tag
 }
 
 // SwitchReference represents a {~exons.switch~} block in a template.
@@ -319,6 +465,8 @@ type SwitchCaseRef struct {
 	Value       string   // Literal compared against the switch value
 	Eval        string   // Boolean expression evaluated for this arm
 	Identifiers []string // Context paths referenced by Eval
+	Line        int      // Source line of this case's own tag
+	Column      int      // Source column of this case's own tag
 }
 
 // LoopReference represents a loop block in a template.
@@ -458,11 +606,12 @@ func (t *Template) DryRun(ctx context.Context, data map[string]any) *DryRunResul
 	// and the reported output can never describe two different documents.
 	result.Output = t.generatePlaceholderOutput(astToWalk, data)
 
-	// Set valid based on errors
-	if len(result.Errors) > 0 {
-		result.Valid = false
-	}
-
+	// Valid is deliberately NOT derived from Errors here.
+	//
+	// It used to be, which meant Valid carried no information of its own and every reason to
+	// report an incomplete ANALYSIS silently restated itself as a claim that the TEMPLATE is
+	// invalid. The writers now decide: reportIncompleteAndInvalid where the cause proves
+	// execution would fail, reportIncomplete where it only proves the walk stopped short.
 	return result
 }
 
@@ -478,7 +627,26 @@ func (t *Template) DryRun(ctx context.Context, data map[string]any) *DryRunResul
 // from the reference collections must check Errors first — a resolution failure means the
 // collections describe only the child, so a name used solely in the parent body is absent.
 func (t *Template) dryRunAST(ctx context.Context, result *DryRunResult) any {
-	if t.inheritanceInfo == nil || t.engine == nil {
+	// The {~exons.extends~} declaration itself could not be read, so inheritanceInfo is nil for a
+	// template that DOES extend. Parse treats that as non-fatal because a template that cannot
+	// state its parent can still render its own body; for ANALYSIS it means the collections below
+	// describe a document that is never the one executed, which is exactly the claim this channel
+	// exists to withhold.
+	if t.inheritanceErr != nil {
+		result.reportIncomplete(dryRunErrInheritanceInfo, t.inheritanceErr)
+		return t.ast
+	}
+
+	if t.inheritanceInfo == nil {
+		return t.ast
+	}
+
+	// Extends, but there is no engine to resolve the parent through. The damage is identical to
+	// an outright resolution failure — the parent body is never walked — and until v0.23.0 this
+	// branch produced no signal whatsoever. It is not proof the template cannot RUN:
+	// ExecuteWithContext takes the same branch and executes the child body successfully.
+	if t.engine == nil {
+		result.reportIncomplete(dryRunErrNoEngine)
 		return t.ast
 	}
 
@@ -492,15 +660,35 @@ func (t *Template) dryRunAST(ctx context.Context, result *DryRunResult) any {
 
 	resolvedAST, err := resolver.ResolveInheritance(ctx, t.ast, t.inheritanceInfo, 0)
 	if err != nil {
-		result.Errors = append(result.Errors, fmt.Sprintf(dryRunErrInheritance, err))
+		// The one condition that proves BOTH an incomplete analysis and a template that cannot
+		// execute: ExecuteWithContext returns this same resolution error unconditionally.
+		result.reportIncompleteAndInvalid(dryRunErrInheritance, err)
 		return t.ast
 	}
 
 	return resolvedAST
 }
 
+// dryRunASTNodeKinds is the number of AST node kinds walkASTForDryRun handles explicitly. Like
+// exprIdentifierNodeKinds it exists to make adding an eighth kind a deliberate act rather than a
+// silent completeness hole — TestDryRunWalkerCoversEveryASTNodeKind asserts this number and names
+// the kinds, so a reader who adds one is told where to add the case.
+//
+// Be honest about what it cannot do: a new kind declared in package internal will not fail this
+// test by itself, because the AST types are unexported and cannot be enumerated from here. The
+// default arm below is what makes such a kind LOUD at runtime; this constant is what makes
+// handling it a decision someone wrote down.
+const dryRunASTNodeKinds = 7
+
 // walkASTForDryRun recursively walks the AST to collect dry-run information.
 func (t *Template) walkASTForDryRun(node any, data map[string]any, result *DryRunResult, usedKeys map[string]bool, availableKeys []string) {
+	// A nil carries neither a type to name nor a position to point at, so nothing can be said
+	// about the content it stood for. That is the reason to report it, not a reason to skip it.
+	if node == nil {
+		result.reportIncomplete(dryRunErrNilNode)
+		return
+	}
+
 	switch n := node.(type) {
 	case *internal.RootNode:
 		for _, child := range n.Children {
@@ -526,6 +714,22 @@ func (t *Template) walkASTForDryRun(node any, data map[string]any, result *DryRu
 		for _, child := range n.Children {
 			t.walkASTForDryRun(child, data, result, usedKeys, availableKeys)
 		}
+
+	case *internal.TextNode:
+		// Literal output. It references nothing, so there is nothing to collect — but the case
+		// must be WRITTEN rather than left to fall off the end of the switch, because the
+		// default arm below now treats an unhandled kind as a completeness failure. This is the
+		// one node kind whose silence is correct.
+
+	default:
+		// Any kind this walker does not know, and its ENTIRE SUBTREE, would otherwise vanish
+		// without a trace — the widest incompleteness this type can carry, and until v0.23.0 the
+		// switch simply had no default. Reporting the concrete type is what makes the omission
+		// findable; dryRunASTNodeKinds is what makes adding a kind a deliberate act.
+		//
+		// It is not proof the template cannot RUN: a kind added upstream would reach the
+		// executor, which knows it, before it reached this switch, which does not.
+		result.reportIncomplete(dryRunErrUnknownNode, node)
 	}
 }
 
@@ -538,7 +742,14 @@ func (t *Template) processTagNodeForDryRun(n *internal.TagNode, data map[string]
 
 	switch n.Name {
 	case TagNameVar:
-		varName, _ := n.Attributes.Get(AttrName)
+		varName, hasName := n.Attributes.Get(AttrName)
+		if !hasName {
+			// Nothing in the parser or in Engine.Validate requires name=, so {~exons.var /~}
+			// reaches analysis intact. The reference is still recorded below — over-reporting a
+			// use is the safe direction — but its target is UNKNOWN, and an empty Name would
+			// otherwise be indistinguishable from a reference to nothing.
+			result.reportIncomplete(dryRunErrMissingName, line, col, n.Name)
+		}
 		defaultVal := n.Attributes.GetDefault(AttrDefault, "")
 		hasDefault := n.Attributes.Has(AttrDefault)
 
@@ -557,6 +768,7 @@ func (t *Template) processTagNodeForDryRun(n *internal.TagNode, data map[string]
 		result.Variables = append(result.Variables, VariableReference{
 			Name:        varName,
 			Default:     defaultVal,
+			Attributes:  attrs,
 			Line:        line,
 			Column:      col,
 			HasDefault:  hasDefault,
@@ -588,10 +800,16 @@ func (t *Template) processTagNodeForDryRun(n *internal.TagNode, data map[string]
 		}
 
 	case TagNameInput:
-		inputName, _ := n.Attributes.Get(AttrName)
+		inputName, hasName := n.Attributes.Get(AttrName)
+		if !hasName {
+			// See the exons.var arm: name= is not required to parse, and an empty Name must not
+			// read as a reference to nothing.
+			result.reportIncomplete(dryRunErrMissingName, line, col, n.Name)
+		}
 		result.Inputs = append(result.Inputs, InputReference{
 			Name:       inputName,
 			Default:    n.Attributes.GetDefault(AttrDefault, ""),
+			Attributes: attrs,
 			Line:       line,
 			Column:     col,
 			HasDefault: n.Attributes.Has(AttrDefault),
@@ -609,6 +827,11 @@ func (t *Template) processTagNodeForDryRun(n *internal.TagNode, data map[string]
 		// registry (any well-formed tag name parses), so a typo'd or genuinely unregistered
 		// verb was reported as registered, and the one field a caller would use to catch it
 		// always said everything was fine.
+		//
+		// An unresolved {~exons.extends~} or {~exons.parent~} also lands here and is reported as
+		// an unregistered resolver that does not exist. That is left deliberately: it
+		// OVER-reports, the safe direction, and whenever it happens dryRunErrInheritance or
+		// dryRunErrNoEngine is already in Errors explaining the real cause.
 		result.Resolvers = append(result.Resolvers, ResolverReference{
 			TagName:    n.Name,
 			Attributes: attrs,
@@ -666,10 +889,15 @@ func (t *Template) processConditionalNodeForDryRun(n *internal.ConditionalNode, 
 			hasElseIf = true
 		}
 
+		branchPos := branch.Pos
 		branches = append(branches, ConditionalBranchRef{
-			Condition:   branch.Condition,
-			Identifiers: expressionIdentifiersOrEmpty(branch.Condition),
-			IsElse:      branch.IsElse,
+			Condition: branch.Condition,
+			Identifiers: result.expressionIdentifiers(
+				branch.Condition, dryRunSiteConditionBranch, branchPos.Line, branchPos.Column,
+			),
+			IsElse: branch.IsElse,
+			Line:   branchPos.Line,
+			Column: branchPos.Column,
 		})
 	}
 
@@ -733,21 +961,28 @@ func (t *Template) processSwitchNodeForDryRun(n *internal.SwitchNode, data map[s
 	// branching on a context path through a switch reported that path nowhere at all.
 	cases := make([]SwitchCaseRef, 0, len(n.Cases))
 	for _, c := range n.Cases {
+		casePos := c.Pos
 		cases = append(cases, SwitchCaseRef{
 			Value: c.Value,
 			Eval:  c.Eval,
 			// Only Eval is an expression; Value is a literal compared against the switch value.
-			Identifiers: expressionIdentifiersOrEmpty(c.Eval),
+			Identifiers: result.expressionIdentifiers(
+				c.Eval, dryRunSiteSwitchCase, casePos.Line, casePos.Column,
+			),
+			Line:   casePos.Line,
+			Column: casePos.Column,
 		})
 	}
 
 	result.Switches = append(result.Switches, SwitchReference{
-		Expression:  n.Expression,
-		Identifiers: expressionIdentifiersOrEmpty(n.Expression),
-		Cases:       cases,
-		HasDefault:  n.Default != nil,
-		Line:        pos.Line,
-		Column:      pos.Column,
+		Expression: n.Expression,
+		Identifiers: result.expressionIdentifiers(
+			n.Expression, dryRunSiteSwitch, pos.Line, pos.Column,
+		),
+		Cases:      cases,
+		HasDefault: n.Default != nil,
+		Line:       pos.Line,
+		Column:     pos.Column,
 	})
 
 	// Walk all cases
@@ -794,6 +1029,24 @@ func (t *Template) generatePlaceholders(node any, data map[string]any, sb *strin
 				sb.WriteString(defaultVal)
 			} else {
 				fmt.Fprintf(sb, placeholderVar, varName)
+			}
+
+		case TagNameInput:
+			// Mirrors the exons.var arm, reading through the reserved input root.
+			//
+			// Without this case an input fell to the default arm and previewed as the literal
+			// "{{exons.input}}" — every input in the document rendering as the same opaque
+			// token, with the one thing an author needs to see, the NAME, discarded. A preview
+			// that cannot tell two inputs apart is not a preview of that document.
+			inputName, _ := n.Attributes.Get(AttrName)
+			defaultVal := n.Attributes.GetDefault(AttrDefault, "")
+
+			if val, ok := getPath(data, ContextKeyInput+PathSeparator+inputName); ok {
+				fmt.Fprintf(sb, "%v", val)
+			} else if defaultVal != "" {
+				sb.WriteString(defaultVal)
+			} else {
+				fmt.Fprintf(sb, placeholderVar, inputName)
 			}
 
 		case TagNameInclude:
@@ -862,6 +1115,16 @@ func (t *Template) generatePlaceholders(node any, data map[string]any, sb *strin
 			}
 		}
 		sb.WriteString(placeholderSwitchClose)
+
+	case *internal.BlockNode:
+		// A block's body is content the executor renders (executeBlockNode). Without this case
+		// the node matched nothing and the whole body rendered as EMPTY, while the analysis side
+		// — which gained its BlockNode arm in v0.22.0 — reported every reference inside it. The
+		// two halves of one DryRunResult described different documents, which is precisely the
+		// parity the comment on the tag default arm above claims to keep. It was one arm short.
+		for _, child := range n.Children {
+			t.generatePlaceholders(child, data, sb)
+		}
 	}
 }
 
@@ -942,6 +1205,20 @@ func (t *Template) formatAST(node any, depth int) string {
 		}
 		pos := n.Pos()
 		fmt.Fprintf(&sb, astLineFmt, pos.Line)
+
+		// A block tag's children are structure, and an AST dump that stops at the opening tag is
+		// not a dump of the tree. Same omission as collectVariableAccesses above.
+		if n.Name != TagNameRaw && n.Name != TagNameComment {
+			for _, child := range n.Children {
+				sb.WriteString(t.formatAST(child, depth+1))
+			}
+		}
+
+	case *internal.BlockNode:
+		fmt.Fprintf(&sb, astBlockLabel, indent, n.Name, n.Pos().Line)
+		for _, child := range n.Children {
+			sb.WriteString(t.formatAST(child, depth+1))
+		}
 
 	case *internal.ConditionalNode:
 		pos := n.Pos()
@@ -1026,6 +1303,22 @@ func (t *Template) collectVariableAccesses(node any, data map[string]any, result
 			})
 		}
 
+		// Recurse into a block tag's children — the same omission processTagNodeForDryRun fixed
+		// in v0.22.0, still present on the Explain side until v0.23.0. {~exons.message~} wraps
+		// essentially every real prompt body, so Explain reported ZERO variable accesses for the
+		// common case. raw and comment are excluded for the same structural reason as there:
+		// their spans are consumed at the lexer and have no parsed children.
+		if n.Name != TagNameRaw && n.Name != TagNameComment {
+			for _, child := range n.Children {
+				t.collectVariableAccesses(child, data, result)
+			}
+		}
+
+	case *internal.BlockNode:
+		for _, child := range n.Children {
+			t.collectVariableAccesses(child, data, result)
+		}
+
 	case *internal.ConditionalNode:
 		for _, branch := range n.Branches {
 			for _, child := range branch.Children {
@@ -1105,7 +1398,13 @@ func collectAllKeys(data map[string]any, prefix string) []string {
 		}
 		keys = append(keys, fullKey)
 
-		// Recurse into nested maps
+		// Recurse into nested maps.
+		//
+		// Only map[string]any, while getPath also traverses map[string]string — so the key set
+		// under-covers, and MissingVariables/UnusedVariables/Suggestions under-report for data
+		// shaped that way. Left as-is deliberately: every consequence fails in the SAFE
+		// direction. An unlisted key can only cost a suggestion or an "unused" note; it can
+		// never produce an accusation, which is the failure mode this file's contract guards.
 		if nested, ok := v.(map[string]any); ok {
 			keys = append(keys, collectAllKeys(nested, fullKey)...)
 		}
@@ -1240,6 +1539,20 @@ func (r *DryRunResult) String() string {
 		}
 	}
 
+	// Inputs and Switches were collected from v0.21.0 and v0.22.0 respectively and printed by
+	// nothing: the human-readable surface silently under-reported the two collections the input
+	// work exists to produce, so an author reading String() saw a document with no inputs in it.
+	if len(r.Inputs) > 0 {
+		fmt.Fprintf(&sb, dryRunInputsHeader, len(r.Inputs))
+		for _, in := range r.Inputs {
+			status := dryRunStatusInputDecl
+			if !in.Declared {
+				status = dryRunStatusInputUndec
+			}
+			fmt.Fprintf(&sb, dryRunStatusInputLine, in.Name, in.Line, status)
+		}
+	}
+
 	if len(r.Includes) > 0 {
 		fmt.Fprintf(&sb, dryRunIncludesHeader, len(r.Includes))
 		for _, inc := range r.Includes {
@@ -1255,6 +1568,13 @@ func (r *DryRunResult) String() string {
 		fmt.Fprintf(&sb, dryRunConditionalsHeader, len(r.Conditionals))
 		for _, cond := range r.Conditionals {
 			fmt.Fprintf(&sb, dryRunStatusCondLine, cond.Condition, cond.Line)
+		}
+	}
+
+	if len(r.Switches) > 0 {
+		fmt.Fprintf(&sb, dryRunSwitchesHeader, len(r.Switches))
+		for _, sw := range r.Switches {
+			fmt.Fprintf(&sb, dryRunStatusSwitchLine, sw.Expression, sw.Line, len(sw.Cases))
 		}
 	}
 

@@ -51,6 +51,7 @@ examples/04-tool-export/04-tool-export
 examples/05-template-composition/05-template-composition
 examples/06-validation-and-debug/06-validation-and-debug
 examples/07-a2a-agent-card/07-a2a-agent-card
+examples/08-syntax-safety/08-syntax-safety
 
 # Assessment reports (generated, not committed)
 docs/assessments/

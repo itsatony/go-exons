@@ -7,6 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-08-09
+
+`DryRunResult.Errors` becomes the analysis-completeness channel, and `main` gets a clean release
+line.
+
+v0.22.0 made `DryRun` *find* everything. This makes it *say so when it cannot*, which is the other
+half of the same contract. A walk that gives up silently is indistinguishable from a walk that found
+nothing — and "found nothing" is the accusation a consumer acts on when it tells an author that a
+declaration is dead.
+
+### Changed
+
+- **`Valid` and `Errors` are no longer the same question.** `Valid` was assigned from
+  `len(Errors) > 0`, so it carried no information of its own, and every new reason to report an
+  incomplete *analysis* silently restated itself as the stronger — and usually untrue — claim that
+  the *template* is invalid. They now have separate writers and separate meanings:
+  - `Valid == false` means `DryRun` has positive proof `ExecuteWithContext` would fail. Today the
+    only qualifying condition is unresolvable inheritance.
+  - `Errors` means the walk could not reach something, so those references are **unknown rather than
+    absent**.
+
+  No input that existed before this release changes its `Valid` outcome. This is a contract change
+  where it is not an output change, which is why it is stated rather than bulleted.
+
+### Added
+
+- **`DryRunResult.AnalysisComplete()`** — the gate to call before concluding that any name is
+  referenced nowhere. It gives the property a name a consumer can call instead of a paragraph a
+  consumer must read.
+- **`VariableReference.Attributes` and `InputReference.Attributes`** — the tag's full attribute map,
+  mirroring `ResolverReference` and `IncludeReference`, which already carried theirs. The map was
+  computed once for all four arms and consumed by only two. No attribute on `exons.var` or
+  `exons.input` names a context path today, so this is a guarantee held in reserve; dropping it was
+  the shape of asymmetry that becomes a false accusation the day one does.
+- **`ConditionalBranchRef.Line`/`Column` and `SwitchCaseRef.Line`/`Column`** — so a report points at
+  the branch that failed rather than at the construct containing it.
+
+### Fixed
+
+- **A malformed `eval=` was swallowed at three call sites.** `expressionIdentifiersOrEmpty` returned
+  an empty identifier set on a parse failure — indistinguishable from "references nothing" — and
+  justified it by claiming a malformed condition "is already reported through `Errors` by the
+  parser". That was false on both halves: `ParseExpression` runs only in the evaluator (the template
+  parser stores `eval=` opaquely and `Engine.Validate` never inspects it), and `Errors` had exactly
+  one writer. Twelve lines above the swallow, `ExpressionIdentifiers`' own doc comment stated the
+  rule the wrapper was breaking. It is replaced by a method that receives the result and reports; the
+  swallowing shape no longer exists to be called.
+- **Four further places the walk gave up in silence**: a template that extends but has no engine to
+  resolve through (the parent body simply went unanalysed); an `{~exons.extends~}` declaration that
+  could not be read (the error was discarded at parse time, so `DryRun` believed the template
+  extended nothing); a `{~exons.var~}` or `{~exons.input~}` with no `name=` (a reference whose target
+  is unknown, reported as though it were known); and an AST node kind the walker does not handle,
+  which took its **entire subtree** with it because the type switch had no `default` arm.
+- **Conditional branch positions were wrong for every branch after the first.** `parseConditional`
+  built each `elseif`/`else` with the position of the tag that *terminated* it, and the last branch
+  with the position of the closing `{~/exons.if~}`. `executeConditional` reports a failing branch
+  expression at that field, so this was reaching users as wrong line numbers in runtime errors long
+  before it reached any debug surface.
+- **`generatePlaceholders` had no `BlockNode` arm**, so one `DryRunResult` described two different
+  documents: references inside a `{~exons.block~}` were reported while the block's body rendered as
+  empty. The analysis side gained that arm in v0.22.0; the preview side did not.
+- **`{~exons.input~}` previewed as the literal `{{exons.input}}`** — it fell to the resolver default
+  arm, so every input in a document rendered as the same opaque token, with the one thing an author
+  needs to see, the name, discarded.
+- **`DryRunResult.String()` printed neither `Inputs` nor `Switches`.** Both collections were
+  populated from v0.21.0 and v0.22.0 and rendered by nothing, so the human-readable surface showed a
+  document with no inputs in it.
+- **`Explain` still carried both gaps `DryRun` closed in v0.22.0** — no recursion into a tag's
+  children and no `BlockNode` case. `{~exons.message~}` wraps essentially every real prompt body, so
+  `Explain` reported zero variable accesses for the common case.
+
+### Known limits, now documented rather than implied
+
+- `InputReference.Declared` is answered from *this* template's spec while the walked AST is the
+  inheritance-resolved one, so an input declared by a parent and referenced in the parent body
+  reports `Declared: false`. It errs toward accusation, and the doc comment now says so.
+- Control-flow tags lose their non-grammar attributes at the parser, so `DryRun` structurally cannot
+  report a future path-bearing attribute on `{~exons.if~}`. Vacuous today; recorded so that adding
+  one is understood to be a grammar change rather than an additive one.
+- `collectAllKeys` does not traverse `map[string]string`, so suggestions and unused-variable
+  reporting under-cover for data shaped that way. Every consequence fails in the safe direction.
+
+### Repository
+
+- `main` was fast-forwarded from v0.16.0, and **v0.17.0 through v0.22.0 gained clean SemVer tags on
+  their existing commits**. Those six releases had shipped only as `-vaik8s.N` prereleases on a
+  feature branch, so the format had no promoted release line. The prerelease tags are untouched.
+- `make ci-local` now exists, with a coverage floor (`COVERAGE_THRESHOLD`, 88%; measured baseline
+  90.9%). It is non-mutating throughout: `check` previously ran `fmt`, which rewrites files and then
+  reports success — a gate that passes by editing your code cannot fail on unformatted code.
+
 ## [0.22.0] - 2026-08-08
 
 `DryRun` becomes complete, and documents the contract it now satisfies.
@@ -404,6 +495,27 @@ enterprise-registry bridge (Google Cloud Agent Registry / AGNTCY ingest declarat
 
 ### Dependencies
 - Added `github.com/gowebpki/jcs` v1.0.1 (RFC 8785 JSON Canonicalization).
+
+## [0.16.0] - 2026-07-24
+
+Backfilled at v0.23.0: this release was tagged and shipped without a changelog entry, and it was
+`main`'s head for the whole period the v0.17.0–v0.22.0 work lived on a feature branch.
+
+Schema enrichment so a downstream consumer can render a typed form and surface prompt-to-agent
+associations, without that consumer having to parse the frontmatter itself.
+
+### Added
+
+- `InputDef.Label` (a human-readable form label) and `InputDef.Options []InputOption`, with the
+  `select` and `multiselect` input types. Free-form input types are unchanged.
+- `Spec.RecommendedAgents []string`, from the `recommended_agents` frontmatter key — a curatorial
+  "made for `@org/name`" association, carried verbatim and never resolved here.
+
+### Changed
+
+- `Clone` deep-copies `Options` and `RecommendedAgents`; serialization round-trips both under
+  `IncludeExtensions` and strips them from Agent-Skills exports, matching `content_format`.
+- `recommended_agents` registered in `knownSpecFields`.
 
 ## [0.15.0-dc11] - 2026-07-12
 
