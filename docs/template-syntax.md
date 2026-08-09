@@ -1,6 +1,6 @@
 # exons Template Syntax — Lexical Specification
 
-Normative reference for the exons template lexical grammar (v0.23.0).
+Normative reference for the exons template lexical grammar (v0.24.0).
 For tag semantics (var, if, for, ...) see the [README syntax reference](../README.md#template-syntax-reference).
 The last two sections cover the two built-in tags whose attribute vocabularies
 are closed (`exons.now`, `exons.input`) and the frontmatter keys they read.
@@ -132,6 +132,132 @@ raw block), and fence/raw content never opens markdown regions.
 | `{~exons.raw~}` / `{~exons.comment~}` without canonical close | `unterminated verbatim block: missing closing tag "..."` |
 | Stray top-level `{~/x~}` | `unexpected token` |
 | Unclosed markdown fence (fence mode) | no error; `Validate()` warning |
+
+## Error recourse: `onerror=` and `default=`
+
+Recourse is an **execution-time** mechanism: when a construct fails *while
+rendering*, `onerror=` selects what the renderer emits in its place instead of
+aborting the render. The lexer and parser errors above are outside it — a
+construct that does not parse never reaches execution.
+
+| `onerror=` | Emits | Notes |
+|---|---|---|
+| `throw` | nothing — the error propagates and the render fails | The default, and the fallback for any unrecognized value. |
+| `default` | the construct's `default=` attribute | Empty string when no `default=` is present, i.e. `remove` with an escape hatch. |
+| `remove` | empty string | |
+| `keepraw` | the construct's original source, verbatim | Empty string when no source was captured — it fails closed rather than emit a wrong slice of the document. |
+| `log` | empty string | Plus one `WARN` line naming the tag and the error. |
+
+The vocabulary is closed. An unrecognized value parses to `throw`, and
+`Engine.Validate` reports it as an **error** on every shape that honours the
+attribute: a tag, `exons.if` / `exons.for` / `exons.switch`, and an individual
+`exons.elseif` / `exons.case` (reported at the branch's own position, not the
+opening tag's).
+
+That coverage matters more than it looks. A typo does **not** degrade to the
+context's configured leniency — resolution stops as soon as the key is present,
+so `onerror="remov"` hard-fails under a renderer configured never to hard-fail,
+and the misspelling is the only evidence. Before v0.24.0 the lint checked tags
+alone, which was correct while a block construct's `onerror=` was inert; it
+became a gap the moment the attribute started being honoured.
+
+`default=` is read **only** by `onerror="default"`. On `exons.var` and
+`exons.input` the same attribute name carries a second, resolver-level meaning
+(a lookup miss / an empty declared value); that path returns a value instead of
+an error, so the two readings never fire for one failure.
+
+### Resolution order
+
+1. The failing construct's own `onerror=` — for a branch, the branch's first
+   (see below).
+2. The **context default**: the strategy the execution context reports. A
+   context supplies one by implementing `ErrorStrategy() int`; the built-in
+   `Context` does, seeded at `Execute` from the engine's `WithErrorStrategy`
+   (itself defaulting to `throw`). A loop body's child context inherits it.
+3. `throw`.
+
+A declared-but-unrecognized `onerror=` stops at step 1 and resolves to `throw`;
+it does **not** fall through to the context default.
+
+### Governed failures
+
+| Construct | Failure |
+|---|---|
+| any tag | no resolver registered for the tag name |
+| any tag | the resolver's `Validate` refuses the attributes (v0.24.0 — see below) |
+| any tag | the resolver's `Resolve` returns an error |
+| `exons.if` / `exons.elseif` | the branch condition fails to evaluate (v0.24.0) |
+| `exons.for` | the `in=` path is not found in the context (v0.24.0) |
+| `exons.for` | the value found is not iterable (v0.24.0) |
+| `exons.for` | the host context cannot create a child context — it does not implement child creation, or the child it returns is not a context accessor (v0.24.0) |
+| `exons.switch` | the dispatch `eval=` expression fails to evaluate (v0.24.0) |
+| `exons.case` | the case's `eval=` expression fails to evaluate (v0.24.0) |
+
+Everything else remains a hard failure: parse-time refusals (a missing `eval=`,
+`item=` or `in=`, a non-numeric or negative `limit=`, an unclosed or mismatched
+construct) precede execution, and an error raised *inside* a selected branch or
+loop body belongs to the failing node's own site — the enclosing construct's
+`onerror=` does not catch it.
+
+### Block constructs (v0.24.0)
+
+Before v0.24.0 the parse of `exons.if` / `exons.for` / `exons.switch` read the
+keys it needed and let the attribute map fall out of scope, so `onerror=` and
+`default=` on these three were lexed, parsed, and then structurally
+unreachable: every failure marked v0.24.0 above was an unconditional render
+abort no matter what the author wrote. The three constructs now retain their
+opening tag's full attribute map and route those failures through the same
+mechanism as a tag.
+
+`exons.else` and `exons.casedefault` evaluate nothing and therefore cannot fail
+this way; `onerror=` on them is inert.
+
+### Branch-level `onerror=` (v0.24.0)
+
+An individual `exons.elseif` and an individual `exons.case` may carry their own
+`onerror=` / `default=`. For a failing branch the attribute maps are consulted
+in order — **the branch's own first, the enclosing construct's second** — so a
+branch-level declaration overrides the construct-level one, and a construct-level
+declaration still governs every branch that declares nothing.
+
+The two keys resolve **independently**: a branch declaring only `onerror=` still
+picks up the enclosing construct's `default=`.
+
+```
+{~exons.if eval="a" onerror="default" default="(from if)"~}A
+{~exons.elseif eval="b" onerror="default" default="(from elseif)"~}B
+{~exons.else~}C{~/exons.if~}
+```
+
+### `keepraw` on a block construct
+
+`keepraw` emits the **entire enclosing construct**, from its opening tag through
+its closing tag — body, branches, cases and all — not just the failing branch.
+`executeConditional` / `executeSwitch` / `executeFor` each return one string for
+the whole construct, so a per-branch slice would have nothing to splice into.
+
+```
+{~exons.if eval="nope(" onerror="keepraw"~}body{~/exons.if~}
+```
+renders as that exact source text, `{~/exons.if~}` included.
+
+The construct's source is captured through the token that closed it. Where that
+capture is not possible the strategy degrades to the empty string rather than
+emit a partial construct.
+
+### Resolver `Validate` refusals (v0.24.0)
+
+A resolver's `Validate` is now called by the executor immediately before
+`Resolve`, and a refusal is routed through this mechanism rather than being an
+unconditional stop — so `onerror=` governs it exactly as it governs a `Resolve`
+error. Until v0.24.0 the executor never called `Validate`, which made a refusal
+expressed only there dead code on every render and made the opt-in
+`Engine.Validate` lint *stricter* than the renderer. `Validate` now runs once
+per tag per render, including once per iteration inside an `exons.for` body;
+implementations must stay cheap.
+
+A refused block tag emits its recourse value and its children are **not**
+rendered.
 
 ## Built-in output tag: `{~exons.now~}` (v0.18.0)
 

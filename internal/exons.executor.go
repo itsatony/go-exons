@@ -433,8 +433,12 @@ func (e *Executor) executeTag(ctx context.Context, tag *TagNode, execCtx Context
 	// Resolve; exons.message did not, and rendered a message marker carrying an empty or
 	// unrecognised role straight into ExecuteAndExtractMessages. Routing the refusal through
 	// the funnel keeps it governable by onerror= rather than making it an unconditional stop.
+	//
+	// Reported as a REFUSAL, not as ErrMsgResolverFailed: the resolver did not run and did not
+	// fail — it declined the tag's attributes. Labelling a contract refusal "resolver failed"
+	// sends an author looking for a fault in the resolver instead of at what they wrote.
 	if err := resolver.Validate(tag.Attributes); err != nil {
-		return e.handleTagError(tagSite(tag), execCtx, NewExecutorErrorWithCause(ErrMsgResolverFailed, tag.Name, tag.Pos(), err))
+		return e.handleTagError(tagSite(tag), execCtx, NewExecutorErrorWithCause(ErrMsgResolverRefused, tag.Name, tag.Pos(), err))
 	}
 
 	// Execute resolver
@@ -672,10 +676,14 @@ func NewTypeNotIterableError(typeName string) *ExecutorError {
 
 // Executor error message constants
 const (
-	ErrMsgMaxDepthExceeded   = "maximum nesting depth exceeded"
-	ErrMsgUnknownNodeType    = "unknown node type"
-	ErrMsgUnknownTag         = "unknown tag"
-	ErrMsgResolverFailed     = "resolver failed"
+	ErrMsgMaxDepthExceeded = "maximum nesting depth exceeded"
+	ErrMsgUnknownNodeType  = "unknown node type"
+	ErrMsgUnknownTag       = "unknown tag"
+	ErrMsgResolverFailed   = "resolver failed"
+	// ErrMsgResolverRefused — the resolver's Validate declined the tag's attributes, so Resolve
+	// was never invoked. Distinct from ErrMsgResolverFailed on purpose: one names a fault in the
+	// resolver, the other names a fault in what the author wrote.
+	ErrMsgResolverRefused    = "resolver refused the tag attributes"
 	ErrMsgTypeNotIterable    = "type is not iterable"
 	ErrMsgOutputSizeExceeded = "rendered output exceeds maximum size limit"
 )

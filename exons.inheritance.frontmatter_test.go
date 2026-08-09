@@ -2,8 +2,11 @@ package exons
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/itsatony/go-cuserr"
+	"github.com/itsatony/go-exons/internal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -289,7 +292,8 @@ func TestDeclaredInputs_ExposesTheMergedContract(t *testing.T) {
 	})
 
 	t.Run("DeclaredInputs merges the chain, child authoritative", func(t *testing.T) {
-		declared := tmpl.DeclaredInputs()
+		declared, err := tmpl.DeclaredInputs()
+		require.NoError(t, err, "a chain walked to its root reports no error")
 		require.Contains(t, declared, "audience", "the parent's declaration must be reachable")
 		assert.Equal(t, "engineers", declared["audience"].Default)
 		assert.Equal(t, "playful", declared["tone"].Default, "the child's declaration of tone wins")
@@ -297,39 +301,205 @@ func TestDeclaredInputs_ExposesTheMergedContract(t *testing.T) {
 	})
 
 	t.Run("the returned map is independent of the template", func(t *testing.T) {
-		declared := tmpl.DeclaredInputs()
+		declared, err := tmpl.DeclaredInputs()
+		require.NoError(t, err)
 		delete(declared, "audience")
-		assert.Contains(t, tmpl.DeclaredInputs(), "audience", "mutating the result must not reach the spec")
+		again, err := tmpl.DeclaredInputs()
+		require.NoError(t, err)
+		assert.Contains(t, again, "audience", "mutating the result must not reach the spec")
+	})
+
+	t.Run("the returned InputDefs are copies, including of a registered PARENT's spec", func(t *testing.T) {
+		// The aliasing this guards against reaches through the child into a template the caller
+		// never named — corrupting every future and concurrent render of the parent.
+		declared, err := tmpl.DeclaredInputs()
+		require.NoError(t, err)
+		declared["audience"].Default = "mutated"
+		declared["audience"].Type = "wrecked"
+
+		parent, found := engine.GetTemplate("base")
+		require.True(t, found)
+		assert.Equal(t, "engineers", parent.Spec().Inputs["audience"].Default,
+			"the parent's parsed spec must be untouched")
+
+		again, err := tmpl.DeclaredInputs()
+		require.NoError(t, err)
+		assert.Equal(t, "engineers", again["audience"].Default)
 	})
 
 	t.Run("keys lead with the document's own author order", func(t *testing.T) {
-		assert.Equal(t, []string{"tone", "severity", "audience"}, tmpl.DeclaredInputKeys(),
+		keys, err := tmpl.DeclaredInputKeys()
+		require.NoError(t, err)
+		assert.Equal(t, []string{"tone", "severity", "audience"}, keys,
 			"own declarations in author order, then inherited names nearest-parent first")
 	})
 
 	t.Run("a template with no inheritance answers with its own set", func(t *testing.T) {
 		plain, err := engine.Parse("---\nname: plain\ndescription: p\ninputs:\n  a:\n    type: text\n  b:\n    type: text\n---\nbody")
 		require.NoError(t, err)
-		assert.Equal(t, []string{"a", "b"}, plain.DeclaredInputKeys())
-		assert.Len(t, plain.DeclaredInputs(), 2)
+		keys, err := plain.DeclaredInputKeys()
+		require.NoError(t, err)
+		assert.Equal(t, []string{"a", "b"}, keys)
+		declared, err := plain.DeclaredInputs()
+		require.NoError(t, err)
+		assert.Len(t, declared, 2)
 	})
 
 	t.Run("a template declaring nothing answers nil, not an empty map", func(t *testing.T) {
 		bare, err := engine.Parse("just text")
 		require.NoError(t, err)
-		assert.Nil(t, bare.DeclaredInputs())
-		assert.Nil(t, bare.DeclaredInputKeys())
+		declared, err := bare.DeclaredInputs()
+		require.NoError(t, err)
+		assert.Nil(t, declared)
+		keys, err := bare.DeclaredInputKeys()
+		require.NoError(t, err)
+		assert.Nil(t, keys)
 	})
 
 	t.Run("keys and map always agree", func(t *testing.T) {
 		// The two are separate orderings of ONE traversal; a name in either and not the other
 		// would mean the traversal ran twice and disagreed with itself.
-		keys := tmpl.DeclaredInputKeys()
-		declared := tmpl.DeclaredInputs()
+		keys, err := tmpl.DeclaredInputKeys()
+		require.NoError(t, err)
+		declared, err := tmpl.DeclaredInputs()
+		require.NoError(t, err)
 		assert.Len(t, keys, len(declared))
 		for _, k := range keys {
 			assert.Contains(t, declared, k)
 		}
+	})
+}
+
+// TestDeclaredInputsReportsAnIncompleteChain pins the rule that makes the accessor honest:
+//
+//	DeclaredInputs errors in exactly the cases where ExecuteWithContext refuses to render.
+//
+// Without it the accessor is a THIRD view of one template, agreeing with neither Execute nor
+// DryRun — it hands back a well-formed, complete-LOOKING contract for a document that cannot run.
+// The consumer this was written for projects that contract onto a wire, where a plausible lie is
+// worse than a gap.
+func TestDeclaredInputsReportsAnIncompleteChain(t *testing.T) {
+	newEngine := func() *Engine {
+		e := MustNew()
+		require.NoError(t, e.RegisterTemplate("cycle-a",
+			"---\nname: cycle-a\ndescription: a\ninputs:\n  from-a:\n    type: text\n---\n{~exons.extends template=\"cycle-b\" /~}"))
+		require.NoError(t, e.RegisterTemplate("cycle-b",
+			"---\nname: cycle-b\ndescription: b\ninputs:\n  from-b:\n    type: text\n---\n{~exons.extends template=\"cycle-a\" /~}"))
+		return e
+	}
+
+	t.Run("a circular chain errors, and Execute refuses the same document", func(t *testing.T) {
+		engine := newEngine()
+		tmpl, found := engine.GetTemplate("cycle-a")
+		require.True(t, found)
+
+		declared, err := tmpl.DeclaredInputs()
+		require.Error(t, err, "a cycle must not be reported as a complete contract")
+		assert.Contains(t, err.Error(), internal.ErrMsgCircularInheritance,
+			"the same reason, in the same words, ResolveInheritance gives")
+		assert.Contains(t, declared, "from-a",
+			"what the walk did reach is still returned — the caller may display it, not publish it")
+
+		// The equivalence the rule asserts: the executor refuses this exact document.
+		_, execErr := tmpl.Execute(context.Background(), map[string]any{})
+		require.Error(t, execErr)
+
+		keys, keysErr := tmpl.DeclaredInputKeys()
+		require.Error(t, keysErr, "both accessors report, or the two disagree")
+		assert.NotEmpty(t, keys)
+	})
+
+	t.Run("a missing parent errors and names the ancestor it stopped at", func(t *testing.T) {
+		engine := MustNew()
+		tmpl, err := engine.Parse(
+			"---\nname: orphan\ndescription: o\ninputs:\n  own:\n    type: text\n---\n{~exons.extends template=\"nowhere\" /~}")
+		require.NoError(t, err)
+
+		declared, err := tmpl.DeclaredInputs()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), ErrMsgTemplateNotFound)
+		assert.Contains(t, declared, "own")
+
+		// The ancestor is carried as METADATA, not spliced into the message: a caller that wants
+		// to point at the broken link needs the name as a value, not as prose to re-parse.
+		var custom *cuserr.CustomError
+		require.True(t, errors.As(err, &custom), "the chain error must be a *cuserr.CustomError")
+		stoppedAt, ok := custom.GetMetadata(MetaKeyTemplateName)
+		require.True(t, ok, "the ancestor the walk stopped at must be named")
+		assert.Equal(t, "nowhere", stoppedAt)
+
+		_, execErr := tmpl.Execute(context.Background(), map[string]any{})
+		require.Error(t, execErr, "Execute must refuse what DeclaredInputs called incomplete")
+	})
+
+	t.Run("an engine-less extending template errors", func(t *testing.T) {
+		engine := MustNew()
+		tmpl, err := engine.Parse(
+			"---\nname: detached\ndescription: d\ninputs:\n  own:\n    type: text\n---\n{~exons.extends template=\"base\" /~}")
+		require.NoError(t, err)
+		tmpl.engine = nil
+
+		_, err = tmpl.DeclaredInputs()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), ErrMsgInheritanceNoEngine)
+	})
+
+	t.Run("a non-extending template never errors even with no engine", func(t *testing.T) {
+		engine := MustNew()
+		tmpl, err := engine.Parse("---\nname: solo\ndescription: s\ninputs:\n  own:\n    type: text\n---\nbody")
+		require.NoError(t, err)
+		tmpl.engine = nil
+
+		declared, err := tmpl.DeclaredInputs()
+		require.NoError(t, err, "no chain means nothing to fail to walk")
+		assert.Contains(t, declared, "own")
+	})
+
+	// The two subtests below are the ones that MATTER: each pins a boundary where the equivalence
+	// was actually broken. The three above all passed while the rule was false in both directions.
+
+	t.Run("an unreadable extends declaration errors, and does not read as a clean contract", func(t *testing.T) {
+		// The fail-OPEN direction, and the dangerous one. newTemplateWithConfig nils
+		// inheritanceInfo whenever extraction failed, so a guard that tests the INFO before the
+		// ERROR reports "complete" — with a nil error — for a document Execute refuses outright.
+		// The order of two ifs is the whole property.
+		engine := MustNew()
+		tmpl, err := engine.Parse(
+			"---\nname: broken\ndescription: b\ninputs:\n  own:\n    type: text\n---\n{~exons.parent /~}")
+		require.NoError(t, err, "extraction failure is non-fatal at PARSE — that is the trap")
+
+		declared, err := tmpl.DeclaredInputs()
+		require.Error(t, err, "a contract whose parent cannot be identified is not complete")
+		assert.Contains(t, err.Error(), ErrMsgInheritanceUnreadable)
+		assert.Contains(t, declared, "own")
+
+		_, execErr := tmpl.Execute(context.Background(), map[string]any{})
+		require.Error(t, execErr, "Execute refuses it, so DeclaredInputs must not bless it")
+	})
+
+	t.Run("a chain ending exactly at maxDepth is complete, not exceeded", func(t *testing.T) {
+		// The fail-CLOSED direction. ResolveInheritance refuses only when a parent is DEMANDED
+		// beyond the bound, so it resolves maxDepth+1 parents. A walk that bounds its own loop
+		// instead reports DepthExceeded for the last chain the executor renders happily — one
+		// rule, two implementations, disagreeing precisely at the boundary.
+		engine := MustNew(WithMaxDepth(1))
+		engine.MustRegisterTemplate("p2",
+			"---\nname: p2\ndescription: root\ninputs:\n  root-input:\n    type: text\n    default: from-root\n---\nRoot={~exons.input name=\"root-input\" /~}")
+		engine.MustRegisterTemplate("p1",
+			"---\nname: p1\ndescription: mid\n---\n{~exons.extends template=\"p2\" /~}")
+
+		child := "---\nname: leaf\ndescription: l\n---\n{~exons.extends template=\"p1\" /~}"
+		tmpl, err := engine.Parse(child)
+		require.NoError(t, err)
+
+		// The executor's verdict is the reference: two parents at maxDepth=1 resolve.
+		out, execErr := tmpl.Execute(context.Background(), map[string]any{})
+		require.NoError(t, execErr, "the executor resolves maxDepth+1 parents")
+		assert.Contains(t, out, "Root=from-root")
+
+		declared, err := tmpl.DeclaredInputs()
+		require.NoError(t, err, "the walk must agree with the executor at the boundary")
+		assert.Contains(t, declared, "root-input", "the root ancestor's declarations are reachable")
 	})
 }
 

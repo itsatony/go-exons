@@ -206,3 +206,63 @@ func TestResolverValidateRefusalIsGovernable(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, out, "(bad role)")
 }
+
+// TestLintCatchesAnInvalidOnErrorOnEveryShapeThatHonoursIt closes the half of defect 5 that only
+// became a defect once defect 5 was fixed.
+//
+// Before v0.24.0 an onerror= on a block construct was inert, so Engine.Validate checking it only on
+// TagNode was correct. Now every one of these shapes HONOURS the attribute, and the failure mode is
+// silent and inverted: getErrorStrategy returns as soon as the key is present, and ParseErrorStrategy
+// maps an unrecognised value to THROW. So a typo does not degrade to the renderer's configured
+// leniency — it hard-fails under a renderer configured never to hard-fail.
+//
+// The lint is the only place that can say so, and a lint that covers some of the shapes teaches an
+// author to read its silence as approval.
+func TestLintCatchesAnInvalidOnErrorOnEveryShapeThatHonoursIt(t *testing.T) {
+	engine := MustNew()
+
+	cases := []struct {
+		name   string
+		source string
+	}{
+		{"plain tag", `{~exons.var name="x" onerror="remov" /~}`},
+		{"exons.if", `{~exons.if eval="x" onerror="remov"~}a{~/exons.if~}`},
+		{"an individual elseif", `{~exons.if eval="x"~}a{~exons.elseif eval="y" onerror="remov"~}b{~/exons.if~}`},
+		{"exons.for", `{~exons.for item="i" in="xs" onerror="remov"~}a{~/exons.for~}`},
+		{"exons.switch", `{~exons.switch eval="x" onerror="remov"~}{~exons.case value="a"~}a{~/exons.case~}{~/exons.switch~}`},
+		{"an individual case", `{~exons.switch eval="x"~}{~exons.case value="a" onerror="remov"~}a{~/exons.case~}{~/exons.switch~}`},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			result, err := engine.Validate(c.source)
+			require.NoError(t, err)
+			var found bool
+			for _, issue := range result.Issues() {
+				if issue.Message == ErrMsgInvalidOnErrorAttr {
+					found = true
+					break
+				}
+			}
+			assert.True(t, found, "an unrecognised onerror= must be reported on every shape that honours it")
+		})
+	}
+
+	t.Run("a VALID onerror is never reported, on any shape", func(t *testing.T) {
+		// The companion direction: a lint that fires on correct code is the reason authors turn
+		// lints off, and this one is a SeverityError.
+		valid := []string{
+			`{~exons.if eval="x" onerror="remove"~}a{~/exons.if~}`,
+			`{~exons.for item="i" in="xs" onerror="keepraw"~}a{~/exons.for~}`,
+			`{~exons.switch eval="x" onerror="throw"~}{~exons.case value="a"~}a{~/exons.case~}{~/exons.switch~}`,
+			`{~exons.if eval="x"~}a{~exons.elseif eval="y" onerror="default" default="d"~}b{~/exons.if~}`,
+		}
+		for _, src := range valid {
+			result, err := engine.Validate(src)
+			require.NoError(t, err)
+			for _, issue := range result.Issues() {
+				assert.NotEqual(t, ErrMsgInvalidOnErrorAttr, issue.Message, "source: %s", src)
+			}
+		}
+	})
+}

@@ -71,6 +71,10 @@ const (
 	// than the author wrote, reported as success.
 	ErrMsgInheritanceUnreadable = "inheritance declaration could not be read"
 	ErrMsgInheritanceNoEngine   = "template extends another but has no engine to resolve it"
+	// ErrMsgInheritanceSpecsUnavailable — the chain can be RESOLVED (the executor hands back
+	// parent source) but its declarations cannot be READ, because a TemplateExecutor returns
+	// source rather than a parsed *Spec. See design decision A-1 in docs/plans/DC13-entail.md.
+	ErrMsgInheritanceSpecsUnavailable = "template executor cannot supply parsed parent specs"
 
 	// Template errors (nested template inclusion)
 	ErrMsgTemplateNotFound      = "template not found"
@@ -399,6 +403,14 @@ func NewInheritanceError(msg string, cause error) error {
 		err = cuserr.NewValidationError(ErrCodeExec, msg)
 	}
 	return err.WithMetadata(MetaKeyTag, TagNameExtends)
+}
+
+// NewInheritanceChainError creates an error for an extends chain that could not be walked to its
+// end, naming the ancestor the walk stopped at. See Template.ancestorSpecs.
+func NewInheritanceChainError(msg string, parentName string) error {
+	return cuserr.NewValidationError(ErrCodeExec, msg).
+		WithMetadata(MetaKeyTag, TagNameExtends).
+		WithMetadata(MetaKeyTemplateName, parentName)
 }
 
 // NewVariableNotFoundError creates a variable not found error

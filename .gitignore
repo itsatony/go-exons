@@ -5,6 +5,11 @@
 *.so
 *.dylib
 
+# Compiled example binaries. `go build ./...` inside examples/NN-name/ drops an
+# executable named after the directory, which has no extension to match on — so the
+# pattern keys on the NN- prefix every example directory uses.
+examples/*/[0-9][0-9]-*
+
 # Test artifacts
 *.test
 *.out

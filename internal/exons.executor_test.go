@@ -1696,3 +1696,96 @@ func TestOutputSize_DefaultConfig(t *testing.T) {
 	config := DefaultExecutorConfig()
 	assert.Equal(t, DefaultMaxOutputSize, config.MaxOutputSize)
 }
+
+// DC13-entail, workstream B — the sixth fatal site.
+//
+// The exons.recourse_integration_test.go suite proves onerror=/default=/keepraw are reachable on
+// block tags through the black-box engine.Execute. It CANNOT reach the for-loop's
+// ChildContextCreator sites (:221 and :242), because the standard Context implements Child(), so
+// every source string routed through Execute passes the check. A regression that returned "", err
+// there instead of routing through handleTagError would ship green against that whole file.
+//
+// These tests reach the site the way the repo's existing THROW-only test does (see
+// TestExecutor_ExecuteFor / "context does not support child creation"): a plain
+// newMockContextAccessor, which does not implement ChildContextCreator, driven through
+// executeFor directly. The forNode carries the onerror=/default= attributes and RawSource that a
+// parsed opening tag would carry, so forSite() sees exactly what the parser would have set.
+//
+// Every subtest below was verified RED by reverting the :221 site to `return "", err`.
+
+// newForNodeWithRecourse builds a *ForNode iterating a resolvable collection ("items"), so the
+// earlier collection-path and iterability checks pass and execution reaches the
+// ChildContextCreator check — carrying the attribute map and raw source a parsed tag would.
+func newForNodeWithRecourse(attrs Attributes, rawSource string) *ForNode {
+	forNode := NewForNode("item", "", "items", 0, []Node{
+		NewTextNode("body", Position{Line: 1, Column: 1}),
+	}, Position{Line: 1, Column: 1})
+	forNode.Attributes = attrs
+	forNode.RawSource = rawSource
+	return forNode
+}
+
+func TestForChildContextRecourseIsReachable(t *testing.T) {
+	registry := NewRegistry(nil)
+	RegisterBuiltins(registry, BuiltinConfig{})
+	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
+
+	newCtx := func() *mockContextAccessor {
+		// A resolvable, iterable collection — the failure under test is the ABSENCE of child
+		// support, not a bad collection, so the loop must get past the earlier guards.
+		return newMockContextAccessor(map[string]any{"items": []string{"a", "b"}})
+	}
+
+	t.Run("default supplies the default value", func(t *testing.T) {
+		forNode := newForNodeWithRecourse(
+			Attributes{AttrOnError: ErrorStrategyNameDefault, AttrDefault: "(no child ctx)"}, "")
+		out, err := executor.executeFor(context.Background(), forNode, newCtx(), 0)
+		require.NoError(t, err, "onerror=default must suppress the no-child-context failure")
+		assert.Equal(t, "(no child ctx)", out)
+	})
+
+	t.Run("keepraw emits the whole construct byte-for-byte", func(t *testing.T) {
+		// keepraw echoes the construct's RawSource verbatim, exactly as
+		// TestBlockTagKeepRawEmitsTheWholeConstruct asserts assert.Equal(t, c.source, out).
+		rawSource := `{~exons.for item="item" in="items" onerror="keepraw"~}body{~/exons.for~}`
+		forNode := newForNodeWithRecourse(Attributes{AttrOnError: ErrorStrategyNameKeepRaw}, rawSource)
+		out, err := executor.executeFor(context.Background(), forNode, newCtx(), 0)
+		require.NoError(t, err)
+		assert.Equal(t, rawSource, out,
+			"keepraw must emit the construct from its opening tag through its closing tag")
+	})
+
+	t.Run("remove yields empty, surrounding literals still render", func(t *testing.T) {
+		// executeFor alone renders only the construct, which would be indistinguishable from a
+		// vacuous empty/failed render. Drive the node through executeNodes wrapped in literal
+		// text — a whole-render failure could not produce "AB", so the empty construct is proven
+		// to be the removal, not the absence of output.
+		forNode := newForNodeWithRecourse(Attributes{AttrOnError: ErrorStrategyNameRemove}, "")
+		nodes := []Node{
+			NewTextNode("A", Position{Line: 1, Column: 1}),
+			forNode,
+			NewTextNode("B", Position{Line: 1, Column: 1}),
+		}
+		out, err := executor.executeNodes(context.Background(), nodes, newCtx(), 0)
+		require.NoError(t, err)
+		assert.Equal(t, "AB", out,
+			"the construct must contribute nothing while the surrounding literals render")
+	})
+}
+
+// TestForChildContextWithoutOnErrorStillThrows is the other half of the contract: absent an
+// explicit strategy, the no-child-context failure is still fatal. This is the companion that
+// makes the recourse above a fix rather than a weakening, and it mirrors the pre-existing
+// "context does not support child creation" throw test — but asserts on BEHAVIOUR (an error is
+// returned), not on any error-message constant.
+func TestForChildContextWithoutOnErrorStillThrows(t *testing.T) {
+	registry := NewRegistry(nil)
+	RegisterBuiltins(registry, BuiltinConfig{})
+	executor := NewExecutor(registry, DefaultExecutorConfig(), nil)
+
+	ctx := newMockContextAccessor(map[string]any{"items": []string{"a", "b"}})
+	forNode := newForNodeWithRecourse(nil, "")
+
+	_, err := executor.executeFor(context.Background(), forNode, ctx, 0)
+	require.Error(t, err, "with no onerror= the no-child-context failure must remain fatal")
+}

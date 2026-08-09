@@ -99,11 +99,10 @@ func (r *InputResolver) Resolve(ctx context.Context, execCtx interface{}, attrs 
 		return "", NewBuiltinError(ErrMsgInvalidContext, TagNameInput)
 	}
 
-	// Checked HERE and not only in Validate, because the executor never calls a resolver's
-	// Validate — the method is on the InternalResolver interface and nothing in the engine
-	// invokes it. A refusal expressed only there would be dead code, which is the same defect
-	// class as `inputs:` itself being inert before this release. Both entry points delegate to
-	// one helper so the two answers cannot drift.
+	// Checked HERE as well as in Validate. Since v0.24.0 executeTag calls Validate immediately
+	// before Resolve, so this is no longer the only thing standing between a malformed tag and a
+	// render — but both entry points delegate to one helper, so the two answers cannot drift and
+	// the duplication costs nothing. A caller invoking Resolve directly still gets the check.
 	if err := validateInputAttrs(attrs); err != nil {
 		return "", err
 	}

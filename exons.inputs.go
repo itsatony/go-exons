@@ -53,7 +53,13 @@ import (
 //     payoff is the equivalence PRESENT ⇔ DECLARED, which is what lets exons.input report an
 //     undeclared name as the author error it is.
 func (t *Template) contextWithInputs(execCtx *Context) *Context {
-	inputs := t.mergedInputs()
+	// Error discarded: injection has no error channel. For every chain this walk cannot complete
+	// the render is refused anyway — resolveInheritance rejects an unreadable, engine-less,
+	// circular, missing-parent or over-deep chain before executing a node. The one walk failure
+	// that does NOT stop the render is a non-templateProvider executor, where the parent's
+	// declarations are unreadable while its body still resolves; there the defaults of an
+	// inherited input simply do not apply, exactly as before v0.24.0. See mergedInputs.
+	inputs, _ := t.mergedInputs()
 	if execCtx == nil || len(inputs) == 0 {
 		return execCtx
 	}
@@ -131,17 +137,27 @@ func mergeInputBinding(binding map[string]any, inputs map[string]*InputDef) map[
 // already in the chain" rule as InheritanceResolver.ResolveInheritance. A differently-bounded walk
 // of the same chain is a second chance to disagree about what a cycle is.
 //
-// Degrading rather than erroring is deliberate. Every caller of this helper answers a question
-// with no error channel (does the document declare x? what is in scope?), and a chain this walk
-// cannot complete is one ResolveInheritance will refuse outright at execute — where the reason is
-// reported properly.
-func (t *Template) mergedInputs() map[string]*InputDef {
+// The returned map is ALWAYS usable, even when the error is non-nil: a chain that stopped short
+// still yields every declaration the walk did reach. The three internal callers discard the error
+// deliberately — each answers a question with no error channel (does the document declare x? what
+// is in scope?), and a chain this walk cannot complete is one ResolveInheritance refuses outright
+// at execute, where the reason is reported properly. The two EXPORTED accessors do NOT discard it:
+// a partial contract handed to a form builder or a wire projection is a plausible lie, and a
+// caller that cannot learn the chain is broken has no way to avoid publishing it.
+func (t *Template) mergedInputs() (map[string]*InputDef, error) {
+	ancestors, err := t.ancestorSpecs()
+	return t.mergeWithAncestors(ancestors), err
+}
+
+// mergeWithAncestors applies the composing-document-is-the-authority rule to an ALREADY-WALKED
+// ancestor list, so a caller needing both the merged map and the ancestors themselves pays for
+// exactly one traversal.
+func (t *Template) mergeWithAncestors(ancestors []*Spec) map[string]*InputDef {
 	var own map[string]*InputDef
 	if t.spec != nil {
 		own = t.spec.Inputs
 	}
 
-	ancestors := t.ancestorSpecs()
 	if len(ancestors) == 0 {
 		return own
 	}
@@ -162,21 +178,46 @@ func (t *Template) mergedInputs() map[string]*InputDef {
 
 // ancestorSpecs returns the specs of this template's extends chain, NEAREST-PARENT FIRST, skipping
 // ancestors that declare no inputs. It is the single chain walk behind mergedInputs and
-// DeclaredInputKeys — two orderings of one traversal, never two traversals.
+// DeclaredInputKeys.
 //
 // Bounds are the resolver's, not a second set: the same maxDepth and the same "this parent is
 // already in the chain" rule as InheritanceResolver.ResolveInheritance. A differently-bounded walk
 // of the same chain is a second chance to disagree about what a cycle is.
-func (t *Template) ancestorSpecs() []*Spec {
-	if t.inheritanceInfo == nil || t.engine == nil {
-		return nil
+//
+// The error names WHY the walk stopped short of the chain's natural end, and the ancestors
+// returned alongside it are still every spec the walk did reach. The rule it enforces:
+//
+//	ancestorSpecs errors in exactly the cases where ExecuteWithContext refuses to render.
+//
+// That equivalence is the whole point of reporting at all. Without it DeclaredInputs would be a
+// THIRD view of one template, agreeing with neither Execute nor DryRun — the "one rule, two
+// implementations" divergence this track exists to remove. The one case with no execute-side
+// counterpart is a TemplateExecutor that is not a templateProvider: that chain RESOLVES (source
+// is available) while its declarations stay unreadable, so it is reported as its own reason.
+func (t *Template) ancestorSpecs() ([]*Spec, error) {
+	// inheritanceErr FIRST, and the order is the whole correctness of this guard.
+	// newTemplateWithConfig sets inheritanceInfo to nil whenever extraction failed, so
+	// `inheritanceErr != nil` IMPLIES `inheritanceInfo == nil` — testing the info first makes the
+	// error branch unreachable and hands back a clean, complete-LOOKING contract with a nil error
+	// for a document ExecuteWithContext refuses. That is worse than the gap this rule closes: it
+	// invites a caller to trust "nil error ⇒ safe to publish" precisely where the trust is false.
+	// resolveInheritance checks in this order for the same reason.
+	if t.inheritanceErr != nil {
+		return nil, NewInheritanceError(ErrMsgInheritanceUnreadable, t.inheritanceErr)
+	}
+	if t.inheritanceInfo == nil {
+		return nil, nil // extends nothing — the chain's natural end, at length zero
+	}
+	if t.engine == nil {
+		return nil, NewInheritanceError(ErrMsgInheritanceNoEngine, nil)
 	}
 	provider, ok := t.engine.(templateProvider)
 	if !ok {
 		// A third-party TemplateExecutor hands back source, not a parsed *Spec. Re-parsing it
 		// here would build a second, differently-configured engine's idea of the parent — see
-		// design decision A-1. The child's own declarations remain correct.
-		return nil
+		// design decision A-1. The child's own declarations remain correct, and are returned;
+		// what is NOT correct is calling that partial set the document's whole contract.
+		return nil, NewInheritanceError(ErrMsgInheritanceSpecsUnavailable, nil)
 	}
 
 	maxDepth := t.config.maxDepth
@@ -187,26 +228,36 @@ func (t *Template) ancestorSpecs() []*Spec {
 	var ancestors []*Spec
 	seen := make(map[string]bool)
 	current := t
-	for depth := 0; depth <= maxDepth; depth++ {
+	// The bound is checked the way ResolveInheritance checks it — when a parent at this depth is
+	// DEMANDED, not after one has been taken. Bounding the loop itself instead (`depth <= maxDepth`)
+	// silently converts "the chain ended exactly at the bound" into "the chain exceeded the bound",
+	// so a chain of maxDepth+1 parents that Execute resolves happily reported DepthExceeded here.
+	// One rule, two implementations, disagreeing at the boundary — which is the whole failure mode
+	// this walk was written to avoid by reusing the resolver's bounds rather than inventing its own.
+	for depth := 0; ; depth++ {
 		if current.inheritanceInfo == nil {
-			break
+			return ancestors, nil // walked to the root — the chain's natural end
+		}
+		if depth > maxDepth {
+			return ancestors, NewInheritanceChainError(
+				internal.ErrMsgInheritanceDepthExceeded, current.inheritanceInfo.ParentTemplate)
 		}
 		parentName := current.inheritanceInfo.ParentTemplate
 		if seen[parentName] {
-			break // circular chain — same rule ResolveInheritance applies
+			// Circular chain — the same rule, and the same words, ResolveInheritance applies.
+			return ancestors, NewInheritanceChainError(internal.ErrMsgCircularInheritance, parentName)
 		}
 		seen[parentName] = true
 
 		parent, found := provider.GetTemplate(parentName)
 		if !found {
-			break
+			return ancestors, NewInheritanceChainError(ErrMsgTemplateNotFound, parentName)
 		}
 		if parent.spec != nil && len(parent.spec.Inputs) > 0 {
 			ancestors = append(ancestors, parent.spec)
 		}
 		current = parent
 	}
-	return ancestors
 }
 
 // DeclaredInputs returns every input this document declares, INCLUDING those inherited through
@@ -219,18 +270,58 @@ func (t *Template) ancestorSpecs() []*Spec {
 // with Spec() alone an extending document silently omits every field its parent declares. That
 // gap is the reason this accessor exists.
 //
-// The returned map is a fresh map; the *InputDef values are shared and must not be mutated. Nil
-// is a valid, empty result.
-func (t *Template) DeclaredInputs() map[string]*InputDef {
-	merged := t.mergedInputs()
+// The map and every *InputDef in it are COPIES. Handing back the live pointers would let a caller
+// reach through this accessor into a registered PARENT's parsed spec — a template it never named —
+// and corrupt every future and concurrent render of it. A form builder that normalizes a default
+// in place is an ordinary thing to write, so the aliasing is not a rule worth stating; it is a
+// footgun worth removing.
+//
+// A NON-NIL ERROR MEANS THE CONTRACT IS INCOMPLETE, and the map is what the chain walk reached
+// before it stopped. It is returned rather than withheld so a caller may still display what is
+// known — but it must not be PUBLISHED as the document's contract, because a cycle, a missing
+// parent or an over-deep chain each produce a well-formed map for a document ExecuteWithContext
+// refuses to render. That was the shape of this accessor before v0.24.0 shipped it, and a
+// consumer projecting a wire contract had no way to tell.
+//
+// Nil with a nil error is a valid, empty result: the document declares nothing and inherits
+// nothing.
+func (t *Template) DeclaredInputs() (map[string]*InputDef, error) {
+	merged, err := t.mergedInputs()
 	if len(merged) == 0 {
-		return nil
+		return nil, err
 	}
 	out := make(map[string]*InputDef, len(merged))
 	for name, def := range merged {
-		out[name] = def
+		out[name] = cloneInputDef(def)
 	}
-	return out
+	return out, err
+}
+
+// cloneInputDef deep-copies an input declaration: every value field, all three option/accept
+// slices (whose elements are pure value structs), and the decoded Default. A nil def clones to nil.
+//
+// The Default carries deepCopyValue's caveat, and it is stated here rather than assumed: that
+// helper copies the YAML/JSON shapes exhaustively and returns a struct, a pointer or a []byte BY
+// REFERENCE. Today no such value can occur — InputDef.Default is only ever populated by the
+// frontmatter YAML unmarshal, which yields none of those shapes — so the copy is total in
+// practice. It is not total by CONSTRUCTION, and a future path that sets Default from Go code
+// would quietly reintroduce the aliasing this function exists to remove.
+func cloneInputDef(def *InputDef) *InputDef {
+	if def == nil {
+		return nil
+	}
+	out := *def
+	out.Default = deepCopyValue(def.Default)
+	if def.Options != nil {
+		out.Options = append([]InputOption(nil), def.Options...)
+	}
+	if def.AssociateWith != nil {
+		out.AssociateWith = append([]InputOption(nil), def.AssociateWith...)
+	}
+	if def.Accept != nil {
+		out.Accept = append([]string(nil), def.Accept...)
+	}
+	return &out
 }
 
 // DeclaredInputKeys returns the names from DeclaredInputs in presentation order: this document's
@@ -240,10 +331,16 @@ func (t *Template) DeclaredInputs() map[string]*InputDef {
 // The document you opened leads and inherited fields follow — the same "composing document is the
 // authority" principle applied to presentation rather than to precedence. Note this is ordering
 // only: a name the child restates takes the CHILD's definition wherever it appears in the list.
-func (t *Template) DeclaredInputKeys() []string {
-	merged := t.mergedInputs()
+//
+// The error carries the same meaning it carries on DeclaredInputs, and for the same reason: a
+// list of field names IS a contract when it is the thing a form is built from.
+func (t *Template) DeclaredInputKeys() ([]string, error) {
+	// One walk, two orderings — the merged map and the ancestor order both come from it. Reading
+	// mergedInputs() and then ancestorSpecs() separately would walk the chain twice.
+	ancestors, err := t.ancestorSpecs()
+	merged := t.mergeWithAncestors(ancestors)
 	if len(merged) == 0 {
-		return nil
+		return nil, err
 	}
 
 	out := make([]string, 0, len(merged))
@@ -262,7 +359,7 @@ func (t *Template) DeclaredInputKeys() []string {
 	}
 
 	appendFrom(t.spec.OrderedInputKeys())
-	for _, ancestor := range t.ancestorSpecs() {
+	for _, ancestor := range ancestors {
 		appendFrom(ancestor.OrderedInputKeys())
 	}
 
@@ -277,7 +374,7 @@ func (t *Template) DeclaredInputKeys() []string {
 		}
 	}
 	sort.Strings(rest)
-	return append(out, rest...)
+	return append(out, rest...), err
 }
 
 // previewDataWithInputs returns data with every declared input readable under the reserved `input`
@@ -288,7 +385,10 @@ func (t *Template) DeclaredInputKeys() []string {
 // occupied by something that is not a binding map, the document is using `input` as an ordinary
 // variable name and the preview leaves it exactly as it found it.
 func (t *Template) previewDataWithInputs(data map[string]any) map[string]any {
-	inputs := t.mergedInputs()
+	// Error discarded for the reason contextWithInputs discards it, and with the same one
+	// exception: this mirrors injection exactly, and dryRunAST reports an unresolvable chain
+	// through its own completeness channel rather than through this map.
+	inputs, _ := t.mergedInputs()
 	if len(inputs) == 0 {
 		return data
 	}
@@ -353,7 +453,10 @@ func (t *Template) declaresInput(name string) bool {
 		return false
 	}
 	root, _, _ := strings.Cut(name, PathSeparator)
-	_, ok := t.mergedInputs()[root]
+	// Error discarded: this answers a yes/no question with no error channel, and a name found in
+	// a partially-walked chain is still genuinely declared. See mergedInputs.
+	merged, _ := t.mergedInputs()
+	_, ok := merged[root]
 	return ok
 }
 

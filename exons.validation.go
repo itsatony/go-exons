@@ -208,17 +208,7 @@ func (e *Engine) validateTagNode(tag *internal.TagNode, result *ValidationResult
 		}
 	}
 
-	// Validate onerror attribute if present
-	if onErrorStr, hasOnError := tag.Attributes.Get(AttrOnError); hasOnError {
-		if !IsValidErrorStrategy(onErrorStr) {
-			result.issues = append(result.issues, ValidationIssue{
-				Severity: SeverityError,
-				Message:  ErrMsgInvalidOnErrorAttr,
-				Position: e.internalPosToPublic(tag.Pos()),
-				TagName:  tag.Name,
-			})
-		}
-	}
+	e.validateOnErrorAttr(tag.Attributes, tag.Pos(), tag.Name, result)
 
 	// Validate exons.include references
 	if tag.Name == TagNameInclude {
@@ -240,9 +230,35 @@ func (e *Engine) validateTagNode(tag *internal.TagNode, result *ValidationResult
 	}
 }
 
+// validateOnErrorAttr reports an onerror= whose value is not one of the declared strategies.
+//
+// It is shared by every attribute-bearing shape — the tag, the three block constructs, and the
+// individual elseif/case branches — because as of v0.24.0 all of them HONOUR onerror=, and a lint
+// that checks it on only some of them is worse than one that checks it nowhere: an author reads
+// silence as approval. The trap is specific and quiet: getErrorStrategy returns as soon as the key
+// is PRESENT, and ParseErrorStrategy maps anything unrecognised to throw. So onerror="remov" on a
+// for-loop does not fall back to the context's lenient default — it hard-fails, under a renderer
+// configured never to hard-fail, and the typo is the only evidence.
+func (e *Engine) validateOnErrorAttr(attrs internal.Attributes, pos internal.Position, tagName string, result *ValidationResult) {
+	onErrorStr, hasOnError := attrs.Get(AttrOnError)
+	if !hasOnError || IsValidErrorStrategy(onErrorStr) {
+		return
+	}
+	result.issues = append(result.issues, ValidationIssue{
+		Severity: SeverityError,
+		Message:  ErrMsgInvalidOnErrorAttr,
+		Position: e.internalPosToPublic(pos),
+		TagName:  tagName,
+	})
+}
+
 // validateConditionalNode validates a conditional node.
 func (e *Engine) validateConditionalNode(cond *internal.ConditionalNode, result *ValidationResult) {
+	e.validateOnErrorAttr(cond.Attributes, cond.Pos(), TagNameIf, result)
 	for _, branch := range cond.Branches {
+		// A branch's own attributes, at the branch's own position — an elseif's typo must not be
+		// reported at the line of the opening exons.if.
+		e.validateOnErrorAttr(branch.Attributes, branch.Pos, TagNameIf, result)
 		// Validate branch children recursively
 		e.validateNodes(branch.Children, result)
 	}
@@ -250,6 +266,8 @@ func (e *Engine) validateConditionalNode(cond *internal.ConditionalNode, result 
 
 // validateForNode validates a for loop node.
 func (e *Engine) validateForNode(forNode *internal.ForNode, result *ValidationResult) {
+	e.validateOnErrorAttr(forNode.Attributes, forNode.Pos(), TagNameFor, result)
+
 	// Check required item variable
 	if forNode.ItemVar == "" {
 		result.issues = append(result.issues, ValidationIssue{
@@ -286,6 +304,8 @@ func (e *Engine) validateForNode(forNode *internal.ForNode, result *ValidationRe
 
 // validateSwitchNode validates a switch/case node.
 func (e *Engine) validateSwitchNode(switchNode *internal.SwitchNode, result *ValidationResult) {
+	e.validateOnErrorAttr(switchNode.Attributes, switchNode.Pos(), TagNameSwitch, result)
+
 	// Check required expression
 	if switchNode.Expression == "" {
 		result.issues = append(result.issues, ValidationIssue{
@@ -298,6 +318,8 @@ func (e *Engine) validateSwitchNode(switchNode *internal.SwitchNode, result *Val
 
 	// Validate each case
 	for _, caseNode := range switchNode.Cases {
+		e.validateOnErrorAttr(caseNode.Attributes, caseNode.Pos, TagNameCase, result)
+
 		// Check that case has either value or eval
 		if caseNode.Value == "" && caseNode.Eval == "" {
 			result.issues = append(result.issues, ValidationIssue{

@@ -74,9 +74,20 @@ func main() {
 	// DeclaredInputs is the MERGED contract. Template.Spec() is the parse result and reports
 	// this document's own frontmatter alone — with it, an extending document silently omits
 	// every field its parent declares.
-	declared := tmpl.DeclaredInputs()
+	// The error is not decorative: it reports that the extends chain could NOT be walked to its
+	// end (a cycle, a missing parent, an over-deep chain), which means the contract below is
+	// PARTIAL. Displaying a partial contract is fine; publishing one as the document's whole
+	// contract is not — and a caller with no error to check has no way to tell the difference.
+	declared, err := tmpl.DeclaredInputs()
+	if err != nil {
+		log.Fatalf("the declared contract is incomplete: %v", err)
+	}
+	keys, err := tmpl.DeclaredInputKeys()
+	if err != nil {
+		log.Fatalf("the declared contract is incomplete: %v", err)
+	}
 	section("The contract this document declares")
-	for _, name := range tmpl.DeclaredInputKeys() {
+	for _, name := range keys {
 		def := declared[name]
 		origin := "own"
 		if _, isOwn := tmpl.Spec().Inputs[name]; !isOwn {
