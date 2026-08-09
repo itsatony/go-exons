@@ -66,6 +66,12 @@ const (
 	// Type conversion errors
 	ErrMsgTypeConversion = "type conversion failed"
 
+	// Inheritance errors (exons.extends). Both describe a document that declared a parent the
+	// executor could not honour — the render that would otherwise happen is a DIFFERENT document
+	// than the author wrote, reported as success.
+	ErrMsgInheritanceUnreadable = "inheritance declaration could not be read"
+	ErrMsgInheritanceNoEngine   = "template extends another but has no engine to resolve it"
+
 	// Template errors (nested template inclusion)
 	ErrMsgTemplateNotFound      = "template not found"
 	ErrMsgTemplateAlreadyExists = "template already registered"
@@ -381,6 +387,18 @@ func NewExecutionError(msg string, tagName string, pos Position, cause error) er
 		WithMetadata(MetaKeyTag, tagName).
 		WithMetadata(MetaKeyLine, strconv.Itoa(pos.Line)).
 		WithMetadata(MetaKeyColumn, strconv.Itoa(pos.Column))
+}
+
+// NewInheritanceError creates an error for a template that declares a parent the executor cannot
+// resolve. See Template.resolveInheritance for why these are errors rather than a degraded render.
+func NewInheritanceError(msg string, cause error) error {
+	var err *cuserr.CustomError
+	if cause != nil {
+		err = cuserr.WrapStdError(cause, ErrCodeExec, msg)
+	} else {
+		err = cuserr.NewValidationError(ErrCodeExec, msg)
+	}
+	return err.WithMetadata(MetaKeyTag, TagNameExtends)
 }
 
 // NewVariableNotFoundError creates a variable not found error

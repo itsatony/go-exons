@@ -3,6 +3,8 @@ package exons
 import (
 	"fmt"
 	"strings"
+
+	"github.com/itsatony/go-exons/internal"
 )
 
 // This file makes the frontmatter `inputs:` block MEAN something at execution time.
@@ -50,7 +52,8 @@ import (
 //     payoff is the equivalence PRESENT ⇔ DECLARED, which is what lets exons.input report an
 //     undeclared name as the author error it is.
 func (t *Template) contextWithInputs(execCtx *Context) *Context {
-	if execCtx == nil || t.spec == nil || len(t.spec.Inputs) == 0 {
+	inputs := t.mergedInputs()
+	if execCtx == nil || len(inputs) == 0 {
 		return execCtx
 	}
 
@@ -76,11 +79,26 @@ func (t *Template) contextWithInputs(execCtx *Context) *Context {
 	// those to a declared input therefore still shares it live across concurrent renders. That is
 	// a property of deepCopyValue, unchanged here and identical on both paths; widening it belongs
 	// there, not in two call sites that would then have to agree by memory.
-	merged := make(map[string]any, len(binding)+len(t.spec.Inputs))
+	merged := mergeInputBinding(binding, inputs)
+
+	data := execCtx.Data() // already a deep copy of the direct data
+	if data == nil {
+		data = make(map[string]any, 1)
+	}
+	data[ContextKeyInput] = merged
+	return execCtx.withData(data)
+}
+
+// mergeInputBinding applies rules 2, 3 and 4 above to one binding against one declaration set.
+// It is factored out because contextWithInputs is no longer its only caller — DryRun's placeholder
+// preview needs the SAME answer, and a preview that disagrees with the render about a default is
+// the failure this cycle exists to remove.
+func mergeInputBinding(binding map[string]any, inputs map[string]*InputDef) map[string]any {
+	merged := make(map[string]any, len(binding)+len(inputs))
 	for k, v := range binding {
 		merged[k] = deepCopyValue(v)
 	}
-	for name, def := range t.spec.Inputs {
+	for name, def := range inputs {
 		if def == nil {
 			continue
 		}
@@ -89,13 +107,119 @@ func (t *Template) contextWithInputs(execCtx *Context) *Context {
 		}
 		merged[name] = deepCopyValue(def.Default) // rules 3 and 4
 	}
+	return merged
+}
 
-	data := execCtx.Data() // already a deep copy of the direct data
-	if data == nil {
-		data = make(map[string]any, 1)
+// mergedInputs returns every input DECLARED anywhere in this template's extends chain, resolved
+// by one rule:
+//
+//	The COMPOSING document is the authority; the COMPOSED document supplies the fallback.
+//
+// A child's `inputs:` entry overrides a parent's of the same name. This deliberately mirrors
+// aigentverse ADR-141, so the library's inheritance story and the registry's composition story
+// state the same thing rather than two things a reader must reconcile.
+//
+// Why this is needed at all: a *Template owns exactly one *Spec — its own. Spec has no `extends:`
+// key (inheritance is expressed only by the body tag), so nothing in the frontmatter layer knows a
+// parent exists. Meanwhile ResolveInheritance splices the parent's BODY into the child. The parent
+// body's {~exons.input~} tags therefore executed against the CHILD's declarations, and since
+// exons.input reports an undeclared name as a hard error rather than a blank, a parent that used
+// its own declared input could not render at all once extended.
+//
+// Bounds are the resolver's, not a second set: the same maxDepth and the same "this parent is
+// already in the chain" rule as InheritanceResolver.ResolveInheritance. A differently-bounded walk
+// of the same chain is a second chance to disagree about what a cycle is.
+//
+// Degrading rather than erroring is deliberate. Every caller of this helper answers a question
+// with no error channel (does the document declare x? what is in scope?), and a chain this walk
+// cannot complete is one ResolveInheritance will refuse outright at execute — where the reason is
+// reported properly.
+func (t *Template) mergedInputs() map[string]*InputDef {
+	var own map[string]*InputDef
+	if t.spec != nil {
+		own = t.spec.Inputs
 	}
-	data[ContextKeyInput] = merged
-	return execCtx.withData(data)
+	if t.inheritanceInfo == nil || t.engine == nil {
+		return own
+	}
+	provider, ok := t.engine.(templateProvider)
+	if !ok {
+		// A third-party TemplateExecutor hands back source, not a parsed *Spec. Re-parsing it
+		// here would build a second, differently-configured engine's idea of the parent — see
+		// design decision A-1. The child's own declarations remain correct.
+		return own
+	}
+
+	maxDepth := t.config.maxDepth
+	if maxDepth <= 0 {
+		maxDepth = internal.DefaultMaxInheritanceDepth
+	}
+
+	// Ancestors, NEAREST-PARENT FIRST.
+	var ancestors []map[string]*InputDef
+	seen := make(map[string]bool)
+	current := t
+	for depth := 0; depth <= maxDepth; depth++ {
+		if current.inheritanceInfo == nil {
+			break
+		}
+		parentName := current.inheritanceInfo.ParentTemplate
+		if seen[parentName] {
+			break // circular chain — same rule ResolveInheritance applies
+		}
+		seen[parentName] = true
+
+		parent, found := provider.GetTemplate(parentName)
+		if !found {
+			break
+		}
+		if parent.spec != nil && len(parent.spec.Inputs) > 0 {
+			ancestors = append(ancestors, parent.spec.Inputs)
+		}
+		current = parent
+	}
+
+	if len(ancestors) == 0 {
+		return own
+	}
+
+	// Walk ROOT-PARENT FIRST and this template LAST, so the nearer document overwrites the
+	// further one and the child ends up authoritative.
+	merged := make(map[string]*InputDef, len(own)+len(ancestors[0]))
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		for name, def := range ancestors[i] {
+			merged[name] = def
+		}
+	}
+	for name, def := range own {
+		merged[name] = def
+	}
+	return merged
+}
+
+// previewDataWithInputs returns data with every declared input readable under the reserved `input`
+// root, applying the same merge contextWithInputs applies — so DryRun previews the document the
+// executor would actually render.
+//
+// It never mutates the caller's map, and it takes the same rule-1 exit: if `input` is already
+// occupied by something that is not a binding map, the document is using `input` as an ordinary
+// variable name and the preview leaves it exactly as it found it.
+func (t *Template) previewDataWithInputs(data map[string]any) map[string]any {
+	inputs := t.mergedInputs()
+	if len(inputs) == 0 {
+		return data
+	}
+	binding, ok := asBindingMap(data[ContextKeyInput])
+	if bound, present := data[ContextKeyInput]; present && bound != nil && !ok {
+		return data // rule 1
+	}
+
+	out := make(map[string]any, len(data)+1)
+	for k, v := range data {
+		out[k] = v
+	}
+	out[ContextKeyInput] = mergeInputBinding(binding, inputs)
+	return out
 }
 
 // asBindingMap normalises the value found under the reserved root. A map[string]string is
@@ -134,15 +258,19 @@ func isUnboundInputValue(val any) bool {
 	return ok && s == ""
 }
 
-// declaresInput reports whether the template's frontmatter declares the given input name.
-// A dotted reference (name="user.email" on a structured input) is judged by its first
-// segment, since that is the key the frontmatter declares.
+// declaresInput reports whether the given input name is declared anywhere in this template's
+// extends chain. A dotted reference (name="user.email" on a structured input) is judged by its
+// first segment, since that is the key the frontmatter declares.
+//
+// It reads mergedInputs for the same reason contextWithInputs does, and that agreement is the
+// point: reporting Declared: false for a name the executor happily binds would be one rule with
+// two implementations, which is the defect class this whole track removes.
 func (t *Template) declaresInput(name string) bool {
-	if t.spec == nil || name == "" {
+	if name == "" {
 		return false
 	}
 	root, _, _ := strings.Cut(name, PathSeparator)
-	_, ok := t.spec.Inputs[root]
+	_, ok := t.mergedInputs()[root]
 	return ok
 }
 

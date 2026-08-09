@@ -389,8 +389,17 @@ func TestDryRunReportsUnanalysableInheritance(t *testing.T) {
 		require.Len(t, result.Errors, 1)
 		assert.Contains(t, result.Errors[0], "no engine")
 		assert.False(t, result.AnalysisComplete())
-		assert.True(t, result.Valid,
-			"ExecuteWithContext takes the same branch and renders the child body, so this is no proof of failure")
+
+		// SUPERSEDED in v0.24.0 (DC13-entail, design decision A-2). This used to assert Valid,
+		// on the premise that "ExecuteWithContext takes the same branch and renders the child
+		// body, so this is no proof of failure". That premise was the defect: rendering the bare
+		// child is not a degraded render, it is a DIFFERENT DOCUMENT reported as success.
+		// ExecuteWithContext now returns an error here, so the branch does prove failure.
+		assert.False(t, result.Valid,
+			"an engine-less extends is fatal at execute as of v0.24.0, so it is proof of failure")
+
+		_, execErr := tmpl.Execute(ctx, nil)
+		assert.Error(t, execErr, "and DryRun's verdict must agree with what Execute actually does")
 	})
 
 	t.Run("unreadable extends declaration", func(t *testing.T) {

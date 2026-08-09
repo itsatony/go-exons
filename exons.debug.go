@@ -62,13 +62,15 @@ const (
 
 	// dryRunErrNoEngine reports that a template which DOES extend a parent was analysed with no
 	// engine to resolve it through, so the parent body was never walked. The damage is identical
-	// to dryRunErrInheritance; until v0.23.0 there was no signal at all.
+	// to dryRunErrInheritance; until v0.23.0 there was no signal at all, and as of v0.24.0
+	// EXECUTION refuses it too, so it is reported as invalid rather than merely incomplete.
 	dryRunErrNoEngine = "template extends another but has no engine to resolve it, analysis covers this template only"
 
 	// dryRunErrInheritanceInfo reports that the {~exons.extends~} declaration itself could not be
-	// read, so analysis proceeded as though the template extends nothing. Parse-time extraction
-	// treats that as non-fatal for EXECUTION; for ANALYSIS it means the reported references
-	// describe a document that is never the one executed.
+	// read, so analysis proceeded as though the template extends nothing, and the reported
+	// references describe a document that is never the one executed. Parse-time extraction still
+	// treats it as non-fatal — a template that cannot state its parent can still be inspected —
+	// but as of v0.24.0 EXECUTION refuses it, so this too is reported as invalid.
 	dryRunErrInheritanceInfo = "inheritance declaration could not be read, analysis assumes no parent: %v"
 
 	// dryRunErrUnknownNode reports an AST node kind the walker does not know. The node AND ITS
@@ -604,7 +606,15 @@ func (t *Template) DryRun(ctx context.Context, data map[string]any) *DryRunResul
 
 	// Generate placeholder output from the same AST that was analysed, so the reported references
 	// and the reported output can never describe two different documents.
-	result.Output = t.generatePlaceholderOutput(astToWalk, data)
+	//
+	// The PREVIEW data carries the declared input defaults; the ANALYSIS data above deliberately
+	// does not. A declared default is a fact about the document, so a preview showing "{{tone}}"
+	// where the render produces "friendly" is simply wrong — and it was, until this release.
+	// Seeding the analysis map instead would be a different and worse change: availableKeys is
+	// derived from it, so every declared input would begin reporting as an UNUSED caller-supplied
+	// variable. Nothing on the analysis side reads data for an input — InputReference has no
+	// InData field, it has Declared — so this is the one site that needs it.
+	result.Output = t.generatePlaceholderOutput(astToWalk, t.previewDataWithInputs(data))
 
 	// Valid is deliberately NOT derived from Errors here.
 	//
@@ -626,47 +636,37 @@ func (t *Template) DryRun(ctx context.Context, data map[string]any) *DryRunResul
 // the reason attached is more useful than returning nothing. Callers deciding anything destructive
 // from the reference collections must check Errors first — a resolution failure means the
 // collections describe only the child, so a name used solely in the parent body is absent.
+// It shares ONE resolution helper with ExecuteWithContext and Explain — see resolveInheritance.
+// This function's whole job is now to translate an outcome into this channel's vocabulary.
 func (t *Template) dryRunAST(ctx context.Context, result *DryRunResult) any {
-	// The {~exons.extends~} declaration itself could not be read, so inheritanceInfo is nil for a
-	// template that DOES extend. Parse treats that as non-fatal because a template that cannot
-	// state its parent can still render its own body; for ANALYSIS it means the collections below
-	// describe a document that is never the one executed, which is exactly the claim this channel
-	// exists to withhold.
-	if t.inheritanceErr != nil {
-		result.reportIncomplete(dryRunErrInheritanceInfo, t.inheritanceErr)
-		return t.ast
-	}
+	resolvedAST, outcome, err := t.resolveInheritance(ctx)
 
-	if t.inheritanceInfo == nil {
-		return t.ast
-	}
+	switch outcome {
+	case inheritanceNone, inheritanceResolved:
+		return resolvedAST
 
-	// Extends, but there is no engine to resolve the parent through. The damage is identical to
-	// an outright resolution failure — the parent body is never walked — and until v0.23.0 this
-	// branch produced no signal whatsoever. It is not proof the template cannot RUN:
-	// ExecuteWithContext takes the same branch and executes the child body successfully.
-	if t.engine == nil {
-		result.reportIncomplete(dryRunErrNoEngine)
-		return t.ast
-	}
+	case inheritanceUnreadable:
+		// Parse keeps an unreadable extends non-fatal because a template that cannot state its
+		// parent can still be inspected. For ANALYSIS it means the collections below describe a
+		// document that is never the one executed — exactly the claim this channel withholds.
+		//
+		// Now reportIncompleteAndInvalid rather than reportIncomplete: as of this release
+		// ExecuteWithContext returns this same error, so it proves the template cannot run.
+		result.reportIncompleteAndInvalid(dryRunErrInheritanceInfo, t.inheritanceErr)
+		return resolvedAST
 
-	sourceResolver := &engineSourceAdapter{engine: t.engine}
-	lexerConfig := internal.LexerConfig{
-		OpenDelim:      t.config.openDelim,
-		CloseDelim:     t.config.closeDelim,
-		MarkdownFences: t.config.markdownFences,
-	}
-	resolver := internal.NewInheritanceResolver(nil, sourceResolver, t.config.maxDepth, lexerConfig)
+	case inheritanceNoEngine:
+		// Extends, but no engine to resolve the parent through. The damage is identical to an
+		// outright resolution failure — the parent body is never walked — and this too is now
+		// fatal at execute, so it is reported as invalid rather than merely incomplete.
+		result.reportIncompleteAndInvalid(dryRunErrNoEngine)
+		return resolvedAST
 
-	resolvedAST, err := resolver.ResolveInheritance(ctx, t.ast, t.inheritanceInfo, 0)
-	if err != nil {
-		// The one condition that proves BOTH an incomplete analysis and a template that cannot
-		// execute: ExecuteWithContext returns this same resolution error unconditionally.
+	default: // inheritanceFailed
+		// The condition that has always proved both: ExecuteWithContext returns this same error.
 		result.reportIncompleteAndInvalid(dryRunErrInheritance, err)
-		return t.ast
+		return resolvedAST
 	}
-
-	return resolvedAST
 }
 
 // dryRunASTNodeKinds is the number of AST node kinds walkASTForDryRun handles explicitly. Like
@@ -1144,26 +1144,36 @@ func (t *Template) Explain(ctx context.Context, data map[string]any) *ExplainRes
 
 	startTime := time.Now()
 
+	// Resolve inheritance through the SAME helper ExecuteWithContext uses.
+	//
+	// Explain used to skip resolution entirely and walk t.ast, so a template using `extends`
+	// explained its own block definitions rather than the document that runs — the worst failure
+	// mode there is for a debugging tool, because the discrepancy looks like the bug being
+	// investigated. Everything below therefore uses astToExplain, never t.ast: the formatted AST,
+	// the execution, and the variable-access collection must all describe one document.
+	astToExplain, _, inheritErr := t.resolveInheritance(ctx)
+
 	// Generate AST representation
-	result.AST = t.formatAST(t.ast, 0)
+	result.AST = t.formatAST(astToExplain, 0)
+
+	if inheritErr != nil {
+		result.Error = inheritErr
+		result.Timing = ExecutionTiming{Total: time.Since(startTime)}
+		return result
+	}
 
 	// Execute with tracking.
 	//
 	// contextWithInputs must run here too, not only in ExecuteWithContext: Explain calls the
 	// executor DIRECTLY and so bypasses that funnel. Without this line a document declaring
-	// inputs would EXPLAIN differently than it RENDERS — the worst failure mode there is for
-	// a debugging tool, because the discrepancy looks like the bug being investigated.
-	//
-	// ⚠ Explain still bypasses INHERITANCE resolution, which ExecuteWithContext performs. A
-	// template using `extends` therefore explains its own AST rather than the spliced one.
-	// That predates this release and is left alone deliberately rather than widened here.
+	// inputs would EXPLAIN differently than it RENDERS.
 	execCtx := t.contextWithInputs(NewContextWithStrategy(data, t.config.errorStrategy))
 	if t.engine != nil {
 		execCtx = execCtx.WithEngine(t.engine)
 	}
 
 	execStart := time.Now()
-	output, err := t.executor.Execute(ctx, t.ast, execCtx)
+	output, err := t.executor.Execute(ctx, astToExplain, execCtx)
 	execDuration := time.Since(execStart)
 
 	result.Output = output
@@ -1174,7 +1184,7 @@ func (t *Template) Explain(ctx context.Context, data map[string]any) *ExplainRes
 	}
 
 	// Add variable accesses from context keys
-	t.collectVariableAccesses(t.ast, data, result)
+	t.collectVariableAccesses(astToExplain, data, result)
 
 	return result
 }

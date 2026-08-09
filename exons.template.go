@@ -68,34 +68,130 @@ func (t *Template) ExecuteWithContext(ctx context.Context, execCtx *Context) (st
 		execCtx = execCtx.WithEngine(t.engine)
 	}
 
-	// Resolve inheritance if the template extends another template
-	astToExecute := t.ast
-	if t.inheritanceInfo != nil && t.engine != nil {
-		// Create an adapter that wraps the engine for TemplateSourceResolver interface
-		sourceResolver := &engineSourceAdapter{engine: t.engine}
-		lexerConfig := internal.LexerConfig{
-			OpenDelim:      t.config.openDelim,
-			CloseDelim:     t.config.closeDelim,
-			MarkdownFences: t.config.markdownFences,
-		}
-		resolver := internal.NewInheritanceResolver(nil, sourceResolver, t.config.maxDepth, lexerConfig)
-		resolvedAST, err := resolver.ResolveInheritance(ctx, t.ast, t.inheritanceInfo, 0)
-		if err != nil {
-			return "", err
-		}
-		astToExecute = resolvedAST
+	// Resolve inheritance if the template extends another template.
+	//
+	// Every non-nil outcome error is returned. Two of the three used to be swallowed here — an
+	// unreadable extends declaration rendered the bare child, and an engine-less extends rendered
+	// the bare child too — both reported as SUCCESS. See resolveInheritance.
+	astToExecute, _, err := t.resolveInheritance(ctx)
+	if err != nil {
+		return "", err
 	}
 
 	return t.executor.Execute(ctx, astToExecute, execCtx)
 }
 
-// engineSourceAdapter adapts TemplateExecutor to internal.TemplateSourceResolver.
+// inheritanceOutcome names WHY resolveInheritance returned the AST it did.
+//
+// The three callers — ExecuteWithContext, dryRunAST and Explain — need one resolution but report
+// it in three different vocabularies: an error return, an analysis-completeness channel, and a
+// result field. So the helper decides what happened and each caller decides how to say it. Before
+// this release each caller decided both, and they disagreed in three separate ways.
+type inheritanceOutcome int
+
+const (
+	// inheritanceNone — the template extends nothing. Its own AST is the whole document.
+	inheritanceNone inheritanceOutcome = iota
+	// inheritanceResolved — the parent chain was spliced in successfully.
+	inheritanceResolved
+	// inheritanceUnreadable — the {~exons.extends~} declaration itself could not be read.
+	inheritanceUnreadable
+	// inheritanceNoEngine — the template extends, but has no engine to resolve the parent through.
+	inheritanceNoEngine
+	// inheritanceFailed — the parent was identified and the chain could not be resolved.
+	inheritanceFailed
+)
+
+// resolveInheritance returns the AST that represents this document: the inheritance-resolved one
+// when the template extends another and resolution succeeded, and the template's own AST in every
+// other case, alongside the reason.
+//
+// The AST is ALWAYS non-nil, including on failure. A caller whose job is analysis rather than
+// execution (dryRunAST) degrades to the raw AST and reports the reason; a caller whose job is to
+// produce the document (ExecuteWithContext, Explain) treats a non-nil error as fatal.
+//
+// ⚠ That fatality is a deliberate BEHAVIOUR CHANGE for two of the three failures. Both used to
+// render the child's bare block bodies and return nil. That is not a degraded render — it is a
+// DIFFERENT DOCUMENT reported as success, and a caller has no way to tell. dryRunAST already
+// conceded as much: its no-engine message says the damage is identical to an outright resolution
+// failure, which ExecuteWithContext has always returned.
+func (t *Template) resolveInheritance(ctx context.Context) (*internal.RootNode, inheritanceOutcome, error) {
+	// The {~exons.extends~} declaration itself could not be read, so inheritanceInfo is nil for a
+	// template that DOES extend. Parse keeps that non-fatal on purpose — a template that cannot
+	// state its parent can still be inspected — but executing it produces a document nobody wrote.
+	if t.inheritanceErr != nil {
+		return t.ast, inheritanceUnreadable, NewInheritanceError(ErrMsgInheritanceUnreadable, t.inheritanceErr)
+	}
+
+	if t.inheritanceInfo == nil {
+		return t.ast, inheritanceNone, nil
+	}
+
+	if t.engine == nil {
+		return t.ast, inheritanceNoEngine, NewInheritanceError(ErrMsgInheritanceNoEngine, nil)
+	}
+
+	lexerConfig := internal.LexerConfig{
+		OpenDelim:      t.config.openDelim,
+		CloseDelim:     t.config.closeDelim,
+		MarkdownFences: t.config.markdownFences,
+	}
+	sourceResolver := &engineSourceAdapter{engine: t.engine}
+	resolver := internal.NewInheritanceResolver(nil, sourceResolver, t.config.maxDepth, lexerConfig)
+
+	resolvedAST, err := resolver.ResolveInheritance(ctx, t.ast, t.inheritanceInfo, 0)
+	if err != nil {
+		return t.ast, inheritanceFailed, err
+	}
+	return resolvedAST, inheritanceResolved, nil
+}
+
+// templateProvider is the optional, richer form of TemplateExecutor: it hands back the parsed
+// *Template rather than a source string, so a caller can reach the parent's already-stripped body
+// and its already-parsed *Spec without re-parsing either. *Engine satisfies it.
+//
+// It is deliberately NOT folded into TemplateExecutor. That interface is EXPORTED, so widening it
+// breaks every external implementer — on a library whose whole v0.23.0 story was earning a clean
+// release line. An optional interface asserted at the use site costs nobody anything.
+type templateProvider interface {
+	GetTemplate(name string) (*Template, bool)
+}
+
+// engineSourceAdapter adapts TemplateExecutor to internal.TemplateSourceResolver, handing the
+// inheritance resolver the parent's BODY rather than its raw source.
+//
+// The resolver lexes whatever it is given and the lexer has no frontmatter awareness — stripping
+// happens only in internal.ExtractYAMLFrontmatter, called from Engine.Parse. So handing over
+// tmpl.Source() spliced a parent's own ---…--- into the child's output as literal text, and for a
+// MID-CHAIN parent it was worse than cosmetic: the frontmatter counts as content, so the parent's
+// own {~exons.extends~} was no longer the first tag and the chain failed to parse at all.
 type engineSourceAdapter struct {
 	engine TemplateExecutor
 }
 
 func (a *engineSourceAdapter) GetTemplateSource(name string) (string, bool) {
-	return a.engine.GetTemplateSource(name)
+	// An *Engine already holds the stripped body from its own Parse. Prefer it, so there is ONE
+	// statement of what frontmatter is rather than two that can disagree.
+	if provider, ok := a.engine.(templateProvider); ok {
+		if tmpl, found := provider.GetTemplate(name); found {
+			return tmpl.TemplateBody(), true
+		}
+		return "", false
+	}
+
+	// A third-party TemplateExecutor exposes only raw source; strip it through the same helper
+	// Engine.Parse uses, never a second definition of the delimiters.
+	source, found := a.engine.GetTemplateSource(name)
+	if !found {
+		return "", false
+	}
+	result, err := internal.ExtractYAMLFrontmatter(source)
+	if err != nil || result == nil {
+		// Malformed frontmatter fails back to the raw source rather than to "not found": the
+		// parse that follows reports the real reason, and a bool here cannot carry it.
+		return source, true
+	}
+	return result.TemplateBody, true
 }
 
 // Source returns the original template source string (including config block if present).
