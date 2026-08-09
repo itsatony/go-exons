@@ -1,6 +1,6 @@
 # exons Template Syntax — Lexical Specification
 
-Normative reference for the exons template lexical grammar (v0.24.0).
+Normative reference for the exons template lexical grammar (v0.25.0).
 For tag semantics (var, if, for, ...) see the [README syntax reference](../README.md#template-syntax-reference).
 The last two sections cover the two built-in tags whose attribute vocabularies
 are closed (`exons.now`, `exons.input`) and the frontmatter keys they read.
@@ -198,6 +198,34 @@ Everything else remains a hard failure: parse-time refusals (a missing `eval=`,
 construct) precede execution, and an error raised *inside* a selected branch or
 loop body belongs to the failing node's own site — the enclosing construct's
 `onerror=` does not catch it.
+
+### Inheritance is outside the error strategy (v0.25.0 — normative)
+
+`{~exons.extends~}` is **not** a governed failure and carries no `onerror=`.
+Inheritance is resolved *before* any tag executes — the parent chain decides
+which AST is executed at all — so there is no node whose failure a strategy
+could absorb. An unresolvable `extends` therefore **fails the render outright**,
+under every error strategy including `remove`. This is deliberate: degrading it
+would render the child's bare block bodies, which is a *different document* than
+the author wrote, reported as a success.
+
+A consumer distinguishes it from every other execute failure by two facts, and
+these are the whole contract:
+
+- the error is a `*cuserr.CustomError`, and
+- its `tag` metadata equals `extends`.
+
+That holds for all three ways resolution can fail — the declaration cannot be
+read, there is no engine to resolve through, or the parent was named and the
+chain could not be walked (absent, circular, over-deep). The specific reason is
+preserved as the wrapped cause, and the parent this document declares is in
+`template_name`.
+
+> ⚠ **Do not match on the error's `.Code`.** It is not set by this library. It is
+> derived by `go-cuserr` from the cause's message *prose*, so the code of an
+> inheritance failure depends on the wording underneath it and the three failures
+> above produce three different codes. `ErrCodeExec` is passed as a metadata
+> label, not as a code, despite its name. Match the tag.
 
 ### Block constructs (v0.24.0)
 

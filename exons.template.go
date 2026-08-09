@@ -141,7 +141,13 @@ func (t *Template) resolveInheritance(ctx context.Context) (*internal.RootNode, 
 
 	resolvedAST, err := resolver.ResolveInheritance(ctx, t.ast, t.inheritanceInfo, 0)
 	if err != nil {
-		return t.ast, inheritanceFailed, err
+		// Wrapped, not passed through. The resolver's own error is an unexported internal type with
+		// no Unwrap, so a consumer holding it could match neither a code nor a tag and had to
+		// string-match a message — while the two failures above it in this same function returned a
+		// typed one. Three siblings of one resolution, two machine-matchable. The specs walk
+		// (ancestorSpecs) has always reported all of its conditions as typed errors; this closes the
+		// asymmetry between the two walks rather than inventing a vocabulary.
+		return t.ast, inheritanceFailed, NewInheritanceResolutionError(t.inheritanceInfo.ParentTemplate, err)
 	}
 	return resolvedAST, inheritanceResolved, nil
 }

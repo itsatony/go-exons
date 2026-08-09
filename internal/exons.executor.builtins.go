@@ -241,9 +241,13 @@ func NewVariableNotFoundWithAvailableKeysError(path string, availableKeys []stri
 		WithMetadata(MetaKeyPath, path)
 }
 
-// NewTemplateNotFoundBuiltinError creates an error for template not found.
-func NewTemplateNotFoundBuiltinError(name string) *BuiltinError {
-	return NewBuiltinError(ErrMsgTemplateNotFound, TagNameInclude).
+// NewTemplateNotFoundBuiltinError creates an error for template not found, for the tag that went
+// looking. Two verbs resolve a template by name — exons.include and exons.extends — and this
+// constructor hardcoded `include` for both, so an unresolvable extends reported itself as
+// "exons.include: template not found": a message naming a verb the author never wrote, on the one
+// failure where knowing which verb it was is the whole diagnosis.
+func NewTemplateNotFoundBuiltinError(name, tagName string) *BuiltinError {
+	return NewBuiltinError(ErrMsgTemplateNotFound, tagName).
 		WithMetadata(MetaKeyTemplateName, name)
 }
 

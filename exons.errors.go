@@ -75,6 +75,12 @@ const (
 	// parent source) but its declarations cannot be READ, because a TemplateExecutor returns
 	// source rather than a parsed *Spec. See design decision A-1 in docs/plans/DC13-entail.md.
 	ErrMsgInheritanceSpecsUnavailable = "template executor cannot supply parsed parent specs"
+	// ErrMsgInheritanceUnresolvable — the parent was NAMED and the chain could not be walked: the
+	// parent is not registered, the chain is circular, or it is deeper than maxDepth. The EXECUTE
+	// walk used to surface the resolver's own unexported error here while its two siblings above
+	// returned a typed one, so a consumer could tell two of three inheritance failures apart and
+	// had to string-match the third. See NewInheritanceResolutionError.
+	ErrMsgInheritanceUnresolvable = "template inheritance could not be resolved"
 
 	// Template errors (nested template inclusion)
 	ErrMsgTemplateNotFound      = "template not found"
@@ -403,6 +409,29 @@ func NewInheritanceError(msg string, cause error) error {
 		err = cuserr.NewValidationError(ErrCodeExec, msg)
 	}
 	return err.WithMetadata(MetaKeyTag, TagNameExtends)
+}
+
+// NewInheritanceResolutionError creates an error for an extends chain the EXECUTE walk could not
+// resolve, naming the parent THIS document declares and preserving the resolver's own reason as the
+// cause. It is the execute-walk twin of NewInheritanceChainError, which the specs walk has always
+// returned for the same three conditions.
+//
+// Why it exists: resolveInheritance returned a typed error for an unreadable declaration and for a
+// missing engine, and the resolver's raw error for everything else — an unexported type from
+// internal/ with no Unwrap and, for a missing parent, the tag name `include`. So a consumer holding
+// the error could machine-match two of the three inheritance failures and had to string-match the
+// third against a message that named the wrong verb. Every inheritance failure now carries
+// ErrCodeExec with MetaKeyTag == TagNameExtends, which is the whole matchable contract.
+func NewInheritanceResolutionError(parentName string, cause error) error {
+	var err *cuserr.CustomError
+	if cause != nil {
+		err = cuserr.WrapStdError(cause, ErrCodeExec, ErrMsgInheritanceUnresolvable)
+	} else {
+		err = cuserr.NewValidationError(ErrCodeExec, ErrMsgInheritanceUnresolvable)
+	}
+	return err.
+		WithMetadata(MetaKeyTag, TagNameExtends).
+		WithMetadata(MetaKeyTemplateName, parentName)
 }
 
 // NewInheritanceChainError creates an error for an extends chain that could not be walked to its

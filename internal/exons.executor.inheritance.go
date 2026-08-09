@@ -66,7 +66,7 @@ func (r *InheritanceResolver) ResolveInheritance(
 
 	parentSource, exists := r.templateResolver.GetTemplateSource(parentName)
 	if !exists {
-		return nil, NewTemplateNotFoundBuiltinError(parentName)
+		return nil, NewTemplateNotFoundBuiltinError(parentName, TagNameExtends)
 	}
 
 	// Parse parent template

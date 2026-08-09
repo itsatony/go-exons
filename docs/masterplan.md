@@ -30,6 +30,7 @@ and prompts — safe to author by hand and by LLMs.
 | — | 0.22.0 | `DryRun` reference completeness + `ExpressionIdentifiers` | shipped 2026-08-08 |
 | DC12-promulgate | 0.23.0 | DryRun's `Errors` becomes the analysis-completeness channel; `main` gets a clean release line | shipped 2026-08-09 |
 | DC13-entail | 0.24.0 | The executor honours what the document declared: `extends` merges declarations, block constructs get error recourse, a resolver's `Validate` is invoked | shipped 2026-08-09 |
+| DC14-collate | 0.25.0 | Every inheritance failure is machine-matchable (`cuserr` + `tag=extends`); an unresolvable `extends` stops reporting itself as `exons.include` | shipped 2026-08-09 |
 
 ## DC11-verbatim — Syntax safety (0.15.0)
 

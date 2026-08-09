@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-08-09
+
+DC14-collate — every inheritance failure is machine-matchable, and the tag it names is the verb the
+author wrote.
+
+No new capability. This release makes **one condition that already existed** answerable by a
+consumer, which is what a registry needs in order to answer it with a status code rather than a 500.
+
+**The defect was an asymmetry between siblings.** `Template.resolveInheritance` can fail three ways.
+Two of them returned a typed `cuserr` carrying `tag=extends`. The third — the parent was *named* and
+the chain could not be walked (absent, circular, over-deep) — returned the resolver's own
+`*internal.BuiltinError`: an unexported type from `internal/`, with no `Unwrap`, no code and no
+cuserr metadata. So a consumer holding the error could machine-match two of the three inheritance
+failures and had to string-match the third.
+
+Meanwhile the **specs** walk (`Template.ancestorSpecs`) already reported *all* of its conditions as
+typed errors. One template therefore answered *"can this chain be resolved?"* in two different
+vocabularies depending on which walk asked.
+
+*collate*, v. — to gather separate sheets into one ordered whole, and to compare them for divergence.
+Both halves of this cycle.
+
+### Added
+
+- **`NewInheritanceResolutionError(parentName string, cause error) error`** — the execute-walk twin
+  of `NewInheritanceChainError`, which the specs walk has always returned for the same three
+  conditions. It preserves the resolver's own reason as the cause and names the parent *this*
+  document declares in `template_name`, so the specific reason stays readable while the condition
+  becomes matchable.
+- **`ErrMsgInheritanceUnresolvable`** — the message constant for that condition.
+
+### Changed
+
+- **The matchable contract for an inheritance failure is now, for all three of them:** the error is a
+  `*cuserr.CustomError` **and** `metadata[MetaKeyTag] == TagNameExtends`. A test asserts no other
+  execute failure claims that tag, because a consumer mapping this to *"this document inherits from a
+  template I cannot resolve"* must not be able to say that about a document which does not inherit.
+- **An unresolvable `{~exons.extends~}` no longer reports itself as `exons.include`.**
+  `NewTemplateNotFoundBuiltinError` hardcoded `TagNameInclude` for both verbs that resolve a template
+  by name, so the message named a verb the author never wrote — on the one failure where knowing
+  which verb it was *is* the diagnosis. It turned out to have exactly one call site, the inheritance
+  one, so the constructor had never once been right. It is now tag-parameterized. **This changes
+  error message text**; nothing about which documents render changes.
+
+### Notes
+
+**The contract is the tag, never the code** — and this was found by writing the test that asserts it.
+`ErrCodeExec` reads like a code and is not one: cuserr's `NewValidationError(field, message)` takes a
+**field** and `WrapStdError(err, context, message)` takes a **context**, so every constructor in this
+library has been passing `ErrCodeExec` as a metadata label while `.Code` was derived elsewhere.
+Derived *how* is why no consumer may match on it — `FromStdError` picks the category by
+**substring-matching the cause's prose** (`"not found"`, `"invalid"`, `"exists"`, …). The code of an
+inheritance failure is thus decided by the wording of the message underneath it: the three failures
+produce three *different* codes today, and rephrasing any cause would silently change a fourth. A
+subtest pins that disagreement deliberately, so *"just match on `.Code` instead"* cannot ship as a
+cleanup.
+
+**The lesson: a contract that holds for most of a set is not a contract.** Two-of-three typed is
+indistinguishable from three-of-three at every call site that has only ever hit the typed two — so
+the only test that can find it is a table over the *whole* set, which is why the new test enumerates
+the failures rather than asserting one. And the first draft of that table asserted `.Code` and passed
+nowhere, which is how the prose-derived code was found at all: **an assertion that fails for a reason
+you did not predict is worth more than one that passes.**
+
 ## [0.24.0] - 2026-08-09
 
 DC13-entail — the executor honours what the document declared.

@@ -1,7 +1,40 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.24.0
+  version: 0.25.0
+# v0.25.0 (DC14-collate): every inheritance failure is MACHINE-MATCHABLE, and the tag it names is the
+# verb the author wrote. No new capability — this makes one already-existing condition answerable by a
+# consumer, which is what a registry needs in order to answer it with a status code instead of a 500.
+# THE DEFECT WAS AN ASYMMETRY BETWEEN SIBLINGS. resolveInheritance can fail three ways. Two returned a
+# typed cuserr carrying tag=extends; the third — the parent was NAMED and the chain could not be
+# walked (absent, circular, over-deep) — returned the resolver's own *internal.BuiltinError: an
+# unexported type from internal/ with no Unwrap, no code and no cuserr metadata. So a consumer could
+# machine-match two of three inheritance failures and had to string-match the third. Meanwhile the
+# SPECS walk (ancestorSpecs) already reported ALL of its conditions as typed errors, so one template
+# answered "can this chain be resolved?" in two vocabularies depending on which walk asked. Closed by
+# wrapping at the public boundary — NewInheritanceResolutionError, the execute-walk twin of
+# NewInheritanceChainError — preserving the resolver's reason as the cause and naming the declared
+# parent in template_name.
+# ⚠ MESSAGE CHANGE, and it is the user-visible half: NewTemplateNotFoundBuiltinError hardcoded
+# TagNameInclude, so an unresolvable extends reported itself as "exons.include: template not found" —
+# a message naming a verb the author never wrote, on the one failure where knowing which verb it was
+# IS the diagnosis. It had EXACTLY ONE call site, the inheritance one, so the constructor had never
+# once been right. Now tag-parameterized and called with TagNameExtends.
+# ⚠ AND THE CONTRACT IS THE TAG, NEVER THE CODE. Found while writing the test that asserts it:
+# `ErrCodeExec` reads like a code and is not one. cuserr's NewValidationError(field, message) takes a
+# FIELD and WrapStdError(err, context, message) takes a CONTEXT, so every go-exons constructor has been
+# passing ErrCodeExec as a metadata label while .Code was derived elsewhere — and derived by
+# FromStdError SUBSTRING-MATCHING THE CAUSE'S PROSE ("not found", "invalid", "exists"). The code of an
+# inheritance failure is therefore decided by the wording of the message underneath it: the three
+# failures produce three different codes today, and rephrasing any cause would silently change a
+# fourth. A test pins that disagreement on purpose, so "just match on .Code" cannot ship as a cleanup.
+# THE LESSON: A CONTRACT THAT HOLDS FOR MOST OF A SET IS NOT A CONTRACT. Two-of-three typed is
+# indistinguishable from three-of-three at every call site that has only ever hit the typed two, so the
+# only test that can find it is a table over the WHOLE set — which is why this one enumerates rather
+# than asserts. And the first draft of that table asserted .Code and passed nowhere, which is how the
+# prose-derived code was found at all: an assertion that fails for a reason you did not predict is
+# worth more than one that passes.
+#
 # v0.24.0 (DC13-entail): the EXECUTOR honours what the document declared. 0.19.0-0.23.0 finished the
 # typed-input FORMAT; the executor was not finished, and v0.21.0's "Known gaps" block was four
 # instances of ONE defect — a value is computed, then dropped on the floor between the phase that
