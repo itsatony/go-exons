@@ -1,6 +1,9 @@
 # DC13-entail — the executor honours what the document declared
 
-> **Status:** PLANNED (2026-08-09) · target release **v0.24.0**
+> **Status:** IMPLEMENTED (2026-08-09) — all six defects + workstream C landed; `/review` pending.
+> Commits: `10b300d` plan · `4abab4c` B · `c0622f1` A · `294e3a6` C. `ci-local` green, coverage 91.0%.
+> One addition beyond plan: `Template.DeclaredInputs()` / `DeclaredInputKeys()` — see §C note below.
+> Target release **v0.24.0**
 > **Theme:** two things the executor throws away — the *declarations it inherits* and the
 > *escape hatches it was handed at parse* — plus the two refusals that were never reachable.
 >
@@ -285,6 +288,17 @@ It must exercise, as its whole point, the things this cycle fixes:
 - an **`onerror=`/`default=` on a block tag** — impossible before Workstream B;
 - **a parent with frontmatter-declared inputs** extended by a child — impossible before Workstream A,
   and the interaction test the ~100 existing inheritance tests never had.
+
+> **§C note (added during implementation).** Writing the example was the first time anything had to
+> ask for the merged declaration set *from outside the package*, and it could not: `Template.Spec()`
+> is the parse result and reports the document's own frontmatter alone, so a consumer building a
+> form — or projecting a wire contract, which is what aigentverse does with `field_specs` — would
+> silently omit every field an extending document inherits. Added `Template.DeclaredInputs()` and
+> `Template.DeclaredInputKeys()`, additively. `Spec()` is deliberately NOT widened: it is the parse
+> result, and reporting fields absent from the source it came from is a worse lie than the gap.
+> Ordering is presentation, not precedence — the document you opened leads, then each ancestor's
+> remaining names nearest-parent first. This is why examples compile instead of being pasted into a
+> docs page.
 
 ---
 
