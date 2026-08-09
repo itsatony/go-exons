@@ -267,6 +267,73 @@ func TestDryRun_PreviewAppliesDeclaredInputDefaults(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
+// The merged contract is reachable from OUTSIDE the package
+//
+// Template.Spec() is the parse result and reports the document's own frontmatter
+// alone. Without an accessor for the merged set, a consumer building a form or
+// projecting a wire contract silently omits every field an extending document
+// inherits — which is how examples/09-typed-inputs found this gap.
+// -----------------------------------------------------------------------------
+
+func TestDeclaredInputs_ExposesTheMergedContract(t *testing.T) {
+	engine := MustNew()
+	engine.MustRegisterTemplate("base", inheritedParentWithInputs)
+
+	child := "---\nname: child\ndescription: overrides tone, adds severity\ninputs:\n  tone:\n    type: select\n    default: playful\n  severity:\n    type: number\n    default: 3\n---\n{~exons.extends template=\"base\" /~}"
+	tmpl, err := engine.Parse(child)
+	require.NoError(t, err)
+
+	t.Run("Spec reports only what the document itself declares", func(t *testing.T) {
+		assert.NotContains(t, tmpl.Spec().Inputs, "audience",
+			"Spec() is the parse result — widening it would report a field absent from its source")
+	})
+
+	t.Run("DeclaredInputs merges the chain, child authoritative", func(t *testing.T) {
+		declared := tmpl.DeclaredInputs()
+		require.Contains(t, declared, "audience", "the parent's declaration must be reachable")
+		assert.Equal(t, "engineers", declared["audience"].Default)
+		assert.Equal(t, "playful", declared["tone"].Default, "the child's declaration of tone wins")
+		assert.Equal(t, InputTypeSelect, declared["tone"].Type)
+	})
+
+	t.Run("the returned map is independent of the template", func(t *testing.T) {
+		declared := tmpl.DeclaredInputs()
+		delete(declared, "audience")
+		assert.Contains(t, tmpl.DeclaredInputs(), "audience", "mutating the result must not reach the spec")
+	})
+
+	t.Run("keys lead with the document's own author order", func(t *testing.T) {
+		assert.Equal(t, []string{"tone", "severity", "audience"}, tmpl.DeclaredInputKeys(),
+			"own declarations in author order, then inherited names nearest-parent first")
+	})
+
+	t.Run("a template with no inheritance answers with its own set", func(t *testing.T) {
+		plain, err := engine.Parse("---\nname: plain\ndescription: p\ninputs:\n  a:\n    type: text\n  b:\n    type: text\n---\nbody")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"a", "b"}, plain.DeclaredInputKeys())
+		assert.Len(t, plain.DeclaredInputs(), 2)
+	})
+
+	t.Run("a template declaring nothing answers nil, not an empty map", func(t *testing.T) {
+		bare, err := engine.Parse("just text")
+		require.NoError(t, err)
+		assert.Nil(t, bare.DeclaredInputs())
+		assert.Nil(t, bare.DeclaredInputKeys())
+	})
+
+	t.Run("keys and map always agree", func(t *testing.T) {
+		// The two are separate orderings of ONE traversal; a name in either and not the other
+		// would mean the traversal ran twice and disagreed with itself.
+		keys := tmpl.DeclaredInputKeys()
+		declared := tmpl.DeclaredInputs()
+		assert.Len(t, keys, len(declared))
+		for _, k := range keys {
+			assert.Contains(t, declared, k)
+		}
+	})
+}
+
+// -----------------------------------------------------------------------------
 // Defects 3 + 4 — one resolution helper, three callers
 //
 // ExecuteWithContext, dryRunAST and Explain used to each decide both WHAT the

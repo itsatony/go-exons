@@ -1,0 +1,46 @@
+---
+name: incident-report
+description: An incident report. Extends base-report and restates tone in its own voice.
+subtype: template
+version: 1.0.0
+inputs:
+  tone:
+    type: select
+    description: An incident report is never casual, so this one narrows the parent's choice.
+    default: formal
+    options:
+      - value: formal
+        label: Formal
+  summary:
+    type: text
+    description: One line describing what happened.
+    required: true
+  severity:
+    type: number
+    description: 1 (worst) to 5 (cosmetic).
+    default: 3
+  sources:
+    type: multiselect
+    description: Optional. Where the evidence came from.
+    options:
+      - value: logs
+        label: Service logs
+      - value: traces
+        label: Distributed traces
+      - value: pager
+        label: Pager timeline
+---
+{~exons.extends template="base-report" /~}
+
+{~exons.block name="heading"~}# Incident: {~exons.input name="summary" /~}{~/exons.block~}
+
+{~exons.block name="body"~}
+Severity {~exons.input name="severity" /~}.
+
+Evidence:
+{~exons.for item="src" in="input.sources"~}- {~exons.var name="src" /~}
+{~/exons.for~}
+Timeline:
+{~exons.for item="row" in="input.timeline" onerror="default" default="_No timeline was supplied._"~}- {~exons.var name="row" /~}
+{~/exons.for~}
+{~/exons.block~}

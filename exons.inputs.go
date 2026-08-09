@@ -2,6 +2,7 @@ package exons
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/itsatony/go-exons/internal"
@@ -139,15 +140,43 @@ func (t *Template) mergedInputs() map[string]*InputDef {
 	if t.spec != nil {
 		own = t.spec.Inputs
 	}
-	if t.inheritanceInfo == nil || t.engine == nil {
+
+	ancestors := t.ancestorSpecs()
+	if len(ancestors) == 0 {
 		return own
+	}
+
+	// Walk ROOT-PARENT FIRST and this template LAST, so the nearer document overwrites the
+	// further one and the child ends up authoritative.
+	merged := make(map[string]*InputDef, len(own)+len(ancestors[0].Inputs))
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		for name, def := range ancestors[i].Inputs {
+			merged[name] = def
+		}
+	}
+	for name, def := range own {
+		merged[name] = def
+	}
+	return merged
+}
+
+// ancestorSpecs returns the specs of this template's extends chain, NEAREST-PARENT FIRST, skipping
+// ancestors that declare no inputs. It is the single chain walk behind mergedInputs and
+// DeclaredInputKeys — two orderings of one traversal, never two traversals.
+//
+// Bounds are the resolver's, not a second set: the same maxDepth and the same "this parent is
+// already in the chain" rule as InheritanceResolver.ResolveInheritance. A differently-bounded walk
+// of the same chain is a second chance to disagree about what a cycle is.
+func (t *Template) ancestorSpecs() []*Spec {
+	if t.inheritanceInfo == nil || t.engine == nil {
+		return nil
 	}
 	provider, ok := t.engine.(templateProvider)
 	if !ok {
 		// A third-party TemplateExecutor hands back source, not a parsed *Spec. Re-parsing it
 		// here would build a second, differently-configured engine's idea of the parent — see
 		// design decision A-1. The child's own declarations remain correct.
-		return own
+		return nil
 	}
 
 	maxDepth := t.config.maxDepth
@@ -155,8 +184,7 @@ func (t *Template) mergedInputs() map[string]*InputDef {
 		maxDepth = internal.DefaultMaxInheritanceDepth
 	}
 
-	// Ancestors, NEAREST-PARENT FIRST.
-	var ancestors []map[string]*InputDef
+	var ancestors []*Spec
 	seen := make(map[string]bool)
 	current := t
 	for depth := 0; depth <= maxDepth; depth++ {
@@ -174,27 +202,82 @@ func (t *Template) mergedInputs() map[string]*InputDef {
 			break
 		}
 		if parent.spec != nil && len(parent.spec.Inputs) > 0 {
-			ancestors = append(ancestors, parent.spec.Inputs)
+			ancestors = append(ancestors, parent.spec)
 		}
 		current = parent
 	}
+	return ancestors
+}
 
-	if len(ancestors) == 0 {
-		return own
+// DeclaredInputs returns every input this document declares, INCLUDING those inherited through
+// {~exons.extends~}, resolved by the rule mergedInputs states: the composing document is the
+// authority, the composed document supplies the fallback.
+//
+// Template.Spec() deliberately returns only the document's OWN frontmatter — it is the parse
+// result, and widening it would make Spec() report fields that appear nowhere in the source it
+// came from. But a consumer building a form, or projecting a wire contract, needs the merged set:
+// with Spec() alone an extending document silently omits every field its parent declares. That
+// gap is the reason this accessor exists.
+//
+// The returned map is a fresh map; the *InputDef values are shared and must not be mutated. Nil
+// is a valid, empty result.
+func (t *Template) DeclaredInputs() map[string]*InputDef {
+	merged := t.mergedInputs()
+	if len(merged) == 0 {
+		return nil
+	}
+	out := make(map[string]*InputDef, len(merged))
+	for name, def := range merged {
+		out[name] = def
+	}
+	return out
+}
+
+// DeclaredInputKeys returns the names from DeclaredInputs in presentation order: this document's
+// own declarations in the author order Spec.OrderedInputKeys preserves, then each ancestor's
+// remaining names nearest-parent first, a name keeping the position of its first appearance.
+//
+// The document you opened leads and inherited fields follow — the same "composing document is the
+// authority" principle applied to presentation rather than to precedence. Note this is ordering
+// only: a name the child restates takes the CHILD's definition wherever it appears in the list.
+func (t *Template) DeclaredInputKeys() []string {
+	merged := t.mergedInputs()
+	if len(merged) == 0 {
+		return nil
 	}
 
-	// Walk ROOT-PARENT FIRST and this template LAST, so the nearer document overwrites the
-	// further one and the child ends up authoritative.
-	merged := make(map[string]*InputDef, len(own)+len(ancestors[0]))
-	for i := len(ancestors) - 1; i >= 0; i-- {
-		for name, def := range ancestors[i] {
-			merged[name] = def
+	out := make([]string, 0, len(merged))
+	placed := make(map[string]struct{}, len(merged))
+	appendFrom := func(keys []string) {
+		for _, k := range keys {
+			if _, already := placed[k]; already {
+				continue
+			}
+			if _, declared := merged[k]; !declared {
+				continue
+			}
+			placed[k] = struct{}{}
+			out = append(out, k)
 		}
 	}
-	for name, def := range own {
-		merged[name] = def
+
+	appendFrom(t.spec.OrderedInputKeys())
+	for _, ancestor := range t.ancestorSpecs() {
+		appendFrom(ancestor.OrderedInputKeys())
 	}
-	return merged
+
+	// A name reachable through neither ordering cannot occur today — every entry in merged comes
+	// from one of those specs, and OrderedInputKeys is total over its own Inputs. Sorting the
+	// remainder rather than dropping it keeps that a fact about the data instead of an assumption
+	// this function would silently rely on.
+	rest := make([]string, 0)
+	for k := range merged {
+		if _, already := placed[k]; !already {
+			rest = append(rest, k)
+		}
+	}
+	sort.Strings(rest)
+	return append(out, rest...)
 }
 
 // previewDataWithInputs returns data with every declared input readable under the reserved `input`
