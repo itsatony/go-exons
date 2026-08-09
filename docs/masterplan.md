@@ -28,7 +28,7 @@ and prompts — safe to author by hand and by LLMs.
 | — | 0.21.0 | `{~exons.input~}`: `inputs:` stops being inert (reserved `input` root) | shipped 2026-08-08 |
 | — | 0.21.1–0.21.2 | The binary-withholding sweep made complete (structs, byte arrays, map keys) | shipped 2026-08-08 |
 | — | 0.22.0 | `DryRun` reference completeness + `ExpressionIdentifiers` | shipped 2026-08-08 |
-| DC12-promulgate | 0.23.0 | DryRun's `Errors` becomes the analysis-completeness channel; `main` gets a clean release line | in progress |
+| DC12-promulgate | 0.23.0 | DryRun's `Errors` becomes the analysis-completeness channel; `main` gets a clean release line | shipped 2026-08-09 |
 
 ## DC11-verbatim — Syntax safety (0.15.0)
 
