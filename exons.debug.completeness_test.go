@@ -579,7 +579,17 @@ func TestDryRunErrorsHaveExactlyOneWriter(t *testing.T) {
 	// single door is a property worth enforcing mechanically rather than remembering.
 	//
 	// This parses the package's own source rather than grepping it, so a write spelled across
-	// several lines or hidden behind different whitespace cannot slip past.
+	// several lines or behind different whitespace cannot slip past.
+	//
+	// Be exact about its reach, because a guard whose STATED reach exceeds its ACTUAL reach is the
+	// defect this entire release is about. It catches two constructs: a direct assignment whose
+	// left-hand side is a selector named Errors, and any place the ADDRESS of such a selector is
+	// taken. The second closes the `p := &r.Errors; *p = append(…)` and hand-the-field-to-a-helper
+	// routes, which an assignment matcher alone would miss completely.
+	//
+	// It does not resolve types, so it would also fire on an unrelated struct in this package that
+	// happened to have an Errors field. That direction is deliberate: a false alarm costs one
+	// puzzled minute, and a go/types pass would buy precision a package this size does not need.
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool {
 		return !strings.HasSuffix(fi.Name(), "_test.go")
@@ -596,6 +606,15 @@ func TestDryRunErrorsHaveExactlyOneWriter(t *testing.T) {
 					enclosing = fn.Name.Name
 					return true
 				}
+				// Taking the address of the field is a write route even when no assignment to it
+				// ever appears in this function.
+				if unary, ok := n.(*ast.UnaryExpr); ok && unary.Op == token.AND {
+					if sel, ok := unary.X.(*ast.SelectorExpr); ok && sel.Sel.Name == "Errors" {
+						writers[enclosing] = true
+					}
+					return true
+				}
+
 				assign, ok := n.(*ast.AssignStmt)
 				if !ok {
 					return true
@@ -644,4 +663,33 @@ func TestConditionalBranchPositionsPointAtTheirOwnTag(t *testing.T) {
 	assert.Equal(t, 1, branches[0].Line, "the if branch")
 	assert.Equal(t, 3, branches[1].Line, "the elseif branch, not the else that follows it")
 	assert.Equal(t, 5, branches[2].Line, "the else branch, not the closing tag that follows it")
+}
+
+func TestRuntimeErrorInAnElseIfReportsItsOwnLine(t *testing.T) {
+	engine := MustNew(WithErrorStrategy(ErrorStrategyThrow))
+	ctx := context.Background()
+
+	// The user-facing half of the parseConditional position fix, asserted at the surface where it
+	// actually reached people. executeConditional builds its error with branch.Pos, so before
+	// v0.23.0 a failing elseif expression reported the line of the tag that FOLLOWED it.
+	//
+	// The DryRun test pins the same field, but transitively — this pins the claim the release
+	// makes, which is that a runtime error points at the branch the author wrote.
+	//
+	// The if branch must be false so evaluation actually reaches the elseif.
+	tmpl, err := engine.Parse("{~exons.if eval=\"false\"~}\n" + // line 1
+		"a\n" + // line 2
+		"{~exons.elseif eval=\"&&\"~}\n" + // line 3 — the malformed one
+		"b\n" + // line 4
+		"{~exons.else~}\n" + // line 5
+		"c\n" + // line 6
+		"{~/exons.if~}") // line 7
+	require.NoError(t, err)
+
+	_, execErr := tmpl.Execute(ctx, nil)
+	require.Error(t, execErr, "a malformed elseif expression must fail under the throw strategy")
+	assert.Contains(t, execErr.Error(), "3",
+		"the error must point at the elseif the author wrote, not at the else that follows it")
+	assert.NotContains(t, execErr.Error(), "line 5",
+		"line 5 is the else branch — reporting it was the bug")
 }

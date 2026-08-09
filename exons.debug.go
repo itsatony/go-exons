@@ -684,6 +684,12 @@ const dryRunASTNodeKinds = 7
 func (t *Template) walkASTForDryRun(node any, data map[string]any, result *DryRunResult, usedKeys map[string]bool, availableKeys []string) {
 	// A nil carries neither a type to name nor a position to point at, so nothing can be said
 	// about the content it stood for. That is the reason to report it, not a reason to skip it.
+	//
+	// This catches an UNTYPED nil only. A typed nil — (*internal.RootNode)(nil) boxed in an any —
+	// is not == nil, matches its type case below, and panics on the first field access. No
+	// producer reaches that state today: the parser never appends a nil child, and every nil
+	// return from ResolveInheritance is paired with a non-nil error. A stated limit, not a hole
+	// left open.
 	if node == nil {
 		result.reportIncomplete(dryRunErrNilNode)
 		return

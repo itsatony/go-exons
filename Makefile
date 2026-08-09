@@ -34,6 +34,8 @@ fmt:
 # This exists because `check` used to run `fmt`, which rewrites files and then reports success.
 # A gate that passes by editing your code cannot fail on unformatted code, which is the one thing
 # it was there to catch.
+# examples/ is exempt: each example is its own module with its own go.mod, and .golangci.yml
+# already path-excludes them. Carving them out here keeps the two exclusions in agreement.
 fmt-check:
 	@unformatted=$$(gofmt -s -l . | grep -v '^examples/' || true); \
 	if [ -n "$$unformatted" ]; then \
@@ -42,8 +44,11 @@ fmt-check:
 	echo "OK: gofmt clean"
 
 # Assert go.mod/go.sum are tidy without leaving them tidied.
+# The trap is load-bearing: without it an interrupt between the copy and the restore leaves a
+# mutated go.mod behind, which is exactly the mutation this target exists to avoid causing.
 tidy-check:
-	@cp go.mod go.mod.cibak; cp go.sum go.sum.cibak; \
+	@trap 'if [ -f go.mod.cibak ]; then mv go.mod.cibak go.mod; fi; if [ -f go.sum.cibak ]; then mv go.sum.cibak go.sum; fi' EXIT INT TERM; \
+	cp go.mod go.mod.cibak; cp go.sum go.sum.cibak; \
 	go mod tidy; \
 	status=0; \
 	if ! diff -q go.mod go.mod.cibak >/dev/null || ! diff -q go.sum go.sum.cibak >/dev/null; then \
