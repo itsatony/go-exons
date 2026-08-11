@@ -1,7 +1,18 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.25.0
+  version: 0.26.0
+# v0.26.0 (DC15-unframe): the {~exons.message~} framing has an INVERSE now — StripMessageMarkers —
+# because its delimiter is a byte some consumers refuse. The framing is \x00MSG_START:<role>:<cache>:
+# ... \x00MSG_END\x00; the NUL is deliberate (it cannot collide with prompt content) and the contract
+# is that a consumer calls ExtractMessages. NOT EVERY CONSUMER IS A MESSAGE SPLITTER, and for those the
+# NUL is not neutral: measured downstream (vaichat2 -> thalamus -> postgres) a jsonb column REFUSES
+# \u0000 (SQLSTATE 22P05), so a chat send using such a prompt template died with an opaque
+# DB_EXEC_FAILED 500 and the byte was visible only in postgres's own CONTEXT line. StripMessageMarkers
+# is for the caller holding ONE string: it keeps message contents AND unmarked prose in source order,
+# and returns marker-free output byte-identical. It FLATTENS roles and is not a substitute for
+# ExtractMessagesFromOutput — which conversely DISCARDS every word written outside a message tag, the
+# reason the obvious "just extract" fix is wrong. A bare NUL that is not framing is left alone.
 # v0.25.0 (DC14-collate): every inheritance failure is MACHINE-MATCHABLE, and the tag it names is the
 # verb the author wrote. No new capability — this makes one already-existing condition answerable by a
 # consumer, which is what a registry needs in order to answer it with a status code instead of a 500.

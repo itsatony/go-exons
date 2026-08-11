@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-08-11
+
+DC15-unframe — the message framing has an inverse, because its delimiter is a byte some consumers
+refuse.
+
+`{~exons.message~}` frames each message as `\x00MSG_START:<role>:<cache>:` … `\x00MSG_END\x00`. The
+NUL is deliberate — a non-printable delimiter cannot collide with prompt content — and the contract
+is that a consumer calls `ExtractMessages`/`ExtractMessagesFromOutput` to recover the structure.
+
+**But not every consumer is a message splitter, and for those the framing is not neutral — it is a
+byte that breaks things.** Measured downstream in the vAI fleet (vaichat2 → thalamus → postgres): a
+`jsonb` column refuses `\u0000` outright (SQLSTATE 22P05), so a chat send whose prompt template used
+the message tag failed with an opaque `DB_EXEC_FAILED` 500 — with the NUL visible in postgres's own
+CONTEXT line and nowhere else. A `text/plain` body, a log line and a filename are the same hazard,
+one step less loudly.
+
+### Added
+
+- **`StripMessageMarkers(output string) string`** — the inverse of the framing for a caller that has
+  exactly ONE string to fill. It returns message contents and unmarked prose alike, in source order,
+  and output with no markers is returned byte-identical, so it is safe to call unconditionally on a
+  render path.
+
+⚠ **It is NOT a substitute for `ExtractMessagesFromOutput` and the doc comment says so.** It
+FLATTENS roles: a template emitting a system and a user message yields one string with no boundary
+between them. A caller that can carry structured messages must extract them.
+
+⚠ **It keeps unmarked prose, which is the other half of why the obvious fix is wrong.**
+`ExtractMessagesFromOutput` returns only what sits BETWEEN markers, so a consumer reaching for it to
+"clean up" a single string silently discards every word the author wrote outside a message tag — and
+a template mixing body text with one message tag is an ordinary authoring shape.
+
+⚠ **A bare NUL that is not framing is deliberately left alone**, and a test pins that. The resolver
+already sanitizes message content, so such a byte can only come from the caller's own data; silently
+deleting bytes from it is not this function's decision to make.
+
+⚠ **The malformed shapes are covered because they are exactly where a naive implementation leaks the
+byte it exists to remove** — a truncated header, a lone end marker, a start marker with no end. None
+can be produced by the resolver; all three are asserted to yield no NUL and no marker text.
+
+✅ **The seam test runs a REAL message tag through the engine** rather than asserting against a
+hand-written marker string — which is precisely how this function would otherwise survive the marker
+format changing, passing against a shape the resolver no longer emits. Revert-checked behaviourally
+(a pass-through fails 3 of 5, and the no-markers case correctly still passes).
+
 ## [0.25.0] - 2026-08-09
 
 DC14-collate — every inheritance failure is machine-matchable, and the tag it names is the verb the

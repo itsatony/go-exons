@@ -2,6 +2,7 @@ package exons
 
 import (
 	"context"
+	"strings"
 
 	"github.com/itsatony/go-exons/internal"
 )
@@ -262,6 +263,62 @@ func ExtractMessagesFromOutput(output string) []Message {
 		}
 	}
 	return messages
+}
+
+// StripMessageMarkers removes the {~exons.message~} framing from executed output and
+// returns the plain text — message contents and unmarked prose alike, in their original
+// order.
+//
+// ⚠ IT EXISTS BECAUSE THE MARKERS CONTAIN NUL BYTES AND NOT EVERY CONSUMER IS A MESSAGE
+// SPLITTER. The framing is `\x00MSG_START:<role>:<cache>:` … `\x00MSG_END\x00`, so a caller
+// that renders a template and uses the result as text carries those NULs onward. Measured
+// downstream (vaichat2 → thalamus → postgres): a `jsonb` column REFUSES ` `
+// (SQLSTATE 22P05), so a prompt template using the message tag failed the whole send with an
+// opaque database error. A text/plain body, a log line and a filename are the same hazard,
+// one step less loudly.
+//
+// ⚠ IT IS NOT A SUBSTITUTE FOR ExtractMessagesFromOutput AND MUST NOT BE USED AS ONE. It
+// FLATTENS roles: a template emitting a system and a user message yields one string with no
+// boundary between them. A caller that can carry structured messages should extract them;
+// this is for the caller that has exactly one string to fill.
+//
+// ⚠ AND IT KEEPS UNMARKED PROSE, WHICH IS THE OTHER HALF. ExtractMessagesFromOutput returns
+// only what sits BETWEEN markers, so body text outside them is silently discarded — data loss
+// for a single-string caller, and a template mixing plain body text with one message tag is
+// an ordinary authoring shape.
+//
+// Output with no markers is returned unchanged, so this is safe to call unconditionally.
+func StripMessageMarkers(output string) string {
+	if !strings.Contains(output, internal.MessageStartMarker) {
+		// The common case: no message tag was used. Nothing to unframe — but a lone end
+		// marker is malformed output that still carries NULs, so it is removed either way.
+		return strings.ReplaceAll(output, internal.MessageEndMarker, "")
+	}
+	var b strings.Builder
+	b.Grow(len(output))
+	rest := output
+	for {
+		start := strings.Index(rest, internal.MessageStartMarker)
+		if start < 0 {
+			b.WriteString(rest)
+			break
+		}
+		// Everything before the marker is prose the author wrote outside any message.
+		b.WriteString(rest[:start])
+		rest = rest[start+len(internal.MessageStartMarker):]
+		// The header is `<role>:<cache>:` — two field separators. A truncated header means
+		// malformed output; drop what is left of it rather than emit a NUL.
+		for i := 0; i < 2; i++ {
+			sep := strings.Index(rest, internal.MessageFieldSep)
+			if sep < 0 {
+				rest = ""
+				break
+			}
+			rest = rest[sep+len(internal.MessageFieldSep):]
+		}
+	}
+	// The end markers carry the remaining NULs and delimit nothing the caller needs.
+	return strings.ReplaceAll(b.String(), internal.MessageEndMarker, "")
 }
 
 // internalAttributesAdapter wraps internal.Attributes to implement the public Attributes interface.
