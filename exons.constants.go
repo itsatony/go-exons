@@ -512,6 +512,19 @@ const (
 	SpecFieldVerifications = "verifications"
 	SpecFieldRegistry      = "registry"
 	SpecFieldSafety        = "safety"
+	SpecFieldSpeech        = "speech"
+
+	// SpecFieldRequirements names the block Spec.Requirements decodes.
+	//
+	// ⚠ IT WAS MISSING UNTIL v0.27.0, AND ITS ABSENCE WAS SILENT DATA LOSS. A
+	// typed Spec field consumes its key from the inline Extensions map; if the
+	// field is then not listed in knownSpecFields AND emitted by
+	// buildSerializeMap, every Serialize/ExportFull drops it — the value is
+	// neither in Extensions (the field ate it) nor in the output (nothing wrote
+	// it). `requirements:` had been round-tripping to nothing since it was
+	// introduced. This is the trap SpecFieldSpeech had to avoid, found on the
+	// exact lines that had to change to avoid it.
+	SpecFieldRequirements = "requirements"
 )
 
 // DocumentType identifies the kind of document (prompt, skill, agent).

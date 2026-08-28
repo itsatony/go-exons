@@ -87,6 +87,20 @@ type Spec struct {
 	Registry      *RegistrySpec      `yaml:"registry,omitempty" json:"registry,omitempty"`
 	Safety        *SafetyConfig      `yaml:"safety,omitempty" json:"safety,omitempty"`
 
+	// Speech declares how this document should SOUND when it is read aloud.
+	// See SpeechConfig: it is NOT execution.audio, and there is no fallback
+	// between the two.
+	//
+	// ⚠ THE SIBLING `transcription:` BLOCK IS DELIBERATELY *NOT* A FIELD HERE.
+	// It is a live convention — go-vaibstract reads it via
+	// Spec.Extensions["transcription"] — and typing it would remove the key from
+	// the inline Extensions map below, so every transcription-configured document
+	// would silently lose its provider, model and region at the consumer's next
+	// pin bump, with nothing failing anywhere. It is declared in
+	// schema/exons.schema.json instead, where it documents and validates without
+	// moving the value. TestTranscriptionStaysInExtensions pins that.
+	Speech *SpeechConfig `yaml:"speech,omitempty" json:"speech,omitempty"`
+
 	// Extensions — catch-all for unknown YAML keys
 	Extensions map[string]any `yaml:",inline" json:"extensions,omitempty"`
 
@@ -448,6 +462,7 @@ func (s *Spec) Clone() *Spec {
 	}
 	clone.Registry = s.Registry.Clone()
 	clone.Safety = s.Safety.Clone()
+	clone.Speech = s.Speech.Clone()
 
 	// Clone extensions
 	if s.Extensions != nil {

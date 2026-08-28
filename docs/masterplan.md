@@ -31,6 +31,8 @@ and prompts — safe to author by hand and by LLMs.
 | DC12-promulgate | 0.23.0 | DryRun's `Errors` becomes the analysis-completeness channel; `main` gets a clean release line | shipped 2026-08-09 |
 | DC13-entail | 0.24.0 | The executor honours what the document declared: `extends` merges declarations, block constructs get error recourse, a resolver's `Validate` is invoked | shipped 2026-08-09 |
 | DC14-collate | 0.25.0 | Every inheritance failure is machine-matchable (`cuserr` + `tag=extends`); an unresolvable `extends` stops reporting itself as `exons.include` | shipped 2026-08-09 |
+| DC15-unframe | 0.26.0 | The `{~exons.message~}` framing gains its inverse (`StripMessageMarkers`), because its NUL delimiter is a byte some consumers refuse | shipped 2026-08-11 |
+| DC16-timbre | 0.27.0 | An agent can say how it should SOUND: a typed top-level `speech:` block, `transcription:` declared in the schema only, and the silent `requirements:` export loss that trap had already caused | shipped 2026-08-28 |
 
 ## DC11-verbatim — Syntax safety (0.15.0)
 

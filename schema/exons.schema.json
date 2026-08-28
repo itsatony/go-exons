@@ -114,6 +114,12 @@
     },
     "safety": {
       "$ref": "#/$defs/SafetyConfig"
+    },
+    "speech": {
+      "$ref": "#/$defs/SpeechConfig"
+    },
+    "transcription": {
+      "$ref": "#/$defs/TranscriptionConfig"
     }
   },
   "$defs": {
@@ -598,6 +604,140 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "SpeechConfig": {
+      "type": "object",
+      "description": "How this document should SOUND when it is read aloud (text-to-speech). go-exons stores the declaration; producing audio is the consumer's job. Distinct from execution.audio, which parameterises an execution whose OUTPUT is audio: this block says how an agent's text should be voiced, whatever produced it.",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "TTS provider identifier (e.g. 'openai', 'elevenlabs'). Deliberately NOT the ExecutionConfig.provider enum, which names LLM providers and carries no TTS-only vendor."
+        },
+        "model": {
+          "type": "string",
+          "description": "TTS model identifier (e.g. 'gpt-4o-mini-tts', 'eleven_multilingual_v2'). Without it a voice name has no namespace."
+        },
+        "voice": {
+          "type": "string",
+          "description": "Voice name in the provider's namespace (e.g. 'sage', 'nova')."
+        },
+        "voice_id": {
+          "type": "string",
+          "description": "Provider-specific opaque voice identifier, where a name is not stable."
+        },
+        "instructions": {
+          "type": "string",
+          "description": "Free-text delivery steering ('warm, unhurried, never chipper'). Honoured by steerable TTS models; ignored by the rest."
+        },
+        "speed": {
+          "type": "number",
+          "description": "Playback speed.",
+          "minimum": 0.25,
+          "maximum": 4.0
+        },
+        "output_format": {
+          "type": "string",
+          "description": "Audio output format.",
+          "enum": ["mp3", "opus", "aac", "flac", "wav", "pcm"]
+        },
+        "language": {
+          "type": "string",
+          "description": "Language code (e.g. 'en', 'de')."
+        },
+        "region": {
+          "type": "string",
+          "description": "Jurisdiction or provider region the audio may be produced in (e.g. 'eu', 'us', 'eu-central-1', 'europe-west4'). Free-form on purpose: the value is provider-interpreted, and an enum would refuse values that work today."
+        }
+      }
+    },
+    "TranscriptionConfig": {
+      "type": "object",
+      "description": "How audio should be turned INTO text (speech-to-text). Declared here and deliberately NOT a typed Spec field: consumers read this block out of Spec.Extensions[\"transcription\"], and typing it would empty that key. The sibling convention `transcription_verifications` is real too and is deliberately left undeclared.",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "STT provider identifier (e.g. 'speechmatics', 'assemblyai', 'openai'). Not the ExecutionConfig.provider enum, for the same reason SpeechConfig.provider is not."
+        },
+        "model": {
+          "type": "string",
+          "description": "STT model identifier (e.g. 'ursa-2')."
+        },
+        "language": {
+          "type": "string",
+          "description": "Expected language code of the audio (e.g. 'de')."
+        },
+        "diarize": {
+          "type": "boolean",
+          "description": "Whether speakers should be separated."
+        },
+        "word_timestamps": {
+          "type": "boolean",
+          "description": "Whether per-word timings should be returned."
+        },
+        "region": {
+          "type": "string",
+          "description": "Jurisdiction or provider region the transcription may run in. Free-form, as in SpeechConfig."
+        },
+        "base_url": {
+          "type": "string",
+          "description": "Explicit endpoint, for an on-premise or region-pinned deployment."
+        },
+        "execution_config": {
+          "type": "object",
+          "description": "Provider-specific passthrough parameters. Deliberately open: its keys belong to the provider, not to this schema.",
+          "additionalProperties": true
+        },
+        "vocabulary_bias": {
+          "$ref": "#/$defs/VocabularyBias"
+        }
+      }
+    },
+    "VocabularyBias": {
+      "type": "object",
+      "description": "Lexical steering for a transcription: terms the consumer wants recognised. Not every provider supports every part.",
+      "additionalProperties": false,
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "description": "Free-text context for the audio ('Meeting notes for vAudience.AI')."
+        },
+        "terms": {
+          "type": "array",
+          "description": "Phrases to prioritise.",
+          "items": {
+            "$ref": "#/$defs/BiasTerm"
+          }
+        },
+        "language_hints": {
+          "type": "array",
+          "description": "Language codes the audio may contain.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "BiasTerm": {
+      "type": "object",
+      "description": "One biased phrase.",
+      "required": ["phrase"],
+      "additionalProperties": false,
+      "properties": {
+        "phrase": {
+          "type": "string",
+          "description": "The text to boost."
+        },
+        "boost": {
+          "type": "number",
+          "description": "Optional weight on a provider-specific scale (conventionally 0.0-10.0, 1.0 being default)."
+        },
+        "pronunciation": {
+          "type": "string",
+          "description": "Optional IPA or sounds-like hint. Dropped, with a warning, by providers that do not accept one."
         }
       }
     },

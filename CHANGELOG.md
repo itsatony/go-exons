@@ -7,6 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-08-28
+
+DC16-timbre — an agent can say how it should sound, and the trap that made typing a block dangerous
+had already cost `requirements:` its exports.
+
+A spec could describe *what* an agent is and *which LLM* runs it, but not the voice it should be read
+aloud in. In a product where agents are coworkers you talk to, that meant every coworker was read in
+the workspace's one voice and an author had no way to change it. `speech:` is that missing sentence.
+
+**It is not `execution.audio`, and there is deliberately no fallback between them.** `execution.*`
+parameterises the call that produces the document's *output*, so `execution.audio` is for an agent
+whose output *is* audio; `speech:` says how text this document produced should be read back.
+`ExecutionConfig` is closed around exactly one provider/model pair — the LLM's — so a voice named
+there has no engine that defines it, which is why a top-level block and not a widened `AudioConfig`.
+A silent fallback between the two would make one key's meaning depend on which consumer read it.
+
+⚠ **`transcription:` is declared in the schema and deliberately NOT a `Spec` field.** It is a live
+convention read as `Spec.Extensions["transcription"]`, and a typed field *consumes* its key from the
+inline Extensions map — so typing it would silently empty that key and every transcription-configured
+document would lose its provider, model and region at the consumer's next pin bump, with nothing
+failing anywhere. The schema declares it, so editors and CI can check it, without moving the value.
+
+⚠ **The same trap was already sprung, unnoticed, on `requirements:`.** `Spec.Requirements` has existed
+since DC-SE0 with no `SpecFieldRequirements`, no `knownSpecFields` entry and no `buildSerializeMap`
+arm — the typed field ate the key and no export wrote it back, so **every `Serialize`/`ExportFull`
+dropped the block**. It had been round-tripping to nothing since it was introduced, and it was found
+on the exact lines that had to change to stop `speech:` repeating it.
+
+### Added
+
+- **`speech:` — a typed, top-level block** (`SpeechConfig`): `provider`, `model`, `voice`, `voice_id`,
+  `instructions`, `speed`, `output_format`, `language`, `region`. `instructions` is free-text delivery
+  steering ("warm, unhurried, never chipper") — the one field that cannot be expressed as a parameter,
+  and the whole reason to prefer a steerable TTS model.
+- **`SpeechConfig` has `Clone()` and deliberately no `Validate()`.** go-exons stores declarations and
+  the bounds are stated in the schema, which is the published contract. A Go refusal would additionally
+  be a *narrowing shipped in a minor release*: before 0.27.0 a `speech:` block landed inertly in
+  `Spec.Extensions`, so a document carrying one already parses today.
+- **`TranscriptionConfig`, `VocabularyBias` and `BiasTerm` `$defs`** in `schema/exons.schema.json`,
+  derived from the consuming reader's own key constants rather than from prose. The sibling convention
+  `transcription_verifications` is real too and is deliberately left undeclared.
+- **`region` is free-form on purpose**, on both blocks: downstream it is provider-interpreted (`eu`,
+  `us`, `eu-central-1`, `europe-west4`), so an enum would refuse values that work today. Neither
+  `speech.provider` nor `transcription.provider` draws on the `ExecutionConfig` provider enum, which
+  names LLM vendors and carries no TTS/STT-only one.
+- **The shipped reference document is now parsed by a test.** `examples/dns-specialist.exons` is what
+  the README points at as the full frontmatter surface; it is hand-edited whenever the surface grows
+  (this release added a `speech:` block to it) and nothing checked it before.
+- **The root's `additionalProperties: true` is now asserted.** Every `$def` is closed and the root
+  deliberately is not, because `Spec.Extensions` is an inline catch-all — this release is the first
+  thing to depend on that, so it stops being an assumption.
+
+### Fixed
+
+- **`requirements:` survives an export.** `SpecFieldRequirements` + `knownSpecFields` + a
+  `buildSerializeMap` arm, under `IncludeMetadata` — which also keeps it, and `speech:`, **out** of the
+  Agent-Skills card, whose portable fields are a closed vocabulary where an extra key is a downstream
+  conformance failure.
+
+### Changed
+
+- ⚠ **One backward-incompatibility, stated rather than discovered:** a document whose `speech:` value
+  is a *scalar* rather than a mapping used to be an inert `Extensions` value and is now a decode error.
+  No document with a well-formed block can fail to parse, and no other key's handling changes.
+
+✅ **What the tests actually prove.** `TestSpeechDecodesIntoTheTypedFieldAndNotIntoExtensions` asserts
+both that the block decodes *and* that the key left `Extensions` — asserting the value alone would not
+prove the move, which is the thing that changes for consumers. `TestTranscriptionStaysInExtensions`
+pins the opposite for its sibling, and its reflection arm refuses a `Transcription` field added under
+any tag. `TestFullExportRoundTripsSpeechAndRequirements` goes through `ExportFull`, **never**
+`yaml.Marshal(spec)` — the struct tag does the work in a direct marshal, which is exactly how the
+`requirements` gap survived. `TestAgentSkillExportCarriesNeitherSpeechNorRequirements` pairs its two
+absence assertions with a positive one, because an absence check alone passes against an export that
+produced nothing. Both new guards were **probed by breaking them** and confirmed to fail.
+
 ## [0.26.0] - 2026-08-11
 
 DC15-unframe — the message framing has an inverse, because its delimiter is a byte some consumers

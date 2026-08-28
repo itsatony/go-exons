@@ -1523,6 +1523,8 @@ func TestKnownSpecFields_MatchesSpecStruct(t *testing.T) {
 		Verifications:     []VerificationCase{{Name: "v1"}},
 		Registry:          &RegistrySpec{},
 		Safety:            &SafetyConfig{},
+		Speech:            &SpeechConfig{Voice: "sage"},
+		Requirements:      &SpecRequirements{MCP: []MCPRequirement{{Capability: "dns-management"}}},
 		RecommendedAgents: []string{"@vai/mary"},
 		Extensions:        map[string]any{"custom": "ext"},
 	}

@@ -1,7 +1,53 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.26.0
+  version: 0.27.0
+# v0.27.0 (DC16-timbre): an agent can say HOW IT SHOULD SOUND. A spec could describe what an agent is
+# and which LLM runs it, but not the voice it should be read aloud in — so in a product where agents are
+# coworkers you talk to, every coworker was read in the workspace's one voice. `speech:` is a typed,
+# top-level block (SpeechConfig: provider, model, voice, voice_id, instructions, speed, output_format,
+# language, region) with a matching $def in the published schema. It is NOT execution.audio and there is
+# deliberately NO fallback between the two: execution.* parameterises the call that produces the
+# document's OUTPUT, while speech: says how text this document produced should be read back — and
+# ExecutionConfig is closed around exactly one provider/model pair, the LLM's, so a voice named there has
+# no engine that defines it. `instructions` is the one field that cannot be expressed as a parameter and
+# is the whole reason to prefer a steerable TTS model. `region` is FREE-FORM on purpose (downstream it is
+# provider-interpreted: "eu", "us", "eu-central-1", "europe-west4"), and neither speech.provider nor
+# transcription.provider draws on the ExecutionConfig provider enum, which names LLM vendors and carries
+# no TTS/STT-only one — reusing it would refuse values that work today.
+# ⚠ SpeechConfig HAS NO Validate() AND THAT IS THE DECISION, not an omission. go-exons stores
+# declarations; the bounds live in the schema, which is the published contract. A Go refusal would also
+# be a NARROWING shipped in a MINOR: before this release a `speech:` block landed inertly in
+# Spec.Extensions, so a document carrying one already parses and validates, and refusing it now would
+# break a document that works.
+# ⚠ `transcription:` IS DECLARED IN THE SCHEMA AND DELIBERATELY *NOT* A Spec FIELD. It is a live
+# convention read as Spec.Extensions["transcription"] (go-vaibstract's ParseExonsTranscriptionSpec), and
+# a typed field CONSUMES its key from the inline Extensions map — so typing it would silently empty that
+# key and every transcription-configured document would lose its provider, model and region at the
+# consumer's next pin bump, with nothing failing anywhere. The schema declares it (editors and CI can
+# check it) without moving the value. TestTranscriptionStaysInExtensions pins both halves, and its
+# reflection arm is the one that catches a field added under a different tag. The sibling convention
+# `transcription_verifications` is real too and is deliberately left undeclared.
+# ⚠ AND THE SAME TRAP WAS ALREADY SPRUNG, UNNOTICED, ON `requirements:`. Spec.Requirements has existed
+# since DC-SE0 with no SpecFieldRequirements constant, no knownSpecFields entry and no buildSerializeMap
+# arm — so the typed field ate the key and no export wrote it back: every Serialize/ExportFull DROPPED
+# the block, and `requirements:` had been round-tripping to nothing since it was introduced. Found on the
+# exact lines that had to change to keep `speech:` from repeating it. Both are now emitted, under
+# IncludeMetadata, which also keeps both OUT of the Agent-Skills card (its portable fields are a closed
+# vocabulary, and an extra key there is a conformance failure downstream).
+# ⚠ THE ROUND-TRIP GUARD MUST GO THROUGH ExportFull, NEVER yaml.Marshal(spec) — the struct tag does the
+# work in a direct marshal, so a direct-marshal test passes against a buildSerializeMap that emits
+# nothing. That is exactly how the requirements gap survived. Both new guards were probed by breaking
+# them (the emission arms removed; a Transcription field added) and confirmed to fail.
+# ⚠ ONE BACKWARD-INCOMPATIBILITY, STATED: a document whose `speech:` value is a SCALAR rather than a
+# mapping used to be an inert Extensions value and is now a decode error. No document that parsed with a
+# well-formed block can fail to parse.
+# The root stays `additionalProperties: true` — Spec.Extensions is an inline catch-all, so an unknown
+# top-level key is a supported extension point — and that is now asserted, because this release is the
+# first thing to depend on it. The shipped reference document (examples/dns-specialist.exons) grew a
+# speech block and is now PARSED by a test; nothing checked it before.
+# Downstream: aigentverse re-publishes this schema byte-identically and consumes the block in its own
+# cycle (its issue #32, this repo's issue #2).
 # v0.26.0 (DC15-unframe): the {~exons.message~} framing has an INVERSE now — StripMessageMarkers —
 # because its delimiter is a byte some consumers refuse. The framing is \x00MSG_START:<role>:<cache>:
 # ... \x00MSG_END\x00; the NUL is deliberate (it cannot collide with prompt content) and the contract

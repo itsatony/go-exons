@@ -66,6 +66,18 @@ func TestSchemaTopLevelStructure(t *testing.T) {
 		t.Error("missing title field")
 	}
 
+	// The ROOT must stay open. Every $def is closed (see
+	// TestSchemaDefsHaveAdditionalPropertiesFalse) and the root deliberately is
+	// not: Spec.Extensions is a `yaml:",inline"` catch-all, so an unknown
+	// top-level key is a supported extension point rather than an error — and
+	// live conventions depend on it, `transcription:` among them. Closing the
+	// root would make every such document invalid against the published schema
+	// while continuing to parse, which is the worst of both. Untested until
+	// v0.27.0, which is when something started depending on it.
+	if open, ok := schema["additionalProperties"].(bool); !ok || !open {
+		t.Error("root additionalProperties must be true — Spec.Extensions is an inline catch-all")
+	}
+
 	// Must have required: [name, type]
 	reqRaw, ok := schema["required"].([]any)
 	if !ok {
@@ -98,6 +110,7 @@ func TestSchemaHasProperties(t *testing.T) {
 		"skills", "tools", "constraints",
 		"messages", "context", "credentials", "credential",
 		"memory", "dispatch", "verifications", "registry", "safety",
+		"speech", "transcription",
 	}
 	for _, prop := range expectedProps {
 		if _, exists := props[prop]; !exists {
@@ -121,6 +134,7 @@ func TestSchemaHasDefs(t *testing.T) {
 		"MessageTemplate", "CredentialRef",
 		"MemorySpec", "DispatchSpec", "VerificationCase", "VerificationExpect",
 		"RegistrySpec", "SafetyConfig",
+		"SpeechConfig", "TranscriptionConfig", "VocabularyBias", "BiasTerm",
 		"ExecutionConfig", "ThinkingConfig", "ResponseFormat",
 		"JSONSchemaSpec", "EnumConstraint", "GuidedDecoding",
 		"ImageConfig", "AudioConfig", "EmbeddingConfig",
@@ -268,6 +282,7 @@ func TestSchemaDefsHaveAdditionalPropertiesFalse(t *testing.T) {
 		"MessageTemplate", "CredentialRef",
 		"MemorySpec", "DispatchSpec", "VerificationCase", "VerificationExpect",
 		"RegistrySpec", "SafetyConfig",
+		"SpeechConfig", "TranscriptionConfig", "VocabularyBias", "BiasTerm",
 		"ExecutionConfig", "ThinkingConfig", "ResponseFormat",
 		"JSONSchemaSpec", "EnumConstraint", "GuidedDecoding",
 		"ImageConfig", "AudioConfig", "EmbeddingConfig",

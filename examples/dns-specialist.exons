@@ -69,6 +69,13 @@ registry:
   origin: internal
   version: 1.2.0
 
+speech:
+  provider: openai
+  model: gpt-4o-mini-tts
+  voice: sage
+  instructions: "Precise and calm. Slow down for record values."
+  region: eu
+
 safety:
   guardrails: enabled
   require_confirmation_for: [dns_delete_record]

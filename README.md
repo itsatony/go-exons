@@ -349,8 +349,14 @@ Metadata describes agent behavior beyond prompts. These fields live at the YAML 
 | `verifications` | all | Test cases with expected tool calls and outputs |
 | `registry` | skill, agent | Namespace, origin (internal/external/unknown), version |
 | `safety` | all | Guardrails, deny-tools, require-confirmation lists |
+| `speech` | all | How the document should SOUND when read aloud: TTS provider/model, voice, free-text delivery `instructions`, region |
+| `transcription` | all | How audio should be turned INTO text. **Schema-declared, not a Go field** — see below |
 
-Go types: `MemorySpec`, `DispatchSpec`, `VerificationCase`, `RegistrySpec`, `SafetyConfig` — all with `Clone()` and `Validate()`.
+Go types: `MemorySpec`, `DispatchSpec`, `VerificationCase`, `RegistrySpec`, `SafetyConfig` — all with `Clone()` and `Validate()`; plus `SpeechConfig`, which has `Clone()` and deliberately no `Validate()` (go-exons stores the declaration, the schema states the bounds, and a Go refusal would narrow what already parses).
+
+`speech:` is not `execution.audio`. `execution.*` parameterises the call that produces the document's output, so `execution.audio` is for an agent whose output *is* audio; `speech:` says how text this document produced should be read back. There is deliberately no fallback between them.
+
+`transcription:` is declared in the JSON Schema — so editors and CI can check it — but is deliberately **not** a `Spec` field: consumers read it from `Spec.Extensions["transcription"]`, and a typed field would consume the key and empty that map for every one of them.
 
 ## Input Kinds
 

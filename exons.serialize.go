@@ -137,6 +137,8 @@ var knownSpecFields = map[string]bool{
 	SpecFieldVerifications:     true,
 	SpecFieldRegistry:          true,
 	SpecFieldSafety:            true,
+	SpecFieldSpeech:            true,
+	SpecFieldRequirements:      true,
 }
 
 // buildSerializeMap creates a map for YAML serialization.
@@ -256,6 +258,19 @@ func (s *Spec) buildSerializeMap(opts *SerializeOptions) map[string]any {
 		}
 		if s.Safety != nil {
 			m[SpecFieldSafety] = s.Safety
+		}
+		if s.Speech != nil {
+			m[SpecFieldSpeech] = s.Speech
+		}
+		// ⚠ REQUIREMENTS IS EMITTED HERE BECAUSE IT NEVER WAS. See
+		// SpecFieldRequirements: a typed field that no export writes is a value
+		// that survives Parse and dies at Serialize. It sits under
+		// IncludeMetadata with its neighbours, which also keeps it OUT of the
+		// Agent-Skills card (AgentSkillsExportOptions sets IncludeMetadata
+		// false) — that card's portable fields are a closed vocabulary and an
+		// extra key there is a conformance failure downstream.
+		if s.Requirements != nil {
+			m[SpecFieldRequirements] = s.Requirements
 		}
 	}
 
