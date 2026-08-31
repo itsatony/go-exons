@@ -605,3 +605,93 @@ func TestTemplate_DryRun_RegisteredIsAsked(t *testing.T) {
 	assert.True(t, byName[TagNameNow], "a built-in must report as registered")
 	assert.False(t, byName["exons.frobnicate"], "an unregistered verb must not report as registered")
 }
+
+// -----------------------------------------------------------------------------
+// Template.ValidateInputBinding — the accessor a RUNTIME needs
+//
+// Spec.ValidateInputBinding walks the document's own frontmatter, so a document
+// using `extends:` has every INHERITED required input skipped while
+// contextWithInputs binds them regardless. A host asking "was this caller's form
+// filled in" through the Spec therefore gets a clean answer over a binding that is
+// missing a required value — one rule with two implementations, on the one path
+// that decides whether to refuse a request.
+//
+// ⭐ THE HELD SIBLING IS WHAT MAKES THE FIRST CASE A MEASUREMENT: it asserts the
+// Spec-level accessor's own ANSWER on the same binding, so the test states why both
+// methods exist rather than merely exercising the new one.
+// -----------------------------------------------------------------------------
+
+func TestTemplate_ValidateInputBinding(t *testing.T) {
+	engine := MustNew()
+	// The parent declares `mandate`, required with no default — the exact shape a
+	// child cannot see through its own Spec.
+	engine.MustRegisterTemplate("vib-base", "---\nname: vib-base\ndescription: d\ninputs:\n"+
+		"  mandate:\n    type: text\n    required: true\n"+
+		"  tone:\n    type: select\n    options:\n      - value: warm\n      - value: cool\n"+
+		"---\nbody")
+
+	child := "---\nname: vib-child\ndescription: d\ninputs:\n  extra:\n    type: text\n---\n" +
+		"{~exons.extends template=\"vib-base\" /~}"
+	tmpl, err := engine.Parse(child)
+	require.NoError(t, err)
+
+	t.Run("an INHERITED required input with no value is reported", func(t *testing.T) {
+		errs, chainErr := tmpl.ValidateInputBinding(map[string]any{"extra": "x"})
+		require.NoError(t, chainErr)
+		require.Len(t, errs, 1)
+		assert.Contains(t, errs[0].Error(), "mandate")
+
+		// ⭐ THE HELD SIBLING, AND IT IS THE ENTIRE REASON THIS METHOD EXISTS: the
+		// spec-level accessor sees the child's frontmatter alone and reports the
+		// binding CLEAN. A build that delegated to it would satisfy every other
+		// assertion in this test.
+		assert.Empty(t, tmpl.Spec().ValidateInputBinding(map[string]any{"extra": "x"}),
+			"the Spec-level accessor is extends-blind; that is what makes it the wrong one here")
+	})
+
+	t.Run("an INHERITED select rejects a value off its option list", func(t *testing.T) {
+		errs, chainErr := tmpl.ValidateInputBinding(map[string]any{"mandate": "m", "tone": "spicy"})
+		require.NoError(t, chainErr)
+		require.Len(t, errs, 1)
+		assert.Contains(t, errs[0].Error(), "spicy")
+	})
+
+	t.Run("an acceptable binding reports nothing", func(t *testing.T) {
+		errs, chainErr := tmpl.ValidateInputBinding(map[string]any{"mandate": "m", "tone": "warm"})
+		require.NoError(t, chainErr)
+		assert.Empty(t, errs)
+	})
+
+	t.Run("an empty string is UNBOUND, not a supplied value", func(t *testing.T) {
+		// Same rule isUnboundInputValue applies at binding time. A form that submits
+		// every declared key sends "" for a field the user left alone, and reading
+		// that as "supplied" would make requiredness unenforceable from a browser.
+		errs, chainErr := tmpl.ValidateInputBinding(map[string]any{"mandate": ""})
+		require.NoError(t, chainErr)
+		require.Len(t, errs, 1)
+		assert.Contains(t, errs[0].Error(), "mandate")
+	})
+
+	t.Run("a document declaring nothing accepts anything", func(t *testing.T) {
+		bare, err := engine.Parse("no frontmatter at all")
+		require.NoError(t, err)
+		errs, chainErr := bare.ValidateInputBinding(map[string]any{"whatever": "x"})
+		require.NoError(t, chainErr)
+		assert.Empty(t, errs)
+	})
+
+	t.Run("violations are ordered, so the same binding reports the same way twice", func(t *testing.T) {
+		// A merged input set is a map; range order would make this correct and unstable.
+		multi, err := engine.Parse("---\nname: m\ndescription: d\ninputs:\n" +
+			"  zeta:\n    type: text\n    required: true\n" +
+			"  alpha:\n    type: text\n    required: true\n---\nbody")
+		require.NoError(t, err)
+		for i := 0; i < 8; i++ {
+			errs, chainErr := multi.ValidateInputBinding(nil)
+			require.NoError(t, chainErr)
+			require.Len(t, errs, 2)
+			assert.Contains(t, errs[0].Error(), "alpha")
+			assert.Contains(t, errs[1].Error(), "zeta")
+		}
+	})
+}

@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-08-31
+
+DC17-fillin — a runtime can ask whether a caller's form was actually filled in.
+
+### Added
+
+- **`Template.ValidateInputBinding(values) ([]error, error)`** — the same rules and the same
+  wording as `Spec.ValidateInputBinding`, over `DeclaredInputs()` (the merged `extends` chain)
+  rather than the document's own frontmatter. Per-value checks delegate to the existing
+  `validateInputValue`, so there is one implementation of the rules and not two.
+
+  ⛔ **THE SPEC-LEVEL ACCESSOR IS THE WRONG ONE FOR A TEMPLATE, AND SILENTLY SO.** A document
+  using `extends:` declares inputs its ancestors own, and `contextWithInputs` binds those
+  happily — so a host validating through the `Spec` skips **every inherited required input**
+  while the executor goes on treating them as declared. That is one rule with two
+  implementations, on the one path a runtime uses to decide whether to refuse a request. The
+  new doc comment says which to reach for and why; `Spec.ValidateInputBinding` is untouched and
+  is still right for a consumer that walks composition itself (aigentverse does).
+
+  ⭐ **ITS CONSUMER IS A MEASURED DEFECT.** In vaichat2/atlas (#353) `required` was enforced by
+  one browser's zod schema and by nothing else, so a routine firing on a schedule, a `curl` or
+  an MCP client could render a prompt with a hole where an instruction belonged — and the model
+  answered as though the user had asked for nothing.
+
+  ⚠ **THE CHAIN ERROR RIDES ALONGSIDE THE VIOLATIONS, NEVER INSTEAD OF THEM.** A partial chain
+  yields a set that is missing declarations rather than one proven clean, so a violation found
+  against it is still a real violation — but *no violations with a non-nil error* means **not
+  proven**, not acceptable. Stated in the doc comment where a caller reads it.
+
+  ⚠ **Violations are ordered by input name.** The merged set is a map; range order would make
+  the same binding report differently on each run — correct and unstable.
+
+  ⚠ **A synthetic `Spec{Inputs: merged}` was deliberately not used**, though it works today: it
+  would make this function's correctness depend on which *other* `Spec` fields
+  `OrderedInputKeys` happens to read.
+
+  ⭐ **The guard's held sibling is what makes it a measurement**: the inherited-required case
+  asserts `Spec.ValidateInputBinding`'s own answer on the same binding — **clean** — so the test
+  states why both methods exist rather than merely exercising the new one. Revert-checked with
+  the substitution count asserted at 1: making the new accessor extends-blind fails four
+  subtests by name.
+
+**Additive only** — no existing behaviour changes.
+
 ## [0.27.0] - 2026-08-28
 
 DC16-timbre — an agent can say how it should sound, and the trap that made typing a block dangerous

@@ -1,7 +1,28 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.27.0
+  version: 0.28.0
+# v0.28.0 (DC17-fillin): A RUNTIME CAN ASK WHETHER A CALLER'S FORM WAS ACTUALLY FILLED IN — over the
+# inputs the document INHERITS as well as the ones it declares itself. Template.ValidateInputBinding
+# joins Spec.ValidateInputBinding with the same rules and the same wording over a different set:
+# DeclaredInputs (the merged extends chain) rather than the document's own frontmatter.
+# ⛔ THE SPEC-LEVEL ACCESSOR IS A TRAP FOR A TEMPLATE AND THAT IS WHY THIS EXISTS. A document using
+# `extends:` declares inputs its ancestors own, and contextWithInputs binds those happily — so a host
+# validating through Spec silently skips every INHERITED required input while the executor treats them
+# as declared. One rule with two implementations, on the one path a runtime uses to decide whether to
+# refuse a request. Its consumer is vaichat2/atlas#353, where `required` was enforced by one browser and
+# by nothing else, so a routine firing on a schedule, a curl or an MCP client could render a prompt with
+# a hole where an instruction belonged and the model answered as if the user had asked for nothing.
+# ⚠ IT RETURNS THE CHAIN ERROR ALONGSIDE THE VIOLATIONS, NEVER INSTEAD OF THEM. A partial chain yields
+# a set that is missing declarations rather than one proven clean, so a violation found against it is
+# still real — but "no violations" with a non-nil error means NOT PROVEN, not acceptable, and the doc
+# comment says so where a caller will read it.
+# ⚠ Violations are ordered by input name. The merged set is a map, so range order would make the same
+# binding report differently on each run — correct and unstable.
+# ⚠ A synthetic Spec{Inputs: merged} was deliberately NOT used, though it works today: it would make
+# this function's correctness depend on which OTHER Spec fields OrderedInputKeys happens to read.
+# ADDITIVE ONLY — no existing behaviour changes, and Spec.ValidateInputBinding is untouched and still
+# right for a consumer that walks composition itself (aigentverse does).
 # v0.27.0 (DC16-timbre): an agent can say HOW IT SHOULD SOUND. A spec could describe what an agent is
 # and which LLM runs it, but not the voice it should be read aloud in — so in a product where agents are
 # coworkers you talk to, every coworker was read in the workspace's one voice. `speech:` is a typed,

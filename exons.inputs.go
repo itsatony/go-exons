@@ -297,6 +297,71 @@ func (t *Template) DeclaredInputs() (map[string]*InputDef, error) {
 	return out, err
 }
 
+// ValidateInputBinding checks a caller's bound values against every input this document
+// DECLARES OR INHERITS, and is the accessor a runtime should reach for. Same rules and same
+// wording as Spec.ValidateInputBinding — it delegates per value — over a different input set.
+//
+// ⛔ THE DIFFERENCE IS THE WHOLE POINT, AND THE SPEC-LEVEL ONE IS A TRAP FOR A TEMPLATE.
+// Spec.ValidateInputBinding walks s.Inputs, which is the document's OWN frontmatter. A document
+// using `extends:` declares inputs its ancestors own, and contextWithInputs binds those happily —
+// so validating a template through its Spec silently skips every INHERITED required input while
+// the executor goes on treating them as declared. That is one rule with two implementations, on
+// the one path a runtime uses to decide whether a caller's form was filled in.
+//
+// ⚠ VALIDATE THE CALLER'S OWN BAG, NEVER A MERGED AMBIENT ONE. A host that folds its own
+// variables (a clock, a locale, a theme) into the same map before calling here will have a
+// document declaring a `select` named `theme` checked against the host's theme string — and
+// refused on a perfectly healthy call. The values passed here must be exactly what the caller
+// supplied.
+//
+// The error is the resolution error from the extends chain, if any; it is returned ALONGSIDE
+// whatever violations were found rather than instead of them, for DeclaredInputs' stated reason —
+// a partial chain still yields a usable set, and a caller deciding whether to refuse a request
+// wants both facts. ⚠ A caller must not read "no violations" as acceptance while that error is
+// non-nil: the set that produced it is incomplete, so the answer is "not proven", not "clean".
+//
+// An empty (or nil) violation slice with a nil error means the binding is acceptable.
+func (t *Template) ValidateInputBinding(values map[string]any) ([]error, error) {
+	declared, err := t.DeclaredInputs()
+	if len(declared) == 0 {
+		return nil, err
+	}
+	// A synthetic Spec is deliberately NOT used here. It would work today — OrderedInputKeys
+	// falls back to the sorted key set when InputOrder is empty — but it would make this
+	// function's correctness depend on which OTHER Spec fields that method happens to read,
+	// which is exactly the kind of coupling a later refactor breaks silently.
+	var errs []error
+	for _, name := range sortedInputNames(declared) {
+		def := declared[name]
+		if def == nil {
+			continue
+		}
+		val, present := values[name]
+		if !present || isUnboundInputValue(val) {
+			// A declared default satisfies requiredness — the value is never actually
+			// absent at render, so refusing here would make an unsubmittable form.
+			if def.Required && def.Default == nil {
+				errs = append(errs, fmt.Errorf(ErrFmtInputRequired, name))
+			}
+			continue
+		}
+		errs = append(errs, validateInputValue(name, def, val)...)
+	}
+	return errs, err
+}
+
+// sortedInputNames orders a merged input set. The merge is a map, so range order would make the
+// same binding report its violations in a different order on each run — and a caller rendering
+// them to a user, or a test pinning them, would see a value that is correct and unstable.
+func sortedInputNames(inputs map[string]*InputDef) []string {
+	out := make([]string, 0, len(inputs))
+	for name := range inputs {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // cloneInputDef deep-copies an input declaration: every value field, all three option/accept
 // slices (whose elements are pure value structs), and the decoded Default. A nil def clones to nil.
 //
