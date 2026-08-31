@@ -337,12 +337,16 @@ func (t *Template) ValidateInputBinding(values map[string]any) ([]error, error) 
 			continue
 		}
 		val, present := values[name]
-		if !present || isUnboundInputValue(val) {
+		if !present || !satisfiesRequired(val) {
 			// A declared default satisfies requiredness — the value is never actually
 			// absent at render, so refusing here would make an unsubmittable form.
 			if def.Required && def.Default == nil {
 				errs = append(errs, fmt.Errorf(ErrFmtInputRequired, name))
 			}
+			// ⚠ An UNBOUND value skips the per-value checks (there is nothing to check), but
+			// an EMPTY COLLECTION is a bound value that simply does not answer a required
+			// field — and it has nothing to check either: every per-value rule (option
+			// membership, max_files) is vacuous on an empty list.
 			continue
 		}
 		errs = append(errs, validateInputValue(name, def, val)...)
@@ -506,6 +510,42 @@ func isUnboundInputValue(val any) bool {
 	return ok && s == ""
 }
 
+// satisfiesRequired reports whether a caller's value counts as ANSWERING a required input.
+//
+// ⛔ IT IS DELIBERATELY NOT isUnboundInputValue, AND THE DIFFERENCE IS A REAL HOLE THAT WAS
+// MEASURED. That predicate answers a different question — "should this value still receive the
+// declared default?" — and treats only nil and "" as unbound, because for a form-driven caller
+// an untouched field and a cleared field are the same gesture. Reused for requiredness it makes
+// the check a NO-OP for every collection kind: a caller sending an explicit `[]` for a required
+// file-upload, multiselect, sort or associate is "present", nothing else constrains it, and the
+// binding validates clean while the rendered prompt still has a hole in it.
+//
+// ⭐ THAT IS NOT A CORNER CASE: a required `file-upload` is the field type atlas#353 was reported
+// against, and `{"papers": []}` is exactly what a stored routine or a curl sends.
+//
+// An empty collection is therefore NOT an answer to a required field. This matches what every
+// form implementation already does — a required file field means "at least one file" — and it is
+// scoped to the REQUIRED check alone: binding still uses isUnboundInputValue, so a deliberately
+// emptied multiselect keeps its cleared value rather than silently reverting to a default.
+func satisfiesRequired(val any) bool {
+	if isUnboundInputValue(val) {
+		return false
+	}
+	switch v := val.(type) {
+	case []any:
+		return len(v) > 0
+	case []string:
+		return len(v) > 0
+	case map[string]any:
+		return len(v) > 0
+	}
+	// ⚠ Reflection is deliberately NOT used for the general case. The values reaching here come
+	// from JSON or YAML decoding, whose only composite shapes are the three above; a reflective
+	// "is it empty" would additionally start judging caller structs whose emptiness this package
+	// has no business defining.
+	return true
+}
+
 // declaresInput reports whether the given input name is declared anywhere in this template's
 // extends chain. A dotted reference (name="user.email" on a structured input) is judged by its
 // first segment, since that is the key the frontmatter declares.
@@ -571,12 +611,16 @@ func (s *Spec) ValidateInputBinding(values map[string]any) []error {
 			continue
 		}
 		val, present := values[name]
-		if !present || isUnboundInputValue(val) {
+		if !present || !satisfiesRequired(val) {
 			// A declared default satisfies requiredness — the value is never actually
 			// absent at render, so refusing here would make an unsubmittable form.
 			if def.Required && def.Default == nil {
 				errs = append(errs, fmt.Errorf(ErrFmtInputRequired, name))
 			}
+			// ⚠ An UNBOUND value skips the per-value checks (there is nothing to check), but
+			// an EMPTY COLLECTION is a bound value that simply does not answer a required
+			// field — and it has nothing to check either: every per-value rule (option
+			// membership, max_files) is vacuous on an empty list.
 			continue
 		}
 		errs = append(errs, validateInputValue(name, def, val)...)

@@ -1,7 +1,22 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.28.0
+  version: 0.29.0
+# v0.29.0 (DC17b): AN EMPTY COLLECTION IS NOT AN ANSWER TO A REQUIRED INPUT.
+# ⛔ 0.28.0's required check was a NO-OP FOR EVERY COLLECTION KIND, found by review. It reused
+# isUnboundInputValue, which treats only nil and "" as unbound — right for BINDING, where an
+# untouched field and a cleared field are one gesture — so an explicit `[]` passed as "present",
+# nothing else constrained it (option membership and max_files are both vacuous on an empty
+# list), and the binding validated CLEAN while the rendered prompt still had a hole in it.
+# ⭐ NOT A CORNER CASE: a required `file-upload` is the field type atlas#353 was reported
+# against, and {"papers": []} is exactly what a stored routine or a curl sends.
+# satisfiesRequired is a SEPARATE predicate on purpose, used ONLY by the required check: binding
+# still uses isUnboundInputValue, so a deliberately emptied multiselect keeps its cleared value
+# instead of silently reverting to a default.
+# ⚠ A SCALAR ZERO IS NOT EMPTY — 0 and false are real answers, guarded, because that direction
+# would be worse than the bug. ⚠ No reflection: the shapes reaching here come from JSON/YAML, and
+# a reflective emptiness test would start judging caller structs this package does not define.
+# ⚠ Applied to BOTH accessors — a fix on one is the drift this file warns about.
 # v0.28.0 (DC17-fillin): A RUNTIME CAN ASK WHETHER A CALLER'S FORM WAS ACTUALLY FILLED IN — over the
 # inputs the document INHERITS as well as the ones it declares itself. Template.ValidateInputBinding
 # joins Spec.ValidateInputBinding with the same rules and the same wording over a different set:

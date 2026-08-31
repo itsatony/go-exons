@@ -695,3 +695,82 @@ func TestTemplate_ValidateInputBinding(t *testing.T) {
 		}
 	})
 }
+
+// TestValidateInputBinding_AnEmptyCollectionDoesNotAnswerARequiredInput pins the hole that
+// made the required check a NO-OP for every collection kind.
+//
+// ⛔ isUnboundInputValue treats only nil and "" as unbound — right for BINDING, where an
+// untouched field and a cleared field are one gesture — so reused for requiredness it let an
+// explicit `[]` through as "present". Nothing else constrains an empty list (option membership
+// and max_files are both vacuous on one), so the binding validated CLEAN while the rendered
+// prompt still had a hole in it.
+//
+// ⭐ NOT A CORNER CASE: a required `file-upload` is the field type atlas#353 was reported
+// against, and `{"papers": []}` is exactly what a stored routine or a curl sends.
+func TestValidateInputBinding_AnEmptyCollectionDoesNotAnswerARequiredInput(t *testing.T) {
+	src := "name: t\ninputs:\n" +
+		"  papers:\n    type: file-upload\n    required: true\n" +
+		"  tags:\n    type: multiselect\n    required: true\n    options:\n      - value: a\n      - value: b\n"
+	spec, err := ParseYAMLSpec(src)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name   string
+		values map[string]any
+	}{
+		{"an empty []any", map[string]any{"papers": []any{}, "tags": []any{}}},
+		{"an empty []string", map[string]any{"papers": []string{}, "tags": []string{}}},
+	} {
+		t.Run(tc.name+" is refused", func(t *testing.T) {
+			errs := spec.ValidateInputBinding(tc.values)
+			require.Len(t, errs, 2, "an empty list is not an answer to a required field")
+			assert.Contains(t, errs[0].Error(), "papers")
+			assert.Contains(t, errs[1].Error(), "tags")
+		})
+	}
+
+	t.Run("HELD SIBLING — a NON-empty list is accepted", func(t *testing.T) {
+		// Without this, "an empty list is refused" is equally satisfied by a build that
+		// refuses every collection-valued required input, i.e. an unsubmittable form.
+		assert.Empty(t, spec.ValidateInputBinding(map[string]any{
+			"papers": []any{map[string]any{"name": "a.txt"}},
+			"tags":   []any{"a"},
+		}))
+	})
+
+	t.Run("HELD SIBLING — an empty list on an OPTIONAL input is fine", func(t *testing.T) {
+		opt, err := ParseYAMLSpec("name: t\ninputs:\n  maybe:\n    type: multiselect\n    options:\n      - value: a\n")
+		require.NoError(t, err)
+		assert.Empty(t, opt.ValidateInputBinding(map[string]any{"maybe": []any{}}))
+	})
+
+	t.Run("an empty map does not answer a required input either", func(t *testing.T) {
+		m, err := ParseYAMLSpec("name: t\ninputs:\n  cfg:\n    type: text\n    required: true\n")
+		require.NoError(t, err)
+		require.Len(t, m.ValidateInputBinding(map[string]any{"cfg": map[string]any{}}), 1)
+		assert.Empty(t, m.ValidateInputBinding(map[string]any{"cfg": map[string]any{"k": "v"}}))
+	})
+
+	t.Run("a scalar zero is NOT empty — 0 and false are real answers", func(t *testing.T) {
+		// ⚠ The direction that would be much worse than the bug: a number field answered 0,
+		// or a boolean answered false, is answered. Emptiness is about COLLECTIONS.
+		z, err := ParseYAMLSpec("name: t\ninputs:\n" +
+			"  n:\n    type: number\n    required: true\n" +
+			"  b:\n    type: boolean\n    required: true\n")
+		require.NoError(t, err)
+		assert.Empty(t, z.ValidateInputBinding(map[string]any{"n": 0, "b": false}))
+	})
+
+	t.Run("the TEMPLATE accessor agrees — one rule, not two", func(t *testing.T) {
+		// The two accessors differ only in WHICH input set they walk; a fix applied to one
+		// and not the other is the drift this package's own comments warn about.
+		engine := MustNew()
+		tmpl, err := engine.Parse("---\nname: t\ndescription: d\ninputs:\n" +
+			"  papers:\n    type: file-upload\n    required: true\n---\nbody")
+		require.NoError(t, err)
+		errs, chainErr := tmpl.ValidateInputBinding(map[string]any{"papers": []any{}})
+		require.NoError(t, chainErr)
+		require.Len(t, errs, 1)
+		assert.Contains(t, errs[0].Error(), "papers")
+	})
+}

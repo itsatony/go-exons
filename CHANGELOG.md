@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-08-31
+
+DC17b — an empty collection is not an answer to a required input.
+
+### Fixed
+
+⛔ **0.28.0's required check was a NO-OP for every collection kind**, found by review before it
+had a second consumer. It reused `isUnboundInputValue`, which treats only `nil` and `""` as
+unbound — correct for **binding**, where an untouched field and a cleared field are one gesture —
+so a caller sending an explicit `[]` for a required `file-upload`, `multiselect`, `sort` or
+`associate` counted as *present*. Nothing else constrained it (option membership and `max_files`
+are both vacuous on an empty list), so the binding validated **clean** while the rendered prompt
+still had a hole in it. Only an *omitted* key was refused.
+
+⭐ **Not a corner case**: a required `file-upload` is the field type atlas#353 was reported
+against, and `{"papers": []}` is exactly what a stored routine or a `curl` sends.
+
+`satisfiesRequired` is a **separate predicate**, used only by the required check — binding still
+uses `isUnboundInputValue`, so a deliberately emptied multiselect keeps its cleared value rather
+than silently reverting to a declared default.
+
+⚠ **A scalar zero is not empty.** `0` and `false` are real answers, and that is guarded: the
+opposite direction would be worse than the bug.
+⚠ **No reflection** — the shapes reaching here come from JSON/YAML decoding, and a reflective
+emptiness test would start judging caller structs whose emptiness this package does not define.
+⚠ **Applied to BOTH accessors.** A fix on one and not the other is the drift this file warns about,
+and a subtest asserts they agree.
+
 ## [0.28.0] - 2026-08-31
 
 DC17-fillin — a runtime can ask whether a caller's form was actually filled in.
