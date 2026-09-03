@@ -169,6 +169,11 @@ type BuiltinError struct {
 	Message  string
 	TagName  string
 	Metadata map[string]string
+	// Cause is the underlying failure when this error reports one that happened OUTSIDE the
+	// template — a parent lookup that errored, for instance. It is exposed through Unwrap so a
+	// consumer's errors.Is / errors.As can reach the real reason. Nil for every ordinary builtin
+	// failure, which is a fact about the template rather than about the world around it.
+	Cause error
 }
 
 // NewBuiltinError creates a new builtin error.
@@ -189,6 +194,12 @@ func (e *BuiltinError) WithMetadata(key, value string) *BuiltinError {
 	return e
 }
 
+// WithCause records the underlying failure and returns the error for chaining.
+func (e *BuiltinError) WithCause(cause error) *BuiltinError {
+	e.Cause = cause
+	return e
+}
+
 // Error implements the error interface.
 func (e *BuiltinError) Error() string {
 	base := fmt.Sprintf(ErrFmtTagMessage, e.TagName, e.Message)
@@ -197,7 +208,15 @@ func (e *BuiltinError) Error() string {
 			base += fmt.Sprintf(" [%s=%s]", k, v)
 		}
 	}
+	if e.Cause != nil {
+		base += fmt.Sprintf(ErrFmtCauseSuffix, e.Cause)
+	}
 	return base
+}
+
+// Unwrap exposes the cause, if any, to errors.Is and errors.As.
+func (e *BuiltinError) Unwrap() error {
+	return e.Cause
 }
 
 // NewVariableNotFoundBuiltinError creates an error for variable not found.
@@ -251,6 +270,17 @@ func NewTemplateNotFoundBuiltinError(name, tagName string) *BuiltinError {
 		WithMetadata(MetaKeyTemplateName, name)
 }
 
+// NewTemplateSourceLookupBuiltinError creates an error for a parent template whose LOOKUP failed —
+// as opposed to one that was looked up and found absent. The two are deliberately different
+// constructors with different messages: a host answering "unauthorized" or "store unreachable"
+// must not have that answer rewritten as "template not found", which would send an author hunting
+// for a typo in a name that is perfectly correct.
+func NewTemplateSourceLookupBuiltinError(name, tagName string, cause error) *BuiltinError {
+	return NewBuiltinError(ErrMsgTemplateSourceLookupFailed, tagName).
+		WithMetadata(MetaKeyTemplateName, name).
+		WithCause(cause)
+}
+
 // NewTemplateNotFoundWithHintError creates an error for template not found with an actionable hint.
 func NewTemplateNotFoundWithHintError(name string) *BuiltinError {
 	message := AppendHint(ErrMsgTemplateNotFound, HintTemplateNotFound)
@@ -265,4 +295,9 @@ const (
 	ErrMsgVariableNotFound  = "variable not found"
 	ErrMsgTemplateNotFound  = "template not found"
 	ErrMsgRawResolverCalled = "raw resolver should not be called directly"
+	// ErrMsgTemplateSourceLookupFailed — the parent was asked for and the ASKING failed. Not a
+	// synonym for ErrMsgTemplateNotFound; see NewTemplateSourceLookupBuiltinError.
+	ErrMsgTemplateSourceLookupFailed = "template source lookup failed"
+	// ErrFmtCauseSuffix appends a builtin error's cause to its message.
+	ErrFmtCauseSuffix = ": %v"
 )

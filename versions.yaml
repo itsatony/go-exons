@@ -1,7 +1,21 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.29.0
+  version: 0.30.0
+# v0.30.0 (DC18-lineage): A PARENT CAN COME FROM THE REQUEST, NOT ONLY FROM THE PROCESS.
+# ⛔ {~exons.extends~} resolved its parent ONLY through the engine's process-global registry, so a
+# multi-tenant host whose parents live in a remote store reached with the request's identity had no
+# seam at all — one name had to mean one parent for every caller, and "you may not read that" could
+# not be said. Context.WithTemplateSourceResolver attaches a per-call, ctx-aware resolver; BOTH
+# walks over the chain (the render and the declared-inputs walk, via DeclaredInputsWithContext /
+# ValidateInputBindingWithContext) consume it, so the two keep reporting one vocabulary.
+# ⚠ THREE-VALUED ANSWER: found=false is "absent"; err is "the lookup failed" and keeps its cause in
+# the unwrap chain — never rewritten as not-found, because the two demand opposite actions.
+# ⚠ The resolver WINS outright over the registry (no fallback — that is how a global parent would
+# leak into a scoped request), is asked ONCE per render (memoized for the call only), and shares the
+# resolver's depth/cycle bounds unchanged. Template.Extends() names the parent to fetch.
+# ⚠ Context gained a ninth copied field; readState now returns a STRUCT so a setter cannot compile
+# while dropping one. Docs: the `tag` metadata is `exons.extends`, not `extends` (doc fix).
 # v0.29.0 (DC17b): AN EMPTY COLLECTION IS NOT AN ANSWER TO A REQUIRED INPUT.
 # ⛔ 0.28.0's required check was a NO-OP FOR EVERY COLLECTION KIND, found by review. It reused
 # isUnboundInputValue, which treats only nil and "" as unbound — right for BINDING, where an

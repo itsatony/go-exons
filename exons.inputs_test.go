@@ -432,7 +432,7 @@ func TestTemplate_Inputs_CallerBindingsAreNotAliased(t *testing.T) {
 	// The caller keeps its own reference — exactly what a concurrent caller reusing a data map
 	// across renders does.
 	nested := map[string]any{"depth": "original"}
-	injected := tmpl.contextWithInputs(NewContext(map[string]any{
+	injected := tmpl.contextWithInputs(context.Background(), NewContext(map[string]any{
 		ContextKeyInput: map[string]any{"cfg": nested},
 	}))
 

@@ -10,6 +10,11 @@ type InheritanceResolver struct {
 	engine           TemplateExecutor
 	maxDepth         int
 	templateResolver TemplateSourceResolver
+	// ctxResolver is the per-call, identity-aware source of parents. When set it is the ONLY
+	// source consulted — the registry-backed templateResolver is not a fallback for it, so a
+	// host that scopes parents to a request cannot have a process-global template leak into
+	// that request's chain under the same name.
+	ctxResolver      ContextTemplateSourceResolver
 	inheritanceChain []string    // Track templates to detect circular inheritance
 	lexerConfig      LexerConfig // Engine lexer config for parent template re-lexing
 }
@@ -17,6 +22,19 @@ type InheritanceResolver struct {
 // TemplateSourceResolver provides access to raw template sources
 type TemplateSourceResolver interface {
 	GetTemplateSource(name string) (string, bool)
+}
+
+// ContextTemplateSourceResolver resolves a parent template's source with the request's context in
+// hand, so a multi-tenant host can look the parent up under the caller's identity rather than in
+// a process-global registry.
+//
+// The three-valued answer is the whole point of a second interface rather than a second method on
+// TemplateSourceResolver: found=false means "no such template", while a non-nil error means the
+// LOOKUP failed (unauthorized, unreachable, timed out) — and the resolver must not collapse the
+// second into the first, because "absent" and "could not ask" demand opposite actions from the
+// caller.
+type ContextTemplateSourceResolver interface {
+	ResolveTemplateSource(ctx context.Context, name string) (source string, found bool, err error)
 }
 
 // NewInheritanceResolver creates a new inheritance resolver. The lexerConfig
@@ -33,6 +51,15 @@ func NewInheritanceResolver(engine TemplateExecutor, templateResolver TemplateSo
 		inheritanceChain: make([]string, 0),
 		lexerConfig:      lexerConfig,
 	}
+}
+
+// NewContextInheritanceResolver creates an inheritance resolver whose parents come from a
+// per-call, context-aware source. It shares every bound (depth, cycle) and every merge rule with
+// NewInheritanceResolver — only the lookup differs.
+func NewContextInheritanceResolver(ctxResolver ContextTemplateSourceResolver, maxDepth int, lexerConfig LexerConfig) *InheritanceResolver {
+	r := NewInheritanceResolver(nil, nil, maxDepth, lexerConfig)
+	r.ctxResolver = ctxResolver
+	return r
 }
 
 // ResolveInheritance resolves template inheritance by merging child blocks into parent.
@@ -60,13 +87,9 @@ func (r *InheritanceResolver) ResolveInheritance(
 	}()
 
 	// Get parent template source
-	if r.templateResolver == nil {
-		return nil, NewBuiltinError(ErrMsgEngineNotAvailable, TagNameExtends)
-	}
-
-	parentSource, exists := r.templateResolver.GetTemplateSource(parentName)
-	if !exists {
-		return nil, NewTemplateNotFoundBuiltinError(parentName, TagNameExtends)
+	parentSource, err := r.lookupParentSource(ctx, parentName)
+	if err != nil {
+		return nil, err
 	}
 
 	// Parse parent template
@@ -86,6 +109,32 @@ func (r *InheritanceResolver) ResolveInheritance(
 	// Merge child blocks into parent
 	mergedRoot := r.mergeBlocks(parentRoot, childInfo.Blocks)
 	return mergedRoot, nil
+}
+
+// lookupParentSource hands back the parent's source from whichever resolver this instance was
+// built with. The context-aware resolver wins outright when present; a lookup FAILURE there is
+// reported as its own error carrying the cause, never as "not found".
+func (r *InheritanceResolver) lookupParentSource(ctx context.Context, parentName string) (string, error) {
+	if r.ctxResolver != nil {
+		source, found, err := r.ctxResolver.ResolveTemplateSource(ctx, parentName)
+		if err != nil {
+			return "", NewTemplateSourceLookupBuiltinError(parentName, TagNameExtends, err)
+		}
+		if !found {
+			return "", NewTemplateNotFoundBuiltinError(parentName, TagNameExtends)
+		}
+		return source, nil
+	}
+
+	if r.templateResolver == nil {
+		return "", NewBuiltinError(ErrMsgEngineNotAvailable, TagNameExtends)
+	}
+
+	parentSource, exists := r.templateResolver.GetTemplateSource(parentName)
+	if !exists {
+		return "", NewTemplateNotFoundBuiltinError(parentName, TagNameExtends)
+	}
+	return parentSource, nil
 }
 
 // parseTemplateWithInheritance parses a template and extracts inheritance info

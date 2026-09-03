@@ -213,19 +213,71 @@ A consumer distinguishes it from every other execute failure by two facts, and
 these are the whole contract:
 
 - the error is a `*cuserr.CustomError`, and
-- its `tag` metadata equals `extends`.
+- its `tag` metadata equals `exons.extends` (the tag's full name, `TagNameExtends` —
+  not the bare word `extends`, which this document claimed until v0.30.0 while the
+  code had always set the full name).
 
 That holds for all three ways resolution can fail — the declaration cannot be
 read, there is no engine to resolve through, or the parent was named and the
-chain could not be walked (absent, circular, over-deep). The specific reason is
-preserved as the wrapped cause, and the parent this document declares is in
-`template_name`.
+chain could not be walked (absent, circular, over-deep, or — with a per-call
+resolver, below — the lookup itself failed). The specific reason is preserved as
+the wrapped cause, and the parent this document declares is in `template_name`.
 
 > ⚠ **Do not match on the error's `.Code`.** It is not set by this library. It is
 > derived by `go-cuserr` from the cause's message *prose*, so the code of an
 > inheritance failure depends on the wording underneath it and the three failures
 > above produce three different codes. `ErrCodeExec` is passed as a metadata
 > label, not as a code, despite its name. Match the tag.
+
+### Where the parent comes from: a per-call resolver (v0.30.0)
+
+By default the parent named by `{~exons.extends template="…" /~}` is looked up in
+the engine's registry (`Engine.RegisterTemplate`), which is **process-global**:
+one name, one parent, for every caller. A multi-tenant host whose parents live in
+a store reached with the *request's* identity cannot use that — the parent a
+document may extend depends on who is asking, and the answer may be "you may not
+read that", which a registry cannot say.
+
+Such a host attaches a `TemplateSourceResolver` to the execution context:
+
+```go
+type TemplateSourceResolver interface {
+    // found=false: no such template. err != nil: the LOOKUP failed — never reported as absent.
+    ResolveTemplateSource(ctx context.Context, name string) (source string, found bool, err error)
+}
+
+execCtx := exons.NewContextWithStrategy(vars, exons.ErrorStrategyLog).
+    WithSpecResolver(specs).             // {~exons.ref~}
+    WithTemplateSourceResolver(parents)  // {~exons.extends~}
+out, err := tmpl.ExecuteWithContext(ctx, execCtx)
+```
+
+`exons.TemplateSourceFunc` adapts a plain function. The source a resolver returns
+may carry YAML frontmatter; the library strips it exactly as `Engine.Parse` does.
+`Template.Extends()` reports the parent a template declares, so a host can decide
+whether a lookup is needed before rendering.
+
+Rules, each normative:
+
+- **Both walks consult it.** The render (`ExecuteWithContext`) and the declared-
+  inputs walk (`DeclaredInputsWithContext`, `ValidateInputBindingWithContext`)
+  resolve parents through the same resolver, so the contract a host publishes and
+  the document it renders describe one chain. The context-free
+  `DeclaredInputs()` / `ValidateInputBinding()` keep reading the registry.
+- **It wins outright.** When a resolver is present it is the *only* source of
+  parents for that call — the registry is not a fallback, because a fallback is
+  how a process-global template would answer for a request that scoped its
+  parents to an identity.
+- **Absent and failed are different errors.** `found=false` is the
+  template-not-found inheritance failure naming the parent. A non-nil `err` is an
+  inheritance failure whose unwrap chain contains that error (`errors.Is` reaches
+  it) and whose `template_name` names the parent — it is never rewritten as
+  "not found".
+- **Asked once per render.** Within one `ExecuteWithContext` call each parent is
+  fetched exactly once, however many walks need it; the memo lives only for that
+  call, so nothing is cached across requests or identities.
+- **Same bounds.** Depth and cycle detection are the resolver's existing rules,
+  applied unchanged to parents from either source.
 
 ### Block constructs (v0.24.0)
 

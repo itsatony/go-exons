@@ -1,6 +1,7 @@
 package exons
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -52,14 +53,18 @@ import (
 //     a loop — so an unbound optional multiselect behaves sanely with no executor change. The
 //     payoff is the equivalence PRESENT ⇔ DECLARED, which is what lets exons.input report an
 //     undeclared name as the author error it is.
-func (t *Template) contextWithInputs(execCtx *Context) *Context {
+func (t *Template) contextWithInputs(ctx context.Context, execCtx *Context) *Context {
 	// Error discarded: injection has no error channel. For every chain this walk cannot complete
 	// the render is refused anyway — resolveInheritance rejects an unreadable, engine-less,
 	// circular, missing-parent or over-deep chain before executing a node. The one walk failure
 	// that does NOT stop the render is a non-templateProvider executor, where the parent's
 	// declarations are unreadable while its body still resolves; there the defaults of an
 	// inherited input simply do not apply, exactly as before v0.24.0. See mergedInputs.
-	inputs, _ := t.mergedInputs()
+	//
+	// execCtx goes into the walk because it may carry the per-call parent resolver; the walk
+	// reads it before the nil check below because the resolver is a property of the context, and
+	// a nil context has none.
+	inputs, _ := t.mergedInputs(ctx, execCtx)
 	if execCtx == nil || len(inputs) == 0 {
 		return execCtx
 	}
@@ -144,8 +149,8 @@ func mergeInputBinding(binding map[string]any, inputs map[string]*InputDef) map[
 // at execute, where the reason is reported properly. The two EXPORTED accessors do NOT discard it:
 // a partial contract handed to a form builder or a wire projection is a plausible lie, and a
 // caller that cannot learn the chain is broken has no way to avoid publishing it.
-func (t *Template) mergedInputs() (map[string]*InputDef, error) {
-	ancestors, err := t.ancestorSpecs()
+func (t *Template) mergedInputs(ctx context.Context, execCtx *Context) (map[string]*InputDef, error) {
+	ancestors, err := t.ancestorSpecs(ctx, execCtx)
 	return t.mergeWithAncestors(ancestors), err
 }
 
@@ -194,7 +199,14 @@ func (t *Template) mergeWithAncestors(ancestors []*Spec) map[string]*InputDef {
 // implementations" divergence this track exists to remove. The one case with no execute-side
 // counterpart is a TemplateExecutor that is not a templateProvider: that chain RESOLVES (source
 // is available) while its declarations stay unreadable, so it is reported as its own reason.
-func (t *Template) ancestorSpecs() ([]*Spec, error) {
+//
+// WHERE the parents come from follows the execute walk's rule exactly (see inheritanceResolverFor):
+// a per-call TemplateSourceResolver on execCtx wins outright when set; otherwise the engine
+// registry. Under the per-call resolver each parent's SOURCE is fetched and parsed into a
+// throwaway *Template with this template's own engine configuration — never registered, never
+// cached — and its spec read; the bounds and the cycle rule are the ones below, unchanged, so the
+// two sources share one walk rather than each having its own. execCtx may be nil.
+func (t *Template) ancestorSpecs(ctx context.Context, execCtx *Context) ([]*Spec, error) {
 	// inheritanceErr FIRST, and the order is the whole correctness of this guard.
 	// newTemplateWithConfig sets inheritanceInfo to nil whenever extraction failed, so
 	// `inheritanceErr != nil` IMPLIES `inheritanceInfo == nil` — testing the info first makes the
@@ -208,16 +220,9 @@ func (t *Template) ancestorSpecs() ([]*Spec, error) {
 	if t.inheritanceInfo == nil {
 		return nil, nil // extends nothing — the chain's natural end, at length zero
 	}
-	if t.engine == nil {
-		return nil, NewInheritanceError(ErrMsgInheritanceNoEngine, nil)
-	}
-	provider, ok := t.engine.(templateProvider)
-	if !ok {
-		// A third-party TemplateExecutor hands back source, not a parsed *Spec. Re-parsing it
-		// here would build a second, differently-configured engine's idea of the parent — see
-		// design decision A-1. The child's own declarations remain correct, and are returned;
-		// what is NOT correct is calling that partial set the document's whole contract.
-		return nil, NewInheritanceError(ErrMsgInheritanceSpecsUnavailable, nil)
+	lookup, err := t.ancestorLookupFor(execCtx)
+	if err != nil {
+		return nil, err
 	}
 
 	maxDepth := t.config.maxDepth
@@ -249,15 +254,84 @@ func (t *Template) ancestorSpecs() ([]*Spec, error) {
 		}
 		seen[parentName] = true
 
-		parent, found := provider.GetTemplate(parentName)
-		if !found {
-			return ancestors, NewInheritanceChainError(ErrMsgTemplateNotFound, parentName)
+		parent, err := lookup(ctx, parentName)
+		if err != nil {
+			return ancestors, err
 		}
 		if parent.spec != nil && len(parent.spec.Inputs) > 0 {
 			ancestors = append(ancestors, parent.spec)
 		}
 		current = parent
 	}
+}
+
+// ancestorLookup fetches one named parent as a parsed *Template, or returns the chain error that
+// explains why it could not.
+type ancestorLookup func(ctx context.Context, parentName string) (*Template, error)
+
+// templateParser is the optional form of TemplateExecutor that can parse a source string with its
+// own configuration. *Engine satisfies it. The specs walk needs it under a per-call resolver,
+// which hands back SOURCE: the parent's declarations live in its frontmatter, and only a parse
+// with this template's own delimiters and env rules reads them the way Engine.Parse would.
+type templateParser interface {
+	Parse(source string) (*Template, error)
+}
+
+// ancestorLookupFor chooses the specs walk's source of parents by the execute walk's rule, so the
+// two walks can never disagree about WHERE a parent comes from:
+//
+//  1. a per-call TemplateSourceResolver on execCtx — the parent's source is fetched through it and
+//     parsed into a throwaway *Template by this template's engine. A lookup FAILURE (err) becomes
+//     an inheritance error carrying that cause; found=false becomes template-not-found. Neither
+//     is rewritten as the other.
+//  2. the engine registry via templateProvider, as before.
+//
+// Under (1) an engine is still needed, for the parse: a template a consumer holds always has one
+// (Engine.Parse is the only constructor), so the failure below names the one honest reason the
+// declarations are unreadable while the render would still resolve — the same reason the
+// non-templateProvider arm has always reported.
+func (t *Template) ancestorLookupFor(execCtx *Context) (ancestorLookup, error) {
+	if execCtx != nil {
+		if r := execCtx.TemplateSourceResolver(); r != nil {
+			parser, ok := t.engine.(templateParser)
+			if !ok {
+				return nil, NewInheritanceError(ErrMsgInheritanceSpecsUnavailable, nil)
+			}
+			return func(ctx context.Context, parentName string) (*Template, error) {
+				source, found, err := r.ResolveTemplateSource(ctx, parentName)
+				if err != nil {
+					return nil, NewInheritanceResolutionError(parentName, err)
+				}
+				if !found {
+					return nil, NewInheritanceChainError(ErrMsgTemplateNotFound, parentName)
+				}
+				parent, err := parser.Parse(source)
+				if err != nil {
+					return nil, NewInheritanceResolutionError(parentName, err)
+				}
+				return parent, nil
+			}, nil
+		}
+	}
+
+	if t.engine == nil {
+		return nil, NewInheritanceError(ErrMsgInheritanceNoEngine, nil)
+	}
+	provider, ok := t.engine.(templateProvider)
+	if !ok {
+		// A third-party TemplateExecutor hands back source, not a parsed *Spec. Re-parsing it
+		// here would build a second, differently-configured engine's idea of the parent — see
+		// design decision A-1. The child's own declarations remain correct, and are returned;
+		// what is NOT correct is calling that partial set the document's whole contract.
+		return nil, NewInheritanceError(ErrMsgInheritanceSpecsUnavailable, nil)
+	}
+	return func(_ context.Context, parentName string) (*Template, error) {
+		parent, found := provider.GetTemplate(parentName)
+		if !found {
+			return nil, NewInheritanceChainError(ErrMsgTemplateNotFound, parentName)
+		}
+		return parent, nil
+	}, nil
 }
 
 // DeclaredInputs returns every input this document declares, INCLUDING those inherited through
@@ -286,7 +360,18 @@ func (t *Template) ancestorSpecs() ([]*Spec, error) {
 // Nil with a nil error is a valid, empty result: the document declares nothing and inherits
 // nothing.
 func (t *Template) DeclaredInputs() (map[string]*InputDef, error) {
-	merged, err := t.mergedInputs()
+	return t.DeclaredInputsWithContext(context.Background(), nil)
+}
+
+// DeclaredInputsWithContext is DeclaredInputs with the parents of the extends chain resolved the way
+// ExecuteWithContext(ctx, execCtx) would resolve them: through execCtx's TemplateSourceResolver
+// when one is set, else through the engine registry. A nil execCtx is exactly DeclaredInputs.
+//
+// A host whose parents live behind a per-request identity must use this form, or the contract it
+// publishes will describe the child alone — while the render, handed the same context, splices in
+// a parent declaring inputs the form never asked for.
+func (t *Template) DeclaredInputsWithContext(ctx context.Context, execCtx *Context) (map[string]*InputDef, error) {
+	merged, err := t.mergedInputs(ctx, execCtx)
 	if len(merged) == 0 {
 		return nil, err
 	}
@@ -322,7 +407,14 @@ func (t *Template) DeclaredInputs() (map[string]*InputDef, error) {
 //
 // An empty (or nil) violation slice with a nil error means the binding is acceptable.
 func (t *Template) ValidateInputBinding(values map[string]any) ([]error, error) {
-	declared, err := t.DeclaredInputs()
+	return t.ValidateInputBindingWithContext(context.Background(), nil, values)
+}
+
+// ValidateInputBindingWithContext is ValidateInputBinding over the declaration set
+// DeclaredInputsWithContext(ctx, execCtx) reports — the inherited inputs included, from whichever
+// source of parents execCtx names. A nil execCtx is exactly ValidateInputBinding.
+func (t *Template) ValidateInputBindingWithContext(ctx context.Context, execCtx *Context, values map[string]any) ([]error, error) {
+	declared, err := t.DeclaredInputsWithContext(ctx, execCtx)
 	if len(declared) == 0 {
 		return nil, err
 	}
@@ -406,7 +498,7 @@ func cloneInputDef(def *InputDef) *InputDef {
 func (t *Template) DeclaredInputKeys() ([]string, error) {
 	// One walk, two orderings — the merged map and the ancestor order both come from it. Reading
 	// mergedInputs() and then ancestorSpecs() separately would walk the chain twice.
-	ancestors, err := t.ancestorSpecs()
+	ancestors, err := t.ancestorSpecs(context.Background(), nil)
 	merged := t.mergeWithAncestors(ancestors)
 	if len(merged) == 0 {
 		return nil, err
@@ -457,7 +549,7 @@ func (t *Template) previewDataWithInputs(data map[string]any) map[string]any {
 	// Error discarded for the reason contextWithInputs discards it, and with the same one
 	// exception: this mirrors injection exactly, and dryRunAST reports an unresolvable chain
 	// through its own completeness channel rather than through this map.
-	inputs, _ := t.mergedInputs()
+	inputs, _ := t.mergedInputs(context.Background(), nil)
 	if len(inputs) == 0 {
 		return data
 	}
@@ -560,7 +652,7 @@ func (t *Template) declaresInput(name string) bool {
 	root, _, _ := strings.Cut(name, PathSeparator)
 	// Error discarded: this answers a yes/no question with no error channel, and a name found in
 	// a partially-walked chain is still genuinely declared. See mergedInputs.
-	merged, _ := t.mergedInputs()
+	merged, _ := t.mergedInputs(context.Background(), nil)
 	_, ok := merged[root]
 	return ok
 }

@@ -7,6 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-09-03
+
+DC18-lineage — a parent can come from the request, not only from the process.
+
+### Added
+
+⛔ **`{~exons.extends~}` resolved its parent through exactly one place: the engine's process-global
+registry** (`Engine.RegisterTemplate`). One name meant one parent for every caller, and a host
+whose parents live in a remote store reached with the *request's* identity had no seam at all —
+it could neither scope a parent to a tenant nor say "you may not read that". vaichat2 is that host.
+
+- **`TemplateSourceResolver`** — `ResolveTemplateSource(ctx, name) (source, found, err)` — and the
+  `TemplateSourceFunc` adapter. The source may carry YAML frontmatter; the library strips it through
+  the same helper `Engine.Parse` uses (`inheritanceBodyOf`, now shared with the registry adapter
+  too), so a host hands back what it stores and never re-implements the delimiter rules.
+- **`Context.WithTemplateSourceResolver(r)`** / **`Context.TemplateSourceResolver()`**. The
+  resolver travels through `Child` and every `With*` setter. `readState` now returns a struct
+  rather than eight positional values, so adding a field means adding it in two places and a
+  setter that forgets it no longer compiles clean while silently dropping it — the hazard that
+  motivated `TestContext_EverySetterPreservesTheTemplateSourceResolver`.
+- **`Template.Extends() (parent, ok)`** — the parent a template declares, so a host can decide
+  whether a lookup is needed before rendering. `ok=false` for a template that extends nothing
+  *and* for an unreadable declaration; render or DryRun to tell those apart.
+- **`Template.DeclaredInputsWithContext(ctx, execCtx)`** and
+  **`Template.ValidateInputBindingWithContext(ctx, execCtx, values)`**. The context-free forms
+  delegate with a nil context and are byte-for-byte what they were. Under a per-call resolver the
+  inputs walk fetches each parent's *source* through it and parses it with the template's own
+  engine into a throwaway, never-registered `*Template` to read its spec.
+- `internal.ContextTemplateSourceResolver`, `internal.NewContextInheritanceResolver`, and a
+  `Cause`/`Unwrap` on `internal.BuiltinError` so a lookup failure can carry the host's error.
+
+### The rules, each pinned by a test
+
+- ⭐ **Both walks consume ONE resolver.** `ExecuteWithContext` and the declared-inputs walk
+  resolve parents from the same place, chosen by the same rule
+  (`inheritanceResolverFor` / `ancestorLookupFor`), so the contract a host publishes and the
+  document it renders describe one chain.
+  `TestBothInheritanceWalksReportTheSameVocabularyUnderTheContextResolver` is the sibling of the
+  v0.25.0 invariant for the new source: same tag, same parent name, and for a lookup failure the
+  same cause in both errors.
+- ⚠ **Absent and failed are different errors, and neither is rewritten as the other.**
+  `found=false` is the template-not-found inheritance failure naming the parent. `err != nil` is
+  an inheritance failure whose unwrap chain contains that error (`errors.Is` reaches it), whose
+  `template_name` names the parent, and whose message is `template source lookup failed` — because
+  an author whose parent name is correct must not be sent hunting for a typo when the store was
+  down or the identity was refused.
+- ⚠ **The resolver wins outright.** When one is present it is the *only* source of parents for
+  that call — a name the registry knows and the store lacks is absent. A fallback is exactly how a
+  process-global template would answer for a request that scoped its parents to an identity.
+- ⚠ **Asked once per render.** `ExecuteWithContext` walks the chain twice (inputs, then bodies),
+  which against the registry costs nothing and against a remote store would be two round trips
+  per parent — measured in the first test run as every parent fetched twice. A memo built per
+  call and discarded with it (`memoizedTemplateSource`) answers each name once, failures included,
+  so nothing is cached across requests and the two walks cannot see two different parents.
+- Depth and cycle bounds are the resolver's existing ones, applied to the new path unchanged; a
+  template with no engine renders through a context resolver (the resolver is a complete source),
+  and without one reports `ErrMsgInheritanceNoEngine` exactly as before.
+
+### Fixed
+
+- `docs/template-syntax.md` claimed the inheritance error's `tag` metadata equals `extends`; the
+  code has always set `exons.extends` (`TagNameExtends`). The document now says what the code
+  does.
+
+### Design decisions
+
+- The specs walk under a per-call resolver needs an engine to *parse* the fetched source
+  (`templateParser`, satisfied by `*Engine`). Every template a consumer can hold has one —
+  `Engine.Parse` is the only constructor — so the engine-less case reports the existing
+  `ErrMsgInheritanceSpecsUnavailable`, the one reason the declarations are unreadable while the
+  render would still resolve.
+- The dead `engine` field on `internal.InheritanceResolver` is left in place: its exported
+  constructor is exercised by ~30 internal tests and removing a parameter buys nothing this
+  release needs.
+
 ## [0.29.0] - 2026-08-31
 
 DC17b — an empty collection is not an answer to a required input.

@@ -639,7 +639,9 @@ func (t *Template) DryRun(ctx context.Context, data map[string]any) *DryRunResul
 // It shares ONE resolution helper with ExecuteWithContext and Explain — see resolveInheritance.
 // This function's whole job is now to translate an outcome into this channel's vocabulary.
 func (t *Template) dryRunAST(ctx context.Context, result *DryRunResult) any {
-	resolvedAST, outcome, err := t.resolveInheritance(ctx)
+	// nil execution context: DryRun holds a data map, not a *Context, so the parent comes from the
+	// engine registry exactly as before per-call resolvers existed.
+	resolvedAST, outcome, err := t.resolveInheritance(ctx, nil)
 
 	switch outcome {
 	case inheritanceNone, inheritanceResolved:
@@ -1151,7 +1153,7 @@ func (t *Template) Explain(ctx context.Context, data map[string]any) *ExplainRes
 	// mode there is for a debugging tool, because the discrepancy looks like the bug being
 	// investigated. Everything below therefore uses astToExplain, never t.ast: the formatted AST,
 	// the execution, and the variable-access collection must all describe one document.
-	astToExplain, _, inheritErr := t.resolveInheritance(ctx)
+	astToExplain, _, inheritErr := t.resolveInheritance(ctx, nil)
 
 	// Generate AST representation
 	result.AST = t.formatAST(astToExplain, 0)
@@ -1167,7 +1169,7 @@ func (t *Template) Explain(ctx context.Context, data map[string]any) *ExplainRes
 	// contextWithInputs must run here too, not only in ExecuteWithContext: Explain calls the
 	// executor DIRECTLY and so bypasses that funnel. Without this line a document declaring
 	// inputs would EXPLAIN differently than it RENDERS.
-	execCtx := t.contextWithInputs(NewContextWithStrategy(data, t.config.errorStrategy))
+	execCtx := t.contextWithInputs(ctx, NewContextWithStrategy(data, t.config.errorStrategy))
 	if t.engine != nil {
 		execCtx = execCtx.WithEngine(t.engine)
 	}

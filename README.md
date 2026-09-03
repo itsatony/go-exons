@@ -246,6 +246,13 @@ Three properties worth knowing:
   publishing the result as the document's contract**: it is returned in exactly the
   cases where `ExecuteWithContext` refuses to render the chain, and the accompanying
   map is partial. Displaying what is known is fine; presenting it as complete is not.
+- Parents come from the engine registry by default. A host whose parents live behind
+  the **request's identity** attaches a `TemplateSourceResolver` to the execution
+  context (`NewContextWithStrategy(vars, strategy).WithTemplateSourceResolver(r)`), and
+  **both** walks — the render and `DeclaredInputsWithContext` /
+  `ValidateInputBindingWithContext` — resolve through it. A lookup *failure* keeps its
+  cause and is never reported as "not found". Details in
+  [docs/template-syntax.md](docs/template-syntax.md#where-the-parent-comes-from-a-per-call-resolver-v0300).
 
 ### Error recourse
 

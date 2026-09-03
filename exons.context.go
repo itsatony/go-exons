@@ -45,6 +45,14 @@ type Context struct {
 	specResolver SpecBodyResolver // Spec resolver for reference resolution
 	refDepth     int              // Current reference resolution depth
 	refChain     []string         // Chain of referenced spec slugs for circular detection
+	// templateSource resolves {~exons.extends~} parents per call, with this context's request
+	// identity in hand. Optional; nil means the engine registry is the only source of parents.
+	//
+	// ⚠ Every field on this struct is copied by readState AND by every copy-on-write setter
+	// below. A field added to the struct and forgotten in one setter is silently DROPPED by that
+	// setter — the context looks intact and the resolver is gone. TestContext_EverySetterPreserves
+	// TheTemplateSourceResolver pins this one; give any new field the same guard.
+	templateSource TemplateSourceResolver
 }
 
 // NewContext creates a new execution context with the given data.
@@ -178,16 +186,17 @@ func (c *Context) Child(data map[string]any) interface{} {
 	if data == nil {
 		data = make(map[string]any)
 	}
-	_, _, errStrat, eng, depth, specRes, refD, refC := c.readState()
+	st := c.readState()
 	return &Context{
-		data:         data,
-		parent:       c,
-		errorStrat:   errStrat,
-		engine:       eng,
-		depth:        depth,
-		specResolver: specRes,
-		refDepth:     refD,
-		refChain:     refC,
+		data:           data,
+		parent:         c,
+		errorStrat:     st.errorStrat,
+		engine:         st.engine,
+		depth:          st.depth,
+		specResolver:   st.specResolver,
+		refDepth:       st.refDepth,
+		refChain:       st.refChain,
+		templateSource: st.templateSource,
 	}
 }
 
@@ -266,12 +275,56 @@ func (c *Context) Depth() int {
 	return c.depth
 }
 
+// contextState is a snapshot of every copyable field of a Context, taken under RLock by readState.
+//
+// It is a struct rather than a positional tuple so that adding a field to Context means adding it
+// in exactly TWO places — here and in readState — and every setter that copies `st.<field>` keeps
+// compiling and keeps carrying it. With eight positional returns, a ninth field had to be threaded
+// through nine call sites by hand, and a site that forgot it compiled cleanly and dropped it.
+type contextState struct {
+	data           map[string]any
+	parent         *Context
+	errorStrat     ErrorStrategy
+	engine         TemplateExecutor
+	depth          int
+	specResolver   SpecBodyResolver
+	refDepth       int
+	refChain       []string
+	templateSource TemplateSourceResolver
+}
+
 // readState reads all fields under RLock. The returned data map is a reference,
 // NOT a deep copy — callers must deep-copy it outside the lock.
-func (c *Context) readState() (data map[string]any, parent *Context, errorStrat ErrorStrategy, engine TemplateExecutor, depth int, specResolver SpecBodyResolver, refDepth int, refChain []string) {
+func (c *Context) readState() contextState {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.data, c.parent, c.errorStrat, c.engine, c.depth, c.specResolver, c.refDepth, c.refChain
+	return contextState{
+		data:           c.data,
+		parent:         c.parent,
+		errorStrat:     c.errorStrat,
+		engine:         c.engine,
+		depth:          c.depth,
+		specResolver:   c.specResolver,
+		refDepth:       c.refDepth,
+		refChain:       c.refChain,
+		templateSource: c.templateSource,
+	}
+}
+
+// fromState builds a context from a snapshot with the data map deep-copied, which is what every
+// public With* setter promises. Setters override exactly the field they are named for.
+func fromState(st contextState) *Context {
+	return &Context{
+		data:           deepCopyMap(st.data),
+		parent:         st.parent,
+		errorStrat:     st.errorStrat,
+		engine:         st.engine,
+		depth:          st.depth,
+		specResolver:   st.specResolver,
+		refDepth:       st.refDepth,
+		refChain:       st.refChain,
+		templateSource: st.templateSource,
+	}
 }
 
 // withData returns a new context carrying the given data map, leaving every other field —
@@ -283,91 +336,72 @@ func (c *Context) readState() (data map[string]any, parent *Context, errorStrat 
 // without going through Child, which would move the current context into the parent slot and
 // leave Keys() — the "did you mean?" source — reporting one key.
 func (c *Context) withData(data map[string]any) *Context {
-	_, parent, errStrat, eng, depth, specRes, refD, refC := c.readState()
-	return &Context{
-		data:         data,
-		parent:       parent,
-		errorStrat:   errStrat,
-		engine:       eng,
-		depth:        depth,
-		specResolver: specRes,
-		refDepth:     refD,
-		refChain:     refC,
-	}
+	st := c.readState()
+	st.data = nil // the caller's map replaces it below, uncopied — see the contract above
+	out := fromState(st)
+	out.data = data
+	return out
 }
 
 // WithEngine returns a new context with the given engine reference.
 // This is typically called by the engine when starting template execution.
 // The returned context has a deep copy of the data map for thread safety.
 func (c *Context) WithEngine(engine TemplateExecutor) *Context {
-	data, parent, errStrat, _, depth, specRes, refD, refC := c.readState()
-	return &Context{
-		data:         deepCopyMap(data),
-		parent:       parent,
-		errorStrat:   errStrat,
-		engine:       engine,
-		depth:        depth,
-		specResolver: specRes,
-		refDepth:     refD,
-		refChain:     refC,
-	}
+	st := c.readState()
+	st.engine = engine
+	return fromState(st)
 }
 
 // WithDepth returns a new context with the given depth.
 // This is used when executing nested templates to track inclusion depth.
 // The returned context has a deep copy of the data map for thread safety.
 func (c *Context) WithDepth(depth int) *Context {
-	data, parent, errStrat, eng, _, specRes, refD, refC := c.readState()
-	return &Context{
-		data:         deepCopyMap(data),
-		parent:       parent,
-		errorStrat:   errStrat,
-		engine:       eng,
-		depth:        depth,
-		specResolver: specRes,
-		refDepth:     refD,
-		refChain:     refC,
-	}
+	st := c.readState()
+	st.depth = depth
+	return fromState(st)
 }
 
 // WithSpecResolver returns a new context with the given spec resolver.
 // This enables {~exons.ref~} tag functionality for spec composition.
 // The returned context has a deep copy of the data map for thread safety.
 func (c *Context) WithSpecResolver(resolver SpecBodyResolver) *Context {
-	data, parent, errStrat, eng, depth, _, refD, refC := c.readState()
-	return &Context{
-		data:         deepCopyMap(data),
-		parent:       parent,
-		errorStrat:   errStrat,
-		engine:       eng,
-		depth:        depth,
-		specResolver: resolver,
-		refDepth:     refD,
-		refChain:     refC,
-	}
+	st := c.readState()
+	st.specResolver = resolver
+	return fromState(st)
+}
+
+// WithTemplateSourceResolver returns a new context that resolves {~exons.extends~} parents through
+// the given resolver, per call and with this request's identity, instead of through the engine's
+// process-global registry. See TemplateSourceResolver for the contract and for why the registry
+// is NOT a fallback once a resolver is set.
+//
+// Typical host usage, alongside the spec resolver for {~exons.ref~}:
+//
+//	execCtx := exons.NewContextWithStrategy(vars, exons.ErrorStrategyLog).
+//		WithSpecResolver(specs).
+//		WithTemplateSourceResolver(parents)
+//	out, err := tmpl.ExecuteWithContext(ctx, execCtx)
+//
+// The returned context has a deep copy of the data map for thread safety.
+func (c *Context) WithTemplateSourceResolver(resolver TemplateSourceResolver) *Context {
+	st := c.readState()
+	st.templateSource = resolver
+	return fromState(st)
 }
 
 // WithRefDepth returns a new context with the given reference depth.
 // This is used internally when resolving nested spec references.
 func (c *Context) WithRefDepth(depth int) *Context {
-	data, parent, errStrat, eng, d, specRes, _, refC := c.readState()
-	return &Context{
-		data:         deepCopyMap(data),
-		parent:       parent,
-		errorStrat:   errStrat,
-		engine:       eng,
-		depth:        d,
-		specResolver: specRes,
-		refDepth:     depth,
-		refChain:     refC,
-	}
+	st := c.readState()
+	st.refDepth = depth
+	return fromState(st)
 }
 
 // WithRefChain returns a new context with the given reference chain.
 // This is used internally to track the chain of referenced spec slugs
 // for circular reference detection.
 func (c *Context) WithRefChain(chain []string) *Context {
-	data, parent, errStrat, eng, d, specRes, refD, _ := c.readState()
+	st := c.readState()
 
 	// Deep copy the chain to prevent modification
 	var chainCopy []string
@@ -375,17 +409,8 @@ func (c *Context) WithRefChain(chain []string) *Context {
 		chainCopy = make([]string, len(chain))
 		copy(chainCopy, chain)
 	}
-
-	return &Context{
-		data:         deepCopyMap(data),
-		parent:       parent,
-		errorStrat:   errStrat,
-		engine:       eng,
-		depth:        d,
-		specResolver: specRes,
-		refDepth:     refD,
-		refChain:     chainCopy,
-	}
+	st.refChain = chainCopy
+	return fromState(st)
 }
 
 // SpecResolver returns the spec body resolver for reference resolution.
@@ -393,6 +418,12 @@ func (c *Context) WithRefChain(chain []string) *Context {
 // Returns interface{} to avoid import cycles with internal package.
 func (c *Context) SpecResolver() interface{} {
 	return c.specResolver
+}
+
+// TemplateSourceResolver returns the per-call resolver for {~exons.extends~} parents, or nil when
+// none was set and the engine registry is the only source.
+func (c *Context) TemplateSourceResolver() TemplateSourceResolver {
+	return c.templateSource
 }
 
 // RefDepth returns the current reference resolution depth.
