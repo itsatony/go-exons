@@ -387,7 +387,7 @@ requirements:
       purpose: Answers are grounded in the product documentation
 ```
 
-Go types: `SpecRequirements` with `MCPRequirement`, `CredentialRequirement` and `ResourceRequirement` (whose `EffectiveAccess()` / `EffectiveScope()` resolve the empty defaults). `Parse` refuses: more than `MaxRequirementEntries` (256) entries in any list; a field over `MaxRequirementFieldLen` (512) **characters**; an empty capability/ref/kind; a duplicate capability or ref within its list; an out-of-vocabulary scope or access; and **any resource `ref` or `kind` containing `://`** — a concrete location belongs in the registry's binding, and a definition that carries one leaks its tenant into every export. Values are compared verbatim (never trimmed or case-folded), because bindings are keyed on the exact string. go-exons attaches no meaning to a resource `kind` beyond its shape.
+Go types: `SpecRequirements` with `MCPRequirement`, `CredentialRequirement` and `ResourceRequirement` (whose `EffectiveAccess()` / `EffectiveScope()` resolve the empty defaults). `Parse` refuses: more than `MaxRequirementEntries` (256) entries in any list; a field over `MaxRequirementFieldLen` (512) **characters**; an empty capability/ref/kind; a duplicate capability or ref within its list; an out-of-vocabulary scope or access; and **any resource `ref` or `kind` containing `://`** — a concrete location belongs in the registry's binding, and a definition that carries one leaks its tenant into every export. That check catches URI-shaped coordinates only (`vault:secret/x`, `/mnt/docs` or `urn:…` pass); it guards the common paste, and a registry must still treat every ref as a logical name to bind, never dereference. Values are compared verbatim (never trimmed or case-folded), because bindings are keyed on the exact string. go-exons attaches no meaning to a resource `kind` beyond its shape.
 
 `requirements:` survives every full export (`ExportFull`, `Serialize`, `ExportDirectory`) and is deliberately kept out of the Agent-Skills export, whose portable vocabulary is closed.
 
@@ -689,7 +689,7 @@ The template engine is security-hardened by default:
 
 A JSON Schema for validating `.exons` YAML frontmatter ships at `schema/exons.schema.json`. Use it with VS Code's YAML extension or in CI pipelines.
 
-The schema and `Parse` are held together by a test (`schema/agreement_test.go`): a document the schema accepts is one the parser accepts, except for the rules JSON Schema cannot state (uniqueness within the requirements lists, `input_order` naming declared inputs, cross-field rules, the template grammar). The schema is deliberately stricter in two ways — `type` is required, and nested objects are closed where the parser ignores unknown keys.
+The schema and `Parse` are held together by a test (`schema/agreement_test.go`): a document the schema accepts is one the parser accepts, except for the rules JSON Schema cannot state (uniqueness within the requirements lists, `input_order` naming declared inputs, cross-field rules, the template grammar). The schema is deliberately stricter in four named classes: `type` is required (the parser defaults it to skill); nested objects are closed (the parser ignores unknown keys); an explicit `null` is refused (the parser decodes it to the zero value, so `constraints: ~` on a prompt parses); and a non-string scalar in a string field is refused (the parser coerces `ref: 42` to `"42"`). The test's divergence vocabulary is closed, so a fifth class has to be declared there.
 
 ## Examples
 

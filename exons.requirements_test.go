@@ -1,10 +1,12 @@
 package exons
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/itsatony/go-cuserr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -294,4 +296,32 @@ func TestResourceRequirementsSurviveEveryFullExport(t *testing.T) {
 		assert.NotContains(t, card, SpecFieldRequirements)
 		assert.NotContains(t, card, "product-docs")
 	})
+}
+
+// TestResourceCoordinateErrorNamesTheOffendingField pins that a coordinate found in
+// kind is reported against kind — the first cut named the ref for both.
+func TestResourceCoordinateErrorNamesTheOffendingField(t *testing.T) {
+	context := func(err error) string {
+		var ce *cuserr.CustomError
+		require.True(t, errors.As(err, &ce))
+		v, ok := ce.GetMetadata(MetaKeySpecName)
+		require.True(t, ok)
+		return v
+	}
+	errKind := (&SpecRequirements{Resources: []ResourceRequirement{{Ref: "docs", Kind: "s3://corpus"}}}).Validate()
+	require.Error(t, errKind)
+	assert.Equal(t, "kind=s3://corpus", context(errKind))
+	errRef := (&SpecRequirements{Resources: []ResourceRequirement{{Ref: "s3://t/docs", Kind: "corpus"}}}).Validate()
+	require.Error(t, errRef)
+	assert.Equal(t, "ref=s3://t/docs", context(errRef))
+}
+
+// TestNonListResourcesIsAFrontmatterParseError pins the error CLASS a consumer sees
+// for a non-list `resources:`: yaml refuses to decode it, so it is a frontmatter
+// parse error, not a spec validation error — before v0.31.0 the key was dropped.
+func TestNonListResourcesIsAFrontmatterParseError(t *testing.T) {
+	_, err := Parse([]byte("---\nname: doc\ndescription: d\ntype: agent\nrequirements:\n  resources: corpus\n---\nbody\n"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), ErrMsgFrontmatterParse)
+	assert.NotContains(t, err.Error(), "requirements.resources[]")
 }

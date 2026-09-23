@@ -41,7 +41,20 @@ const ResourceKindPattern = `^[a-z][a-z0-9_.-]*$`
 // the design keeps tenant-specific locations (and the tenant ids they carry)
 // in the registry's binding plane, so a definition exported from one tenant
 // never names a location inside it.
+//
+// ⚠ IT IS A NARROW HEURISTIC AND IS DELIBERATELY NOT WIDENED: it catches
+// URI-shaped coordinates ("s3://…", "https://…") and nothing else, so
+// "vault:secret/x", "/mnt/docs" or "urn:…" pass. It is a guard against the
+// common paste, not a proof that a value is logical — a registry must still
+// treat every ref as a logical name and bind it, never dereference it.
 const requirementCoordinateMarker = "://"
+
+// Field labels naming which resource field a refusal is about, carried as the
+// error's context so a coordinate found in kind is not reported against ref.
+const (
+	resourceFieldRef  = "ref"
+	resourceFieldKind = "kind"
+)
 
 var resourceKindRegex = regexp.MustCompile(ResourceKindPattern)
 
@@ -241,9 +254,11 @@ func (r *SpecRequirements) validateResources() error {
 		}
 		// Before the kind pattern, so a coordinate pasted into kind gets the
 		// sentence that says where it belongs rather than a shape complaint.
-		if strings.Contains(res.Ref, requirementCoordinateMarker) ||
-			strings.Contains(res.Kind, requirementCoordinateMarker) {
-			return NewSpecValidationError(ErrMsgRequirementResourceCoordinate, res.Ref)
+		if strings.Contains(res.Ref, requirementCoordinateMarker) {
+			return NewSpecValidationError(ErrMsgRequirementResourceCoordinate, resourceFieldRef+"="+res.Ref)
+		}
+		if strings.Contains(res.Kind, requirementCoordinateMarker) {
+			return NewSpecValidationError(ErrMsgRequirementResourceCoordinate, resourceFieldKind+"="+res.Kind)
 		}
 		if !resourceKindRegex.MatchString(res.Kind) {
 			return NewSpecValidationError(ErrMsgRequirementResourceKindForm, res.Ref)

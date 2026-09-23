@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -31,6 +32,49 @@ const (
 	schemaStricterClosed = "schema-stricter: nested objects are closed, the parser ignores unknown keys"
 	// schemaStricterType: the schema requires type; the parser defaults it to skill.
 	schemaStricterType = "schema-stricter: type is required, the parser defaults it to skill"
+	// schemaStricterNull: yaml.v3 decodes an explicit null into the zero value — a
+	// nil pointer, a nil slice, an empty string — or drops a null list entry, while
+	// the schema's object/array/string types refuse null outright. So a prohibited
+	// block written as `constraints: ~` is ABSENT to the parser and present to the
+	// schema.
+	schemaStricterNull = "schema-stricter: an explicit null the parser decodes to the zero value"
+	// schemaStricterScalar: yaml.v3 decodes a non-string scalar into a string field
+	// (`ref: 42` → "42", `kind: true` → "true"); the schema's type: string refuses it.
+	schemaStricterScalar = "schema-stricter: a non-string scalar the parser coerces into a string"
+)
+
+// divergenceDirection is which instrument is the stricter one for a reason.
+type divergenceDirection int
+
+const (
+	// parserStricter: the schema accepts and the parser refuses — aigentverse#72's
+	// direction, admitted only for a rule JSON Schema cannot express.
+	parserStricter divergenceDirection = iota + 1
+	// schemaStricter: the schema refuses what the parser accepts.
+	schemaStricter
+)
+
+// divergenceVocabulary is the CLOSED set of reasons a row may give, each with the
+// only direction it may explain. A reason not in this map is refused, so a new way
+// for the instruments to disagree has to be declared here, next to its argument.
+var divergenceVocabulary = map[string]divergenceDirection{
+	parserOnlyUniqueness: parserStricter,
+	parserOnlyInputOrder: parserStricter,
+	schemaStricterClosed: schemaStricter,
+	schemaStricterType:   schemaStricter,
+	schemaStricterNull:   schemaStricter,
+	schemaStricterScalar: schemaStricter,
+}
+
+// Corpus floors. The corpus is hand-listed, so its size is the thing a careless
+// edit shrinks; each floor is the count at v0.31.0 and is lowered only with a
+// reason. Every declared reason must also be exercised by at least one row
+// (TestSchemaAndParserAgree's reverse axis), or the vocabulary holds dead entries.
+const (
+	agreementCorpusFloor         = 58
+	agreementAgreeRowsFloor      = 39
+	agreementParserStricterFloor = 3
+	agreementSchemaStricterFloor = 16
 )
 
 // agreementCase is one document and the verdict EACH instrument must return for it.
@@ -147,6 +191,21 @@ registry:
 		agree("skill with dispatch", skill("dispatch:\n  trigger_keywords: [dns]\n"), false),
 		agree("skill with memory and registry", skill("memory:\n  scope: mem\nregistry:\n  namespace: reg\n"), true),
 
+		// --- nulls and scalar coercion: the parser's zero-value decoding makes these
+		// ABSENT or valid to it, while the schema's types refuse them.
+		diverge("prompt with constraints null", prompt("constraints: ~\n"), false, true, schemaStricterNull),
+		diverge("prompt with memory null", prompt("memory: ~\n"), false, true, schemaStricterNull),
+		diverge("prompt with dispatch null", prompt("dispatch: ~\n"), false, true, schemaStricterNull),
+		diverge("prompt with registry null", prompt("registry: ~\n"), false, true, schemaStricterNull),
+		diverge("skill with dispatch null", skill("dispatch: ~\n"), false, true, schemaStricterNull),
+		diverge("requirements null", agent("requirements: ~\n"), false, true, schemaStricterNull),
+		diverge("resources null", agent("requirements:\n  resources: ~\n"), false, true, schemaStricterNull),
+		diverge("resources null entry", agent("requirements:\n  resources:\n    - ~\n"), false, true, schemaStricterNull),
+		diverge("resource scope null", agent("requirements:\n  resources:\n    - ref: r\n      kind: corpus\n      scope: ~\n"), false, true, schemaStricterNull),
+		diverge("credential provider null", agent("requirements:\n  credentials:\n    - ref: r\n      provider: ~\n"), false, true, schemaStricterNull),
+		diverge("resource ref is a number", agent("requirements:\n  resources:\n    - ref: 42\n      kind: corpus\n"), false, true, schemaStricterScalar),
+		diverge("resource kind is a boolean", agent("requirements:\n  resources:\n    - ref: r\n      kind: true\n"), false, true, schemaStricterScalar),
+
 		// --- a parser-only cross-field rule, so the divergence vocabulary is exercised.
 		diverge("input_order names an undeclared input", agent("inputs:\n  a:\n    type: string\ninput_order: [b]\n"), true, false, parserOnlyInputOrder),
 	}
@@ -212,13 +271,12 @@ func TestSchemaAndParserAgree(t *testing.T) {
 
 	corpus := agreementCorpus()
 	agreeing := 0
+	used := make(map[string]int, len(divergenceVocabulary))
+	perDirection := make(map[divergenceDirection]int, 2)
 	for _, tc := range corpus {
 		t.Run(tc.name, func(t *testing.T) {
-			if (tc.wantSchema == tc.wantParser) != (tc.divergence == "") {
-				t.Fatalf("row is inconsistent: a divergence reason is required exactly when the two verdicts differ")
-			}
-			if tc.wantSchema && !tc.wantParser && !strings.HasPrefix(tc.divergence, "parser-only:") {
-				t.Fatalf("schema-accepts/parser-refuses is aigentverse#72's direction and is admitted only for a parser-only rule; got %q", tc.divergence)
+			if err := checkDivergence(tc); err != "" {
+				t.Fatal(err)
 			}
 
 			gotSchema, verr := schemaAccepts(t, sch, tc.frontmatter)
@@ -234,11 +292,77 @@ func TestSchemaAndParserAgree(t *testing.T) {
 		})
 		if tc.divergence == "" {
 			agreeing++
+		} else {
+			used[tc.divergence]++
+			perDirection[divergenceVocabulary[tc.divergence]]++
 		}
 	}
-	// Anti-vacuity: the corpus is mostly rows where the instruments must agree.
-	if agreeing*2 < len(corpus) {
-		t.Errorf("only %d of %d rows are agreement rows; the corpus has drifted into describing divergence", agreeing, len(corpus))
+
+	// Anti-vacuity: floors on what was compared, never on what passed.
+	if len(corpus) < agreementCorpusFloor {
+		t.Errorf("corpus has %d rows, below the floor of %d — rows were deleted", len(corpus), agreementCorpusFloor)
+	}
+	if agreeing < agreementAgreeRowsFloor {
+		t.Errorf("corpus has %d agreement rows, below the floor of %d", agreeing, agreementAgreeRowsFloor)
+	}
+	if perDirection[parserStricter] < agreementParserStricterFloor {
+		t.Errorf("corpus has %d parser-stricter rows, below the floor of %d", perDirection[parserStricter], agreementParserStricterFloor)
+	}
+	if perDirection[schemaStricter] < agreementSchemaStricterFloor {
+		t.Errorf("corpus has %d schema-stricter rows, below the floor of %d", perDirection[schemaStricter], agreementSchemaStricterFloor)
+	}
+	// Reverse axis: every declared reason is exercised, or it is a dead excuse.
+	for reason := range divergenceVocabulary {
+		if used[reason] == 0 {
+			t.Errorf("divergence reason %q is declared but no corpus row exercises it", reason)
+		}
+	}
+}
+
+// checkDivergence returns why a row's divergence declaration is illegal, or "".
+// The reason must be a MEMBER of the closed vocabulary — never merely shaped like
+// one — and must explain the direction the row's two verdicts actually diverge in.
+func checkDivergence(tc agreementCase) string {
+	if tc.wantSchema == tc.wantParser {
+		if tc.divergence != "" {
+			return "row names a divergence reason but its two verdicts agree"
+		}
+		return ""
+	}
+	dir, declared := divergenceVocabulary[tc.divergence]
+	if !declared {
+		return "row diverges with an undeclared reason " + strconv.Quote(tc.divergence) + "; declare it in divergenceVocabulary"
+	}
+	want := schemaStricter
+	if tc.wantSchema {
+		want = parserStricter
+	}
+	if dir != want {
+		return "reason " + strconv.Quote(tc.divergence) + " explains the other direction than this row diverges in"
+	}
+	return ""
+}
+
+// TestDivergenceCheckRefusesIllegalRows probes checkDivergence itself: a guard on
+// the vocabulary that accepts anything is the defect it exists to prevent.
+func TestDivergenceCheckRefusesIllegalRows(t *testing.T) {
+	illegal := map[string]agreementCase{
+		"undeclared reason, parser stricter": diverge("x", "", true, false, "parser-only: something nobody declared"),
+		"undeclared reason, schema stricter": diverge("x", "", false, true, "schema-stricter: anything"),
+		"empty reason on a divergence":       {wantSchema: false, wantParser: true},
+		"declared reason, wrong direction":   diverge("x", "", true, false, schemaStricterClosed),
+		"reason on an agreeing row":          {wantSchema: true, wantParser: true, divergence: parserOnlyUniqueness},
+	}
+	for name, tc := range illegal {
+		if checkDivergence(tc) == "" {
+			t.Errorf("%s: checkDivergence accepted an illegal row", name)
+		}
+	}
+	for reason, dir := range divergenceVocabulary {
+		tc := diverge("x", "", dir == parserStricter, dir == schemaStricter, reason)
+		if msg := checkDivergence(tc); msg != "" {
+			t.Errorf("declared reason %q refused in its own direction: %s", reason, msg)
+		}
 	}
 }
 
@@ -267,7 +391,13 @@ func TestShippedReferenceDocumentPassesBothInstruments(t *testing.T) {
 // bounds from the Go constants rather than restating them, so a change on either
 // side fails here.
 func TestSchemaRequirementsBoundsAreTheGoConstants(t *testing.T) {
-	defs := loadSchema(t)["$defs"].(map[string]any)
+	root := loadSchema(t)
+	defs := root["$defs"].(map[string]any)
+
+	description := root["properties"].(map[string]any)["description"].(map[string]any)
+	if got, _ := description["maxLength"].(float64); int(got) != exons.SpecDescriptionMaxLength {
+		t.Errorf("description maxLength = %v, want exons.SpecDescriptionMaxLength (%d)", got, exons.SpecDescriptionMaxLength)
+	}
 
 	reqs := defs["SpecRequirements"].(map[string]any)["properties"].(map[string]any)
 	for _, list := range []string{"mcp", "credentials", "resources"} {

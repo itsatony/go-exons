@@ -33,7 +33,11 @@ the parser refuses. Closes aigentverse#80 and aigentverse#72.
   coordinate belongs in a registry binding. This is the design's guard, not a style rule: a
   coordinate names a location inside one tenant, and a definition carrying one leaks that tenant
   into every export of it. The check runs before the kind pattern, so a location pasted into `kind`
-  gets the sentence that says where it goes rather than a shape complaint.
+  gets the sentence that says where it goes rather than a shape complaint, and the error's context
+  names the field that held it (`kind=…` or `ref=…`). ⚠ **It is a narrow heuristic and deliberately
+  not widened:** it catches URI-shaped coordinates only — `vault:secret/x`, `/mnt/docs` and `urn:…`
+  pass. It guards the common paste; a registry must still treat every ref as a logical name it
+  binds, never one it dereferences.
 - `requirements:` — resources included — survives every full export (`ExportFull`, `Serialize`,
   `ExportDirectory`, each re-parsed by `TestResourceRequirementsSurviveEveryFullExport`) and stays
   **out** of the Agent-Skills export, exactly as 0.27.0 placed it.
@@ -56,8 +60,9 @@ rejected — the one direction a schema must never be wrong in.
 - **The type prohibitions are stated** as `if`/`then` on `type`: a prompt carries no skills, no tool
   functions, and no `constraints`/`memory`/`dispatch`/`registry`; a skill no skills and no
   `dispatch`. Each maps exactly — an empty `skills: []` or `tools.functions: []` is allowed on both
-  sides — and the skill condition deliberately fires when `type` is absent, because the parser
-  defaults an absent type to skill.
+  sides. The skill condition is written without requiring `type`, mirroring the parser's default of
+  an absent type to skill; since the root requires `type`, that has no observable effect today and
+  is stated only so the condition stays exact if the requirement is ever relaxed.
 - The schema's own `description` now names what only the parser checks (uniqueness within the
   requirements lists, `input_order`, cross-field rules, the template grammar).
 
@@ -72,12 +77,18 @@ rejected — the one direction a schema must never be wrong in.
   `resources:` key under `requirements:` was an unknown key yaml silently dropped, so a document
   already carrying one parsed whatever it held. It now decodes into the typed list and is validated
   — an entry without `ref`/`kind`, with a `://` coordinate, an uppercase kind, a bad access/scope or
-  a duplicate ref, or a non-list value, is now refused. **No other document 0.30.0's `Parse`
+  a duplicate ref is refused as a `SpecValidationError`; a non-list value (`resources: corpus`) fails
+  earlier, in YAML decoding, as a `FrontmatterParseError`. **No other document 0.30.0's `Parse`
   accepted is refused.**
-- The **schema** is stricter than 0.30.0's, on purpose, only for documents the parser already
-  refused — except in one direction it always had: nested objects are closed, so a
-  `requirements:` entry carrying an unknown key (which yaml ignores) now fails schema validation
-  where the undeclared block used to pass it.
+- The **schema** is stricter than 0.30.0's, and not only for documents the parser already refused.
+  It refuses some documents the parser ACCEPTS, in four named classes, each now declared and
+  exercised by the agreement test: `type` is required (the parser defaults it); nested objects are
+  closed (yaml ignores an unknown key); an explicit `null` is refused where the parser decodes it to
+  the zero value or drops it — so `constraints: ~` / `memory: ~` / `dispatch: ~` / `registry: ~` on a
+  prompt, `dispatch: ~` on a skill, `requirements: ~`, `resources: ~`, a `- ~` entry and a null
+  `scope`/`provider` all parse and fail the schema; and a non-string scalar is refused where the
+  parser coerces it (`ref: 42`, `kind: true`). The newly declared `requirements` block brings the
+  last three to documents that used to pass an undeclared key.
 
 ### The durable fix
 
@@ -85,14 +96,22 @@ rejected — the one direction a schema must never be wrong in.
 verdict the schema must return *and* the verdict `exons.Parse` must return — description missing,
 1024 non-ASCII characters, each requirements field, resources valid, an uppercase kind, a `://`
 ref, `access: admin`, every type prohibition with its agent control, and the shipped reference
-document. Where the verdicts differ the row must name a reason from a closed vocabulary, and
-schema-accepts/parser-refuses is admitted only for a `parser-only:` rule. **Probed**: removing
+document. Where the verdicts differ the row must name a reason that is a MEMBER of a closed
+vocabulary, and that reason must explain the direction the row diverges in — schema-accepts/
+parser-refuses only for a rule JSON Schema cannot express. Every declared reason must be exercised
+by a row, and the corpus carries floors on its total, agreement, and per-direction row counts
+(58 · 39 · 3 parser-stricter · 16 schema-stricter), so deleting rows goes red. **Probed**: removing
 `description` from `required` (15 bytes), deleting the `requirements` property (70 bytes), dropping
 the description `minLength` (22 bytes), dropping the prompt `constraints: false` (32 bytes), and
 reverting the parser to a byte count each turned the test red on the named rows; each mutation was
-confirmed applied by its byte delta before the run.
+confirmed applied by its byte delta before the run. The vocabulary check was probed too: a row naming
+an undeclared reason (either direction), a declared reason used for the wrong direction, a
+membership check that accepts any reason, and deleting a row each went red — the last on the
+floors and on the reverse axis (a declared reason no row exercises).
 
-The one new dependency, `github.com/santhosh-tekuri/jsonschema/v6`, is imported by that test only.
+The one new dependency, `github.com/santhosh-tekuri/jsonschema/v6` (with `golang.org/x/text`), is
+imported by that test only: it never enters a consumer's BUILD, but it does enter their module graph,
+so a consumer's `go mod tidy` may add `go.sum` lines for it.
 
 ## [0.30.0] - 2026-09-03
 
