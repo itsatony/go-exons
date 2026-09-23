@@ -33,6 +33,7 @@ and prompts — safe to author by hand and by LLMs.
 | DC14-collate | 0.25.0 | Every inheritance failure is machine-matchable (`cuserr` + `tag=extends`); an unresolvable `extends` stops reporting itself as `exons.include` | shipped 2026-08-09 |
 | DC15-unframe | 0.26.0 | The `{~exons.message~}` framing gains its inverse (`StripMessageMarkers`), because its NUL delimiter is a byte some consumers refuse | shipped 2026-08-11 |
 | DC16-timbre | 0.27.0 | An agent can say how it should SOUND: a typed top-level `speech:` block, `transcription:` declared in the schema only, and the silent `requirements:` export loss that trap had already caused | shipped 2026-08-28 |
+| DC19-concord | 0.31.0 | `requirements.resources` (logical resources, `://` refused); the schema requires `description`, declares `requirements`, states the type prohibitions, and an agreement test holds it to `Parse` (aigentverse#80, #72) | 2026-09-23 |
 
 ## DC11-verbatim — Syntax safety (0.15.0)
 

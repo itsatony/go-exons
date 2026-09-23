@@ -1,7 +1,19 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.30.0
+  version: 0.31.0
+# v0.31.0 (DC19-concord): A DEFINITION CAN NAME THE RESOURCES IT NEEDS, AND THE SCHEMA STOPS
+# ACCEPTING WHAT THE PARSER REFUSES.
+# requirements.resources (aigentverse#80): ref + kind REQUIRED, access read|write (empty → read),
+# scope org|user|per_call (empty → org), purpose. kind is a lowercase token (ResourceKindPattern);
+# ⚠ ref and kind REFUSE "://" — a concrete coordinate belongs in a registry binding, never in a
+# portable definition, or the tenant it names leaks into every export. Refs unique, verbatim.
+# ⛔ aigentverse#72: schema/exons.schema.json did not require description and did not declare
+# requirements at all, so editors/CI passed documents every consumer refused. Now required,
+# closed $defs, and the prompt/skill prohibitions as if/then. schema/agreement_test.go runs one
+# corpus through BOTH instruments with a verdict column each and a closed divergence vocabulary.
+# ⚠ Go loosens: the description cap and requirement field caps count RUNES, not bytes. The one
+# narrowing: a `requirements.resources` key was dropped silently before and is now validated.
 # v0.30.0 (DC18-lineage): A PARENT CAN COME FROM THE REQUEST, NOT ONLY FROM THE PROCESS.
 # ⛔ {~exons.extends~} resolved its parent ONLY through the engine's process-global registry, so a
 # multi-tenant host whose parents live in a remote store reached with the request's identity had no

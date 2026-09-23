@@ -465,7 +465,9 @@ const (
 const (
 	// SpecNameMaxLength is the maximum length for spec names (slug format)
 	SpecNameMaxLength = 64
-	// SpecDescriptionMaxLength is the maximum length for spec descriptions
+	// SpecDescriptionMaxLength is the maximum length for spec descriptions, in
+	// CHARACTERS (runes) since v0.31.0 — bytes before, which refused non-ASCII
+	// descriptions the schema and the Agent Skills spec accept.
 	SpecDescriptionMaxLength = 1024
 	// SpecSlugPattern is the regex pattern for valid spec names/slugs.
 	// Must start with lowercase letter, followed by lowercase letters, digits, or hyphens.

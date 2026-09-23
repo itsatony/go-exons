@@ -7,6 +7,93 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-09-23
+
+DC19-concord — a definition can name the resources it needs, and the schema stops accepting what
+the parser refuses. Closes aigentverse#80 and aigentverse#72.
+
+### Added
+
+- **`requirements.resources`** — a third list on `SpecRequirements`, `[]ResourceRequirement`
+  (aigentverse#80). A definition could declare the MCP capabilities and credentials it needs but not
+  the *things it works on*: a document corpus, a folder, a toolset. Each entry is
+  `{ref, kind, access, scope, purpose}`:
+  - `ref` **required** — a LOGICAL name (`product-docs`), bound to a concrete coordinate per
+    workspace by a registry. Unique within the list, compared verbatim like the other two lists.
+  - `kind` **required** — an opaque, runtime-interpreted type token (`corpus`, `folder`,
+    `toolset`). go-exons attaches no meaning to it beyond its shape, `ResourceKindPattern`
+    (`^[a-z][a-z0-9_.-]*$`): lowercase, so two runtimes can never disagree about it by case.
+  - `access` — `ResourceAccessRead` | `ResourceAccessWrite`; empty resolves to read.
+  - `scope` — the existing `org` | `user` | `per_call` vocabulary; empty resolves to org.
+  - `purpose` — optional prose.
+- `ResourceRequirement.EffectiveAccess()` / `EffectiveScope()` resolve the empty defaults and return
+  an out-of-vocabulary value verbatim — `Validate` is what refuses it, and a helper that corrected it
+  would let two readers disagree about one document.
+- ⚠ **A resource `ref` or `kind` containing `://` is refused**, with a message saying a concrete
+  coordinate belongs in a registry binding. This is the design's guard, not a style rule: a
+  coordinate names a location inside one tenant, and a definition carrying one leaks that tenant
+  into every export of it. The check runs before the kind pattern, so a location pasted into `kind`
+  gets the sentence that says where it goes rather than a shape complaint.
+- `requirements:` — resources included — survives every full export (`ExportFull`, `Serialize`,
+  `ExportDirectory`, each re-parsed by `TestResourceRequirementsSurviveEveryFullExport`) and stays
+  **out** of the Agent-Skills export, exactly as 0.27.0 placed it.
+- `examples/dns-specialist.exons` gains a `requirements:` block, and a README section documents the
+  block for the first time since it shipped in 0.13.0.
+
+### Fixed
+
+⛔ **The published schema accepted documents `exons.Parse` refuses** (aigentverse#72). An editor or a
+CI job validating against `schema/exons.schema.json` showed green on a document every consumer then
+rejected — the one direction a schema must never be wrong in.
+
+- **`description` is in the root's `required`** (and `minLength: 1`). `Spec.Validate` has refused a
+  document without one since the beginning.
+- **`requirements` is declared**, as a closed `SpecRequirements` `$def` with `MCPRequirement`,
+  `CredentialRequirement`, `ResourceRequirement` and a shared `RequirementScope` enum — required
+  fields, `maxItems: 256`, `maxLength: 512`, the kind pattern and the `://` refusal. Before this the
+  root's open `additionalProperties` let any value through. The bounds are read from the Go
+  constants by `TestSchemaRequirementsBoundsAreTheGoConstants`, not restated.
+- **The type prohibitions are stated** as `if`/`then` on `type`: a prompt carries no skills, no tool
+  functions, and no `constraints`/`memory`/`dispatch`/`registry`; a skill no skills and no
+  `dispatch`. Each maps exactly — an empty `skills: []` or `tools.functions: []` is allowed on both
+  sides — and the skill condition deliberately fires when `type` is absent, because the parser
+  defaults an absent type to skill.
+- The schema's own `description` now names what only the parser checks (uniqueness within the
+  requirements lists, `input_order`, cross-field rules, the template grammar).
+
+### Changed
+
+- ⚠ **LOOSENING ONLY: lengths count characters, not bytes.** `SpecDescriptionMaxLength` (1024) and
+  `MaxRequirementFieldLen` (512) are now compared against `utf8.RuneCountInString`. The Agent Skills
+  spec and the schema's `maxLength` both count characters, so a 1024-character German description
+  (2048 bytes) was valid to the schema and refused by `Parse`. This accepts strictly more than 0.30.0
+  did.
+- ⚠ **One narrowing, stated rather than discovered** (0.27.0's `speech:` precedent): before 0.31.0 a
+  `resources:` key under `requirements:` was an unknown key yaml silently dropped, so a document
+  already carrying one parsed whatever it held. It now decodes into the typed list and is validated
+  — an entry without `ref`/`kind`, with a `://` coordinate, an uppercase kind, a bad access/scope or
+  a duplicate ref, or a non-list value, is now refused. **No other document 0.30.0's `Parse`
+  accepted is refused.**
+- The **schema** is stricter than 0.30.0's, on purpose, only for documents the parser already
+  refused — except in one direction it always had: nested objects are closed, so a
+  `requirements:` entry carrying an unknown key (which yaml ignores) now fails schema validation
+  where the undeclared block used to pass it.
+
+### The durable fix
+
+✅ **`schema/agreement_test.go` runs one corpus through both instruments.** Every row states the
+verdict the schema must return *and* the verdict `exons.Parse` must return — description missing,
+1024 non-ASCII characters, each requirements field, resources valid, an uppercase kind, a `://`
+ref, `access: admin`, every type prohibition with its agent control, and the shipped reference
+document. Where the verdicts differ the row must name a reason from a closed vocabulary, and
+schema-accepts/parser-refuses is admitted only for a `parser-only:` rule. **Probed**: removing
+`description` from `required` (15 bytes), deleting the `requirements` property (70 bytes), dropping
+the description `minLength` (22 bytes), dropping the prompt `constraints: false` (32 bytes), and
+reverting the parser to a byte count each turned the test red on the named rows; each mutation was
+confirmed applied by its byte delta before the run.
+
+The one new dependency, `github.com/santhosh-tekuri/jsonschema/v6`, is imported by that test only.
+
 ## [0.30.0] - 2026-09-03
 
 DC18-lineage — a parent can come from the request, not only from the process.

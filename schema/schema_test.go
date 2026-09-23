@@ -78,7 +78,10 @@ func TestSchemaTopLevelStructure(t *testing.T) {
 		t.Error("root additionalProperties must be true — Spec.Extensions is an inline catch-all")
 	}
 
-	// Must have required: [name, type]
+	// Must have required: [name, description, type]. description joined in
+	// v0.31.0: Spec.Validate has always refused a document without one, so a
+	// schema that did not require it passed documents every consumer rejected
+	// (aigentverse#72).
 	reqRaw, ok := schema["required"].([]any)
 	if !ok {
 		t.Fatal("required field is missing or not an array")
@@ -89,7 +92,7 @@ func TestSchemaTopLevelStructure(t *testing.T) {
 			requiredSet[s] = true
 		}
 	}
-	for _, field := range []string{"name", "type"} {
+	for _, field := range []string{"name", "description", "type"} {
 		if !requiredSet[field] {
 			t.Errorf("required field %q is missing from required array", field)
 		}
@@ -109,6 +112,7 @@ func TestSchemaHasProperties(t *testing.T) {
 		"inputs", "outputs", "sample",
 		"skills", "tools", "constraints",
 		"messages", "context", "credentials", "credential",
+		"requirements",
 		"memory", "dispatch", "verifications", "registry", "safety",
 		"speech", "transcription",
 	}
@@ -132,6 +136,7 @@ func TestSchemaHasDefs(t *testing.T) {
 		"SkillRef", "ToolsConfig", "FunctionDef", "MCPServer",
 		"ConstraintsConfig", "OperationalConstraints",
 		"MessageTemplate", "CredentialRef",
+		"SpecRequirements", "MCPRequirement", "CredentialRequirement", "ResourceRequirement",
 		"MemorySpec", "DispatchSpec", "VerificationCase", "VerificationExpect",
 		"RegistrySpec", "SafetyConfig",
 		"SpeechConfig", "TranscriptionConfig", "VocabularyBias", "BiasTerm",

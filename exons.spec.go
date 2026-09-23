@@ -2,6 +2,7 @@ package exons
 
 import (
 	"regexp"
+	"unicode/utf8"
 
 	"github.com/itsatony/go-exons/execution"
 	"gopkg.in/yaml.v3"
@@ -225,7 +226,10 @@ func (s *Spec) Validate() error {
 	if s.Description == "" {
 		return NewSpecDescriptionRequiredError()
 	}
-	if len(s.Description) > SpecDescriptionMaxLength {
+	// Counted in CHARACTERS since v0.31.0: the Agent Skills spec says "max 1024
+	// characters" and so does the schema's maxLength, while a byte count refused
+	// a 1024-character German description the schema accepted (aigentverse#72).
+	if utf8.RuneCountInString(s.Description) > SpecDescriptionMaxLength {
 		return NewSpecDescriptionTooLongError(SpecDescriptionMaxLength)
 	}
 

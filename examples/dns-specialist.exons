@@ -31,6 +31,17 @@ tools:
           record_type: { type: string, enum: [A, AAAA, CNAME, MX, TXT] }
         required: [domain]
 
+requirements:
+  mcp:
+    - capability: dns-management
+      credential_ref: cloudflare-api
+      scope: org
+  resources:
+    - ref: dns-runbooks
+      kind: corpus
+      access: read
+      purpose: House rules for record changes and rollback steps
+
 memory:
   scope: dns-manager
   auto_recall: true

@@ -365,6 +365,32 @@ Go types: `MemorySpec`, `DispatchSpec`, `VerificationCase`, `RegistrySpec`, `Saf
 
 `transcription:` is declared in the JSON Schema — so editors and CI can check it — but is deliberately **not** a `Spec` field: consumers read it from `Spec.Extensions["transcription"]`, and a typed field would consume the key and empty that map for every one of them.
 
+## Requirements
+
+`requirements:` declares what a definition NEEDS without binding it, so the document stays portable between tenants and runtimes. It carries abstract names only — never a server URL, a secret, or a concrete coordinate; a registry (e.g. aigentverse) binds each name per workspace, and a runtime resolves the binding.
+
+```yaml
+requirements:
+  mcp:                       # abstract MCP capabilities
+    - capability: dns-management
+      credential_ref: cloudflare-api
+      scope: org             # org | user | per_call; empty resolves to org
+  credentials:               # logical credential refs
+    - ref: slack-bot
+      provider: slack
+      scope: user
+  resources:                 # logical resources (v0.31.0)
+    - ref: product-docs      # REQUIRED — a logical name, never the coordinate
+      kind: corpus           # REQUIRED — opaque runtime token, lowercase: ^[a-z][a-z0-9_.-]*$
+      access: read           # read | write; empty resolves to read
+      scope: org
+      purpose: Answers are grounded in the product documentation
+```
+
+Go types: `SpecRequirements` with `MCPRequirement`, `CredentialRequirement` and `ResourceRequirement` (whose `EffectiveAccess()` / `EffectiveScope()` resolve the empty defaults). `Parse` refuses: more than `MaxRequirementEntries` (256) entries in any list; a field over `MaxRequirementFieldLen` (512) **characters**; an empty capability/ref/kind; a duplicate capability or ref within its list; an out-of-vocabulary scope or access; and **any resource `ref` or `kind` containing `://`** — a concrete location belongs in the registry's binding, and a definition that carries one leaks its tenant into every export. Values are compared verbatim (never trimmed or case-folded), because bindings are keyed on the exact string. go-exons attaches no meaning to a resource `kind` beyond its shape.
+
+`requirements:` survives every full export (`ExportFull`, `Serialize`, `ExportDirectory`) and is deliberately kept out of the Agent-Skills export, whose portable vocabulary is closed.
+
 ## Input Kinds
 
 `inputs` declares the parameters a document takes. Each entry is an `InputDef` whose
@@ -663,6 +689,8 @@ The template engine is security-hardened by default:
 
 A JSON Schema for validating `.exons` YAML frontmatter ships at `schema/exons.schema.json`. Use it with VS Code's YAML extension or in CI pipelines.
 
+The schema and `Parse` are held together by a test (`schema/agreement_test.go`): a document the schema accepts is one the parser accepts, except for the rules JSON Schema cannot state (uniqueness within the requirements lists, `input_order` naming declared inputs, cross-field rules, the template grammar). The schema is deliberately stricter in two ways — `type` is required, and nested objects are closed where the parser ignores unknown keys.
+
 ## Examples
 
 The `examples/` directory contains 8 standalone Go programs covering core workflows. Each is runnable with `go run .`:
@@ -676,7 +704,7 @@ The `examples/` directory contains 8 standalone Go programs covering core workfl
 7. `07-a2a-agent-card` — Generate A2A Agent Cards
 8. `08-syntax-safety` — Write exons syntax as content: markdown fences, verbatim fences, raw blocks
 
-Alongside them, `examples/dns-specialist.exons` is a worked agent document — the full frontmatter surface (execution, inputs, tools, memory, dispatch, verifications, registry, safety, constraints) on one realistic agent, for reading rather than running.
+Alongside them, `examples/dns-specialist.exons` is a worked agent document — the full frontmatter surface (execution, inputs, tools, requirements, memory, dispatch, verifications, registry, safety, constraints) on one realistic agent, for reading rather than running.
 
 ## Editor Support
 

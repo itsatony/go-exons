@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/itsatony/go-exons/schema/exons.schema.json",
   "title": "Exons Spec",
-  "description": "JSON Schema for the YAML frontmatter of .exons agent specification files. Validates the Spec struct defined in github.com/itsatony/go-exons.",
+  "description": "JSON Schema for the YAML frontmatter of .exons agent specification files. Validates the Spec struct defined in github.com/itsatony/go-exons. A document this schema accepts may still be refused by the parser (exons.Parse / Spec.Validate), which alone checks what JSON Schema cannot state: uniqueness within the requirements lists (mcp capability, credentials ref, resources ref), input_order naming only declared inputs, the execution/memory/dispatch/verification/registry/safety cross-field rules, and everything about the template body (the {~ ~} grammar, checked when the template engine parses the document). The reverse — a document this schema refuses for a rule the parser does not have — is meant to be deliberate strictness only, chiefly: type is required here while the parser defaults it to skill, and every nested object is closed here while the parser ignores unknown keys. go-exons' schema agreement test (schema/agreement_test.go) holds the two instruments to exactly that.",
   "type": "object",
-  "required": ["name", "type"],
+  "required": ["name", "description", "type"],
   "additionalProperties": true,
   "properties": {
     "name": {
@@ -15,7 +15,8 @@
     },
     "description": {
       "type": "string",
-      "description": "Human-readable description of the spec.",
+      "description": "Human-readable description of the spec. Required and non-empty; at most 1024 characters (characters, not bytes — the parser counts runes since v0.31.0).",
+      "minLength": 1,
       "maxLength": 1024
     },
     "type": {
@@ -96,6 +97,9 @@
       "type": "string",
       "description": "Default credential label (must reference a key in credentials map)."
     },
+    "requirements": {
+      "$ref": "#/$defs/SpecRequirements"
+    },
     "memory": {
       "$ref": "#/$defs/MemorySpec"
     },
@@ -122,6 +126,45 @@
       "$ref": "#/$defs/TranscriptionConfig"
     }
   },
+  "allOf": [
+    {
+      "description": "A prompt carries no skills, no tool functions, and no constraints, memory, dispatch or registry block (Spec.Validate, type prompt).",
+      "if": {
+        "required": ["type"],
+        "properties": {
+          "type": { "const": "prompt" }
+        }
+      },
+      "then": {
+        "properties": {
+          "skills": { "maxItems": 0 },
+          "tools": {
+            "properties": {
+              "functions": { "maxItems": 0 }
+            }
+          },
+          "constraints": false,
+          "memory": false,
+          "dispatch": false,
+          "registry": false
+        }
+      }
+    },
+    {
+      "description": "A skill composes no skills and carries no dispatch block (Spec.Validate, type skill). An absent type is a skill to the parser, so this condition deliberately does not require the key.",
+      "if": {
+        "properties": {
+          "type": { "const": "skill" }
+        }
+      },
+      "then": {
+        "properties": {
+          "skills": { "maxItems": 0 },
+          "dispatch": false
+        }
+      }
+    }
+  ],
   "$defs": {
     "DocumentType": {
       "type": "string",
@@ -425,6 +468,122 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "SpecRequirements": {
+      "type": "object",
+      "description": "Portable declaration of the abstract capabilities, logical credentials and logical resources a definition needs — never server URLs, never secrets, never concrete coordinates. A registry binds each to a concrete coordinate per workspace. Uniqueness within each list is checked by the parser only.",
+      "additionalProperties": false,
+      "properties": {
+        "mcp": {
+          "type": "array",
+          "description": "Abstract MCP capabilities. capability is unique within the list.",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/MCPRequirement"
+          }
+        },
+        "credentials": {
+          "type": "array",
+          "description": "Logical credential refs. ref is unique within the list.",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/CredentialRequirement"
+          }
+        },
+        "resources": {
+          "type": "array",
+          "description": "Logical resources (a corpus, a folder, a toolset…). ref is unique within the list.",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/ResourceRequirement"
+          }
+        }
+      }
+    },
+    "RequirementScope": {
+      "type": "string",
+      "description": "How a requirement is resolved: org (one shared binding), user (per invoking identity), per_call (supplied at invocation, never stored). Empty resolves to org.",
+      "enum": ["", "org", "user", "per_call"]
+    },
+    "MCPRequirement": {
+      "type": "object",
+      "description": "One abstract MCP capability requirement.",
+      "required": ["capability"],
+      "additionalProperties": false,
+      "properties": {
+        "capability": {
+          "type": "string",
+          "description": "Abstract capability name (e.g. dns-management), resolved to a concrete server at runtime.",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "credential_ref": {
+          "type": "string",
+          "description": "Logical credential name, not a secret.",
+          "maxLength": 512
+        },
+        "scope": {
+          "$ref": "#/$defs/RequirementScope"
+        }
+      }
+    },
+    "CredentialRequirement": {
+      "type": "object",
+      "description": "One logical credential requirement.",
+      "required": ["ref"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "type": "string",
+          "description": "Logical credential name the binding plane maps to a resolver coordinate.",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "provider": {
+          "type": "string",
+          "description": "Provider the credential authenticates with.",
+          "maxLength": 512
+        },
+        "scope": {
+          "$ref": "#/$defs/RequirementScope"
+        }
+      }
+    },
+    "ResourceRequirement": {
+      "type": "object",
+      "description": "One logical resource requirement. ref and kind are logical names: a concrete coordinate (anything containing \"://\") belongs in a registry binding, never in a portable definition.",
+      "required": ["ref", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "type": "string",
+          "description": "Logical resource name (e.g. product-docs), bound to a concrete coordinate per workspace. Never the coordinate itself.",
+          "minLength": 1,
+          "maxLength": 512,
+          "not": {
+            "pattern": "://"
+          }
+        },
+        "kind": {
+          "type": "string",
+          "description": "Opaque, runtime-interpreted type token (e.g. corpus, folder, toolset). Lowercase, so two runtimes never disagree on case; the pattern also excludes \"://\".",
+          "pattern": "^[a-z][a-z0-9_.-]*$",
+          "maxLength": 512
+        },
+        "access": {
+          "type": "string",
+          "description": "What the definition does with the resource. Empty resolves to read.",
+          "enum": ["", "read", "write"]
+        },
+        "scope": {
+          "$ref": "#/$defs/RequirementScope"
+        },
+        "purpose": {
+          "type": "string",
+          "description": "Why the definition needs the resource (human prose).",
+          "maxLength": 512
         }
       }
     },

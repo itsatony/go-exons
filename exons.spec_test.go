@@ -210,6 +210,17 @@ func TestSpec_Validate(t *testing.T) {
 		assert.Error(t, err)
 	})
 
+	// v0.31.0: the cap counts characters, as the schema and the Agent Skills spec
+	// do. 1024 umlauts are 2048 bytes and were refused under the old byte count.
+	t.Run("description length counts characters, not bytes", func(t *testing.T) {
+		atCap := &Spec{Name: "test-name", Description: strings.Repeat("ä", SpecDescriptionMaxLength)}
+		assert.NoError(t, atCap.Validate())
+		overCap := &Spec{Name: "test-name", Description: strings.Repeat("ä", SpecDescriptionMaxLength+1)}
+		err := overCap.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), ErrMsgSpecDescriptionTooLong)
+	})
+
 	t.Run("invalid document type fails", func(t *testing.T) {
 		s := &Spec{
 			Name:        "test-name",

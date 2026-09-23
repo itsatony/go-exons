@@ -241,13 +241,22 @@ const (
 	ErrMsgA2ACardMissingName = "agent card requires a spec name"
 
 	// Requirements block validation messages
-	ErrMsgRequirementCapabilityEmpty = "requirements.mcp[].capability must not be empty"
-	ErrMsgRequirementCapabilityDup   = "requirements.mcp[].capability must be unique"
-	ErrMsgRequirementCredRefEmpty    = "requirements.credentials[].ref must not be empty"
-	ErrMsgRequirementCredRefDup      = "requirements.credentials[].ref must be unique"
-	ErrMsgRequirementScopeInvalid    = "requirements scope must be: org, user, or per_call"
-	ErrMsgRequirementTooManyEntries  = "requirements list exceeds the maximum number of entries"
-	ErrMsgRequirementFieldTooLong    = "requirements field exceeds the maximum length"
+	ErrMsgRequirementCapabilityEmpty   = "requirements.mcp[].capability must not be empty"
+	ErrMsgRequirementCapabilityDup     = "requirements.mcp[].capability must be unique"
+	ErrMsgRequirementCredRefEmpty      = "requirements.credentials[].ref must not be empty"
+	ErrMsgRequirementCredRefDup        = "requirements.credentials[].ref must be unique"
+	ErrMsgRequirementScopeInvalid      = "requirements scope must be: org, user, or per_call"
+	ErrMsgRequirementTooManyEntries    = "requirements list exceeds the maximum number of entries"
+	ErrMsgRequirementFieldTooLong      = "requirements field exceeds the maximum length"
+	ErrMsgRequirementResourceRefEmpty  = "requirements.resources[].ref must not be empty"
+	ErrMsgRequirementResourceRefDup    = "requirements.resources[].ref must be unique"
+	ErrMsgRequirementResourceKindEmpty = "requirements.resources[].kind must not be empty"
+	ErrMsgRequirementResourceKindForm  = "requirements.resources[].kind must be a lowercase token: a letter, then letters, digits, '_', '.' or '-'"
+	ErrMsgRequirementResourceAccess    = "requirements.resources[].access must be: read or write"
+	// ErrMsgRequirementResourceCoordinate refuses a URI in a resource's ref or kind. The
+	// sentence names the remedy, because the author who wrote one is holding a real
+	// coordinate and needs to know where it goes instead.
+	ErrMsgRequirementResourceCoordinate = "requirements.resources[] ref and kind must be logical names, not coordinates: a concrete location (anything containing \"://\") belongs in a registry binding, never in a portable definition"
 
 	// Credential and manifest validation messages
 	ErrMsgCredentialNotFound         = "credential label not found in credentials map"
