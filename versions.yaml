@@ -1,7 +1,14 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.31.0
+  version: 0.32.0
+# v0.32.0 (DC20-allowlist): AN EMPTY TOOL ALLOW-LIST SURVIVES A ROUND TRIP (go-exons#3).
+# ⛔ `tools.allow: []` / `mcp_servers[].tools: []` mean NO tools; absent means no narrowing.
+# `omitempty` erased the empty form on every re-emission (export, JSON store), turning "none"
+# into "every tool" — a fail-OPEN once go-vaibstract v1.235.0 enforces both lists. Custom
+# marshallers emit through a pointer. ⛔ Serialize dropped a tools block with no functions or
+# servers, so an allow-ONLY narrowing vanished on export: gated on ToolsConfig.IsZero now.
+# Schema: MCPServer declares transport + tools (it refused them under additionalProperties:false).
 # v0.31.0 (DC19-concord): A DEFINITION CAN NAME THE RESOURCES IT NEEDS, AND THE SCHEMA STOPS
 # ACCEPTING WHAT THE PARSER REFUSES.
 # requirements.resources (aigentverse#80): ref + kind REQUIRED, access read|write (empty → read),

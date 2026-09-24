@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-09-24
+
+DC20-allowlist — a tool allow-list's empty form survives a round trip. Closes go-exons#3.
+
+### Fixed
+
+- ⛔ **`tools.allow: []` and `mcp_servers[].tools: []` were erased on re-emission.** An explicit
+  empty list means **no tools**; an absent list means **no narrowing**. `Parse` kept the two apart,
+  but both fields carried `omitempty`, and encoding/json and yaml.v3 treat nil and empty alike
+  under it. So any document that was parsed and emitted again (`ExportFull`, a registry storing
+  the struct as JSON) turned "no tools" into "every tool". Since go-vaibstract v1.235.0 enforces
+  both lists, that is a fail-OPEN. `ToolsConfig` and `MCPServer` now have `MarshalYAML` /
+  `MarshalJSON` that emit the lists through a pointer, so an empty list is written as `[]` and a
+  nil one stays absent. Decoding is unchanged: `[]` gives an empty slice and `null` gives nil.
+- ⛔ **`Serialize` dropped a `tools:` block that had no functions and no MCP servers.** Found while
+  fixing the above. A block that only narrows — `allow: [web_search]`, typically restricting tools
+  a runtime adds, such as discovery — or that only sets `tool_choice` / `parallel_tool_calls`,
+  vanished on export. The gate was `HasTools`, which answers "is there a catalog to render". It
+  is now the new `ToolsConfig.IsZero`.
+- **The JSON schema refused `mcp_servers[].transport` and `mcp_servers[].tools`.** `MCPServer` is
+  `additionalProperties: false` and declared neither field, so an editor or CI running the schema
+  rejected the per-server narrowing that `Parse` accepts. Both are declared now, and the nil-vs-empty
+  meaning is stated on both lists. Four agreement rows cover them; the two MCP rows fail on the
+  v0.31.0 schema.
+- **The README and blog example contradicted the schema.** They declared an inline
+  `check_propagation` that their `allow` list omitted, which the strict reading (the schema's, and
+  go-vaibstract's) does not offer to the model. `check_propagation` is added to `allow`; the schema
+  keeps the strict reading, where `allow` covers every source including inline functions.
+
+### Added
+
+- `ToolsConfig.IsZero()` — the block declares nothing at all.
+
 ## [0.31.0] - 2026-09-23
 
 DC19-concord — a definition can name the resources it needs, and the schema stops accepting what

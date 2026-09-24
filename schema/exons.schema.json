@@ -314,7 +314,7 @@
         },
         "allow": {
           "type": "array",
-          "description": "Allowlist of tool names the agent may use.",
+          "description": "Allowlist of tool names the agent may use, from EVERY source (inline functions, MCP servers, tools a runtime adds). Absent means no narrowing; an explicit empty list [] means NO tools. The two are different documents and a round trip keeps them apart.",
           "items": {
             "type": "string"
           }
@@ -355,6 +355,17 @@
           "type": "string",
           "description": "MCP server URL.",
           "format": "uri"
+        },
+        "transport": {
+          "type": "string",
+          "description": "MCP transport (e.g. 'streamable_http', 'sse'). Absent lets the runtime choose."
+        },
+        "tools": {
+          "type": "array",
+          "description": "Narrows the tools this server exposes. Absent means every tool the server lists; an explicit empty list [] means none.",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

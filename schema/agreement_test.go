@@ -144,6 +144,14 @@ func agreementCorpus() []agreementCase {
 		diverge("credential entry with an unknown key", agent("requirements:\n  credentials:\n    - ref: r\n      credential_ref: r\n"), false, true, schemaStricterClosed),
 		diverge("requirements unknown list", agent("requirements:\n  datasets:\n    - ref: r\n"), false, true, schemaStricterClosed),
 
+		// --- tool allow-lists (go-exons#3). The schema's MCPServer did not declare
+		// `transport` or `tools` under additionalProperties:false, so it refused the
+		// very narrowing go-vaibstract now enforces, while Parse accepted it.
+		agree("tools allow populated", agent("tools:\n  allow: [a]\n"), true),
+		agree("tools allow EMPTY (no tools)", agent("tools:\n  allow: []\n"), true),
+		agree("mcp server with transport and tools", agent("tools:\n  mcp_servers:\n    - name: s\n      url: https://mcp.example.com/mcp\n      transport: sse\n      tools: [search]\n"), true),
+		agree("mcp server tools EMPTY (none)", agent("tools:\n  mcp_servers:\n    - name: s\n      url: https://mcp.example.com/mcp\n      tools: []\n"), true),
+
 		// --- requirements.resources (aigentverse#80).
 		agree("resource minimal", agent("requirements:\n  resources:\n    - ref: product-docs\n      kind: corpus\n"), true),
 		agree("resource kind with every token character", agent("requirements:\n  resources:\n    - ref: r\n      kind: vai.corpus_v2-beta\n"), true),

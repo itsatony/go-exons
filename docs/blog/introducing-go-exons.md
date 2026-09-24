@@ -37,7 +37,7 @@ execution:
   max_tokens: 4096
 
 tools:
-  allow: [dns_list_records, dns_create_record, dns_delete_record]
+  allow: [dns_list_records, dns_create_record, dns_delete_record, check_propagation]
   functions:
     - name: check_propagation
       description: Check DNS propagation status worldwide

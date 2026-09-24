@@ -36,7 +36,11 @@ type ToolsConfig struct {
 	MCPServers        []*MCPServer   `yaml:"mcp_servers,omitempty" json:"mcp_servers,omitempty"`
 	ToolChoice        string         `yaml:"tool_choice,omitempty" json:"tool_choice,omitempty"`
 	ParallelToolCalls *bool          `yaml:"parallel_tool_calls,omitempty" json:"parallel_tool_calls,omitempty"`
-	Allow             []string       `yaml:"allow,omitempty" json:"allow,omitempty"`
+	// Allow narrows the tools the agent is offered, from every source (inline
+	// functions included). ⛔ nil and empty MEAN DIFFERENT THINGS: nil (absent)
+	// is "no narrowing"; a non-nil empty list is "no tools at all". Both survive
+	// a YAML and a JSON round trip — see MarshalYAML.
+	Allow []string `yaml:"allow,omitempty" json:"allow,omitempty"`
 }
 
 // FunctionDef defines a tool function with optional return schema and strict mode.
@@ -50,10 +54,13 @@ type FunctionDef struct {
 
 // MCPServer references an MCP server with optional transport and tool filtering.
 type MCPServer struct {
-	Name      string   `yaml:"name" json:"name"`
-	URL       string   `yaml:"url" json:"url"`
-	Transport string   `yaml:"transport,omitempty" json:"transport,omitempty"`
-	Tools     []string `yaml:"tools,omitempty" json:"tools,omitempty"`
+	Name      string `yaml:"name" json:"name"`
+	URL       string `yaml:"url" json:"url"`
+	Transport string `yaml:"transport,omitempty" json:"transport,omitempty"`
+	// Tools narrows what this server exposes, with the same nil-vs-empty
+	// meaning as ToolsConfig.Allow: nil is every tool the server lists, a
+	// non-nil empty list is none.
+	Tools []string `yaml:"tools,omitempty" json:"tools,omitempty"`
 }
 
 // ConstraintsConfig defines agent behavioral and operational constraints.

@@ -216,7 +216,10 @@ func (s *Spec) buildSerializeMap(opts *SerializeOptions) map[string]any {
 		if len(s.Skills) > 0 {
 			m[SpecFieldSkills] = s.Skills
 		}
-		if s.Tools != nil && (len(s.Tools.Functions) > 0 || len(s.Tools.MCPServers) > 0) {
+		// ⛔ Not HasTools: a block that only NARROWS (`allow:` alone, or `allow: []`)
+		// has no functions or servers, and dropping it re-opened the agent to every
+		// tool a runtime adds (go-exons#3).
+		if !s.Tools.IsZero() {
 			m[SpecFieldTools] = s.Tools
 		}
 		if s.Constraints != nil {
