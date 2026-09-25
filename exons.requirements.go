@@ -85,6 +85,10 @@ type SpecRequirements struct {
 	// toolset…) the definition needs, bound to a concrete coordinate per
 	// workspace by a registry. Added in v0.31.0.
 	Resources []ResourceRequirement `yaml:"resources,omitempty" json:"resources,omitempty"`
+	// Environment declares the abstract execution environment the definition
+	// needs (code execution, informational packages, network). Valid on skill
+	// and agent documents only; see EnvironmentRequirement. Added in v0.33.0.
+	Environment *EnvironmentRequirement `yaml:"environment,omitempty" json:"environment,omitempty"`
 }
 
 // MCPRequirement declares one abstract MCP capability requirement. Capability is
@@ -188,8 +192,10 @@ func isValidRequirementScope(scope string) bool {
 // Validate checks the requirements block shape: non-empty capabilities/refs,
 // capability and ref uniqueness, and a valid scope enum on every entry — and,
 // for resources, a non-empty kind in ResourceKindPattern's shape, a valid
-// access enum, and no coordinate ("://") in ref or kind. A nil
-// Requirements is valid (the block is optional).
+// access enum, and no coordinate ("://") in ref or kind; and the environment
+// block (EnvironmentRequirement.Validate). A nil Requirements is valid (the
+// block is optional). Whether an environment is allowed on the document's TYPE
+// is Spec.Validate's call — a prompt refuses it.
 func (r *SpecRequirements) Validate() error {
 	if r == nil {
 		return nil
@@ -233,7 +239,10 @@ func (r *SpecRequirements) Validate() error {
 		}
 	}
 
-	return r.validateResources()
+	if err := r.validateResources(); err != nil {
+		return err
+	}
+	return r.Environment.Validate()
 }
 
 // validateResources checks the resources list. The whitespace policy is the
@@ -278,9 +287,10 @@ func (r *SpecRequirements) validateResources() error {
 }
 
 // Clone returns a deep copy of the SpecRequirements block. copy() is a true deep
-// copy here because MCPRequirement, CredentialRequirement and ResourceRequirement
-// are all-scalar value types; if any gains a slice/map/pointer field, switch to per-element deep
-// copies (as Spec.Clone does) to preserve the deep-copy guarantee.
+// copy for the three lists because MCPRequirement, CredentialRequirement and
+// ResourceRequirement are all-scalar value types; if any gains a slice/map/pointer
+// field, switch to per-element deep copies (as Spec.Clone does) to preserve the
+// deep-copy guarantee. Environment carries a slice and has its own Clone.
 func (r *SpecRequirements) Clone() *SpecRequirements {
 	if r == nil {
 		return nil
@@ -298,6 +308,7 @@ func (r *SpecRequirements) Clone() *SpecRequirements {
 		clone.Resources = make([]ResourceRequirement, len(r.Resources))
 		copy(clone.Resources, r.Resources)
 	}
+	clone.Environment = r.Environment.Clone()
 	return clone
 }
 

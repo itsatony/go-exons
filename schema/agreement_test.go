@@ -3,6 +3,7 @@ package schema_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -67,14 +68,14 @@ var divergenceVocabulary = map[string]divergenceDirection{
 }
 
 // Corpus floors. The corpus is hand-listed, so its size is the thing a careless
-// edit shrinks; each floor is the count at v0.31.0 and is lowered only with a
-// reason. Every declared reason must also be exercised by at least one row
+// edit shrinks; each floor is the count at v0.33.0 (raised from v0.31.0's with the
+// requirements.environment rows) and is lowered only with a reason. Every declared reason must also be exercised by at least one row
 // (TestSchemaAndParserAgree's reverse axis), or the vocabulary holds dead entries.
 const (
-	agreementCorpusFloor         = 58
-	agreementAgreeRowsFloor      = 39
+	agreementCorpusFloor         = 81
+	agreementAgreeRowsFloor      = 60
 	agreementParserStricterFloor = 3
-	agreementSchemaStricterFloor = 16
+	agreementSchemaStricterFloor = 18
 )
 
 // agreementCase is one document and the verdict EACH instrument must return for it.
@@ -213,6 +214,27 @@ registry:
 		diverge("credential provider null", agent("requirements:\n  credentials:\n    - ref: r\n      provider: ~\n"), false, true, schemaStricterNull),
 		diverge("resource ref is a number", agent("requirements:\n  resources:\n    - ref: 42\n      kind: corpus\n"), false, true, schemaStricterScalar),
 		diverge("resource kind is a boolean", agent("requirements:\n  resources:\n    - ref: r\n      kind: true\n"), false, true, schemaStricterScalar),
+
+		// --- requirements.environment (go-exons#4): valid on skill and agent, never on prompt.
+		agree("environment every field on a skill", skill("requirements:\n  environment:\n    code_execution: required\n    packages: [python:openpyxl, node:@scope/pkg, go:golang.org/x/text, system:libreoffice]\n    network: none\n"), true),
+		agree("environment on an agent", agent("requirements:\n  environment:\n    code_execution: optional\n    network: optional\n"), true),
+		agree("environment empty mapping", skill("requirements:\n  environment: {}\n"), true),
+		agree("environment on a prompt", prompt("requirements:\n  environment:\n    network: required\n"), false),
+		agree("environment empty mapping on a prompt", prompt("requirements:\n  environment: {}\n"), false),
+		agree("environment code_execution none", skill("requirements:\n  environment:\n    code_execution: none\n"), false),
+		agree("environment code_execution is a boolean", skill("requirements:\n  environment:\n    code_execution: true\n"), false),
+		agree("environment network out of vocabulary", skill("requirements:\n  environment:\n    network: offline\n"), false),
+		agree("environment package unknown ecosystem", skill("requirements:\n  environment:\n    code_execution: required\n    packages: [pypi:openpyxl]\n"), false),
+		agree("environment package version specifier", skill("requirements:\n  environment:\n    code_execution: required\n    packages: [\"python:openpyxl>=3.1\"]\n"), false),
+		agree("environment package is a url", skill("requirements:\n  environment:\n    code_execution: required\n    packages: [\"python:https://x.example/p\"]\n"), false),
+		agree("environment package duplicated", skill("requirements:\n  environment:\n    code_execution: required\n    packages: [python:a, python:a]\n"), false),
+		agree("environment package 128 characters", skill("requirements:\n  environment:\n    code_execution: required\n    packages: [python:"+strings.Repeat("a", 121)+"]\n"), true),
+		agree("environment package 129 characters", skill("requirements:\n  environment:\n    code_execution: required\n    packages: [python:"+strings.Repeat("a", 122)+"]\n"), false),
+		agree("environment packages without code_execution", skill("requirements:\n  environment:\n    packages: [python:openpyxl]\n"), false),
+		agree("environment packages with empty code_execution", skill("requirements:\n  environment:\n    code_execution: \"\"\n    packages: [python:openpyxl]\n"), false),
+		agree("environment empty packages without code_execution", skill("requirements:\n  environment:\n    packages: []\n"), true),
+		diverge("environment with an unknown key", skill("requirements:\n  environment:\n    image: python:3.12-slim\n"), false, true, schemaStricterClosed),
+		diverge("environment null on a prompt", prompt("requirements:\n  environment: ~\n"), false, true, schemaStricterNull),
 
 		// --- a parser-only cross-field rule, so the divergence vocabulary is exercised.
 		diverge("input_order names an undeclared input", agent("inputs:\n  a:\n    type: string\ninput_order: [b]\n"), true, false, parserOnlyInputOrder),
@@ -444,6 +466,32 @@ func TestSchemaRequirementsBoundsAreTheGoConstants(t *testing.T) {
 			t.Errorf("ResourceRequirement.access enum = %v, want %v", access, wantAccess)
 		}
 	}
+	env := defs["EnvironmentRequirement"].(map[string]any)["properties"].(map[string]any)
+	pkgs := env["packages"].(map[string]any)
+	if got, _ := pkgs["maxItems"].(float64); int(got) != exons.MaxEnvironmentPackages {
+		t.Errorf("EnvironmentRequirement.packages maxItems = %v, want exons.MaxEnvironmentPackages (%d)", got, exons.MaxEnvironmentPackages)
+	}
+	item := pkgs["items"].(map[string]any)
+	if got, _ := item["maxLength"].(float64); int(got) != exons.MaxEnvironmentPackageLen {
+		t.Errorf("EnvironmentRequirement.packages[] maxLength = %v, want exons.MaxEnvironmentPackageLen (%d)", got, exons.MaxEnvironmentPackageLen)
+	}
+	if got := item["pattern"]; got != exons.EnvironmentPackagePattern {
+		t.Errorf("EnvironmentRequirement.packages[] pattern = %v, want exons.EnvironmentPackagePattern %q", got, exons.EnvironmentPackagePattern)
+	}
+	// The pattern's ecosystem alternation is the documented vocabulary, derived.
+	wantAlt := "^(" + strings.Join(exons.EnvironmentEcosystems(), "|") + "):"
+	if !strings.HasPrefix(exons.EnvironmentPackagePattern, wantAlt) {
+		t.Errorf("EnvironmentPackagePattern %q does not open with the ecosystem vocabulary %q", exons.EnvironmentPackagePattern, wantAlt)
+	}
+	enumIs := func(field string, want []any) {
+		got := env[field].(map[string]any)["enum"].([]any)
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("EnvironmentRequirement.%s enum = %v, want %v", field, got, want)
+		}
+	}
+	enumIs("code_execution", []any{"", exons.EnvironmentCodeExecutionRequired, exons.EnvironmentCodeExecutionOptional})
+	enumIs("network", []any{"", exons.EnvironmentNetworkRequired, exons.EnvironmentNetworkOptional, exons.EnvironmentNetworkNone})
+
 	scope := defs["RequirementScope"].(map[string]any)["enum"].([]any)
 	wantScope := []any{"", exons.RequirementScopeOrg, exons.RequirementScopeUser, exons.RequirementScopePerCall}
 	if len(scope) != len(wantScope) {

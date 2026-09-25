@@ -27,6 +27,16 @@ type SerializeOptions struct {
 	IncludeCredentials bool
 	// IncludeMetadata includes the metadata fields (memory, dispatch, verifications, registry, safety) in output
 	IncludeMetadata bool
+	// RenderCompatibility emits the agentskills.io `compatibility` key composed by
+	// Spec.AgentSkillsCompatibility — the author's own text plus the sentence
+	// rendered from requirements.environment. Set by AgentSkillsExportOptions
+	// (v0.33.0) because that card carries no requirements block, so a portable
+	// consumer would otherwise never learn that a skill needs code execution.
+	// When set, the composed value wins over a verbatim `compatibility` extension.
+	// Off in the full exports, which keep the author's field verbatim and the
+	// structured block beside it: writing the composed text there would change the
+	// author's field on every round trip.
+	RenderCompatibility bool
 }
 
 // DefaultSerializeOptions returns the default serialization options (all included
@@ -51,6 +61,8 @@ func AgentSkillsExportOptions() *SerializeOptions {
 		IncludeContext:     false,
 		IncludeCredentials: false,
 		IncludeMetadata:    false,
+		// The one portable field that can carry requirements.environment.
+		RenderCompatibility: true,
 	}
 }
 
@@ -186,6 +198,14 @@ func (s *Spec) buildSerializeMap(opts *SerializeOptions) map[string]any {
 			if !knownSpecFields[k] {
 				m[k] = v
 			}
+		}
+	}
+
+	// ⚠ AFTER the extensions loop, so the composed value replaces a verbatim
+	// `compatibility` extension when both are enabled.
+	if opts.RenderCompatibility {
+		if c := s.AgentSkillsCompatibility(); c != "" {
+			m[AgentSkillsFieldCompatibility] = c
 		}
 	}
 

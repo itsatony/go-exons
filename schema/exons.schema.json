@@ -128,7 +128,7 @@
   },
   "allOf": [
     {
-      "description": "A prompt carries no skills, no tool functions, and no constraints, memory, dispatch or registry block (Spec.Validate, type prompt).",
+      "description": "A prompt carries no skills, no tool functions, and no constraints, memory, dispatch or registry block, and no requirements.environment — a prompt runs nothing (Spec.Validate, type prompt).",
       "if": {
         "required": ["type"],
         "properties": {
@@ -146,7 +146,12 @@
           "constraints": false,
           "memory": false,
           "dispatch": false,
-          "registry": false
+          "registry": false,
+          "requirements": {
+            "properties": {
+              "environment": false
+            }
+          }
         }
       }
     },
@@ -484,7 +489,7 @@
     },
     "SpecRequirements": {
       "type": "object",
-      "description": "Portable declaration of the abstract capabilities, logical credentials and logical resources a definition needs — never server URLs, never secrets, never concrete coordinates. A registry binds each to a concrete coordinate per workspace. Uniqueness within each list is checked by the parser only.",
+      "description": "Portable declaration of the abstract capabilities, logical credentials and logical resources a definition needs — never server URLs, never secrets, never concrete coordinates. A registry binds each to a concrete coordinate per workspace. Uniqueness within the mcp, credentials and resources lists is checked by the parser only. environment declares the abstract execution environment and is valid on skill and agent documents only.",
       "additionalProperties": false,
       "properties": {
         "mcp": {
@@ -510,6 +515,9 @@
           "items": {
             "$ref": "#/$defs/ResourceRequirement"
           }
+        },
+        "environment": {
+          "$ref": "#/$defs/EnvironmentRequirement"
         }
       }
     },
@@ -595,6 +603,46 @@
           "type": "string",
           "description": "Why the definition needs the resource (human prose).",
           "maxLength": 512
+        }
+      }
+    },
+    "EnvironmentRequirement": {
+      "type": "object",
+      "description": "The abstract execution environment a skill or agent needs, so a runtime can preflight before activation. Never a runtime, image or interpreter name. Every field is optional, and an ABSENT field means undeclared (unknown) — never none.",
+      "additionalProperties": false,
+      "properties": {
+        "code_execution": {
+          "type": "string",
+          "description": "required: cannot work without executing code. optional: executes code when offered and degrades without. There is no none: a definition that executes no code omits the field. Empty is undeclared.",
+          "enum": ["", "required", "optional"]
+        },
+        "packages": {
+          "type": "array",
+          "description": "INFORMATIONAL <ecosystem>:<name> entries the environment is expected to provide (python:openpyxl, node:@scope/pkg, system:libreoffice). Ecosystems: python, node, r, ruby, rust, go, java, system. Bare names only — no version specifier, no URL, no image name. Unique; a non-empty list requires code_execution.",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^(python|node|r|ruby|rust|go|java|system):[A-Za-z0-9@][A-Za-z0-9._@/+-]*$"
+          }
+        },
+        "network": {
+          "type": "string",
+          "description": "required: cannot work without outbound network access. optional: uses it when offered. none: needs no network (may run in a network-less sandbox). Empty or absent is undeclared, not none.",
+          "enum": ["", "required", "optional", "none"]
+        }
+      },
+      "if": {
+        "required": ["packages"],
+        "properties": {
+          "packages": { "minItems": 1 }
+        }
+      },
+      "then": {
+        "required": ["code_execution"],
+        "properties": {
+          "code_execution": { "minLength": 1 }
         }
       }
     },

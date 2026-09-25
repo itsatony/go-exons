@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-09-25
+
+DC21-environ — a skill or agent declares the execution environment it needs. Closes go-exons#4
+(part of the SKILLful masterplan, vAudience/atlas#674).
+
+### Added
+
+- **`requirements.environment`** (`EnvironmentRequirement`), valid on `type: skill` and
+  `type: agent`, so a registry or runtime can preflight before activation instead of failing
+  mid-conversation:
+  - `code_execution`: `required` | `optional`. There is no `none` — a definition that runs no
+    code omits the field.
+  - `packages`: informational `<ecosystem>:<name>` entries (`EnvironmentPackagePattern`), with
+    ecosystem one of `python`, `node`, `r`, `ruby`, `rust`, `go`, `java`, `system`
+    (`EnvironmentEcosystems()`). Bare names only — no version specifier, whitespace or URL. At most
+    `MaxEnvironmentPackages` (64) entries of at most `MaxEnvironmentPackageLen` (128) characters,
+    unique, compared verbatim. Declaring any requires `code_execution`, because a package is only
+    ever installed where code runs.
+  - `network`: `required` | `optional` | `none`. `optional` exists alongside the two the issue
+    proposed because "uses the network when offered, degrades without" is a real third case.
+  - ⚠ **An absent field is undeclared, never `none`.** A consumer that reads a missing `network`
+    as "works offline" invents a promise the author never made.
+  - Abstract by design: the block never names a runtime, image or interpreter.
+  - `IsZero`, `RequiresCodeExecution`, `RequiresNetwork`, `Clone` (deep; `SpecRequirements.Clone`
+    and `Spec.Clone` carry it).
+- **`EnvironmentRequirement.CompatibilitySentence()`** renders the block as agentskills.io
+  `compatibility` prose (≤ 500 characters). A package list that does not fit is rendered as whole
+  names plus "and N more" — never a truncated name, never a silently shorter list.
+- **`Spec.AgentSkillsCompatibility()`** composes the portable `compatibility` value: the author's
+  own `compatibility` text (from `Extensions`) first and verbatim, then the rendered sentence. The
+  author's text is appended to rather than replaced: a portable consumer that saw only the prose
+  would miss a declared requirement, while a repeated statement is merely redundant. The sentence
+  is not appended when the author's text already contains it, so export → import → export does not
+  grow the field; when the two together exceed 500 characters the author's text is used alone. An
+  author value that is not a string of 1–500 characters is treated as absent here and stays
+  verbatim in `Extensions`.
+- **`SerializeOptions.RenderCompatibility`**, set by `AgentSkillsExportOptions`: `ExportAgentSkill`
+  and `ExportToSkillMD` now emit `compatibility` when there is something to say. Full exports do
+  not set it, so they keep the author's field verbatim with the structured block beside it.
+- Schema: `EnvironmentRequirement` (closed; `packages` with `uniqueItems`, the same pattern and
+  bounds; a non-empty `packages` requires a non-empty `code_execution`), and the prompt branch
+  prohibits `requirements.environment`. 19 agreement rows (two schema-stricter: an unknown key, and
+  an explicit `environment: ~` on a prompt). The bounds test derives the new pattern, bounds and
+  enums from the Go constants. Corpus floors raised to 81 / 60 / 3 / 18.
+
+### Changed
+
+- `ExportAgentSkill` / `ExportToSkillMD` output gains a `compatibility` key for a document that
+  declares an environment or carries an author `compatibility`. Before, the Agent-Skills card
+  dropped the author's `compatibility` along with every other extension. The key is part of the
+  agentskills.io vocabulary, so the card stays conformant.
+- A `type: prompt` document with `requirements.environment` (even `{}`) is refused
+  (`ErrMsgPromptNoEnvironment`). The key did not exist before, so no valid document is affected.
+
+### Notes
+
+- Confirmed: `requirements` is parsed and validated for `type: skill` (explicit or defaulted) by
+  the same `Parse` → `Spec.Validate` path agents use; a test pins all three forms.
+- Unknown keys inside `environment:` follow the existing `requirements` policy: the parser ignores
+  them and the schema refuses them (`schemaStricterClosed`).
+- An empty `environment: {}` is valid and declares nothing. A YAML re-emission drops it (yaml.v3
+  omits a pointer to a zero struct), which is the same declaration.
+
 ## [0.32.0] - 2026-09-24
 
 DC20-allowlist — a tool allow-list's empty form survives a round trip. Closes go-exons#3.

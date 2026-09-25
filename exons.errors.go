@@ -258,6 +258,22 @@ const (
 	// coordinate and needs to know where it goes instead.
 	ErrMsgRequirementResourceCoordinate = "requirements.resources[] ref and kind must be logical names, not coordinates: a concrete location (anything containing \"://\") belongs in a registry binding, never in a portable definition"
 
+	// requirements.environment validation messages (v0.33.0, go-exons#4).
+	ErrMsgEnvironmentCodeExecution = "requirements.environment.code_execution must be: required or optional"
+	ErrMsgEnvironmentNetwork       = "requirements.environment.network must be: required, optional or none"
+	ErrMsgEnvironmentTooMany       = "requirements.environment.packages exceeds the maximum number of entries"
+	ErrMsgEnvironmentPackageLong   = "requirements.environment.packages[] entry exceeds the maximum length"
+	ErrMsgEnvironmentPackageDup    = "requirements.environment.packages[] entries must be unique"
+	// ErrMsgEnvironmentPackageForm names the whole grammar, so an author holding a
+	// version pin or an image name learns what the field accepts instead.
+	ErrMsgEnvironmentPackageForm = "requirements.environment.packages[] entry must be <ecosystem>:<name> with ecosystem one of python, node, r, ruby, rust, go, java, system — a bare package name, no version specifier, no image or runtime name"
+	// ErrMsgEnvironmentPackagesNeedExecution refuses packages with no code_execution:
+	// a package is only ever installed into an environment that executes code, so a
+	// runtime without code execution would activate the skill and fail at its first use.
+	ErrMsgEnvironmentPackagesNeedExecution = "requirements.environment.packages requires code_execution to be declared (required or optional)"
+	// ErrMsgPromptNoEnvironment: a prompt runs nothing, so it has no environment to need.
+	ErrMsgPromptNoEnvironment = "prompt type does not support requirements.environment (valid on skill and agent)"
+
 	// Credential and manifest validation messages
 	ErrMsgCredentialNotFound         = "credential label not found in credentials map"
 	ErrMsgCredentialMissingProvider  = "credential must specify a provider"

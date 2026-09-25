@@ -261,6 +261,9 @@ func (s *Spec) Validate() error {
 		if s.Registry != nil {
 			return NewSpecValidationError(ErrMsgPromptNoRegistry, s.Name)
 		}
+		if s.Requirements != nil && s.Requirements.Environment != nil {
+			return NewSpecValidationError(ErrMsgPromptNoEnvironment, s.Name)
+		}
 
 	case DocumentTypeSkill:
 		if len(s.Skills) > 0 {

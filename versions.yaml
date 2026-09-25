@@ -1,7 +1,16 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.32.0
+  version: 0.33.0
+# v0.33.0 (DC21-environ): A SKILL CAN SAY WHAT IT NEEDS TO RUN (go-exons#4, atlas#674 SKILLful).
+# requirements.environment: code_execution required|optional, packages [<ecosystem>:<name>]
+# (informational; python|node|r|ruby|rust|go|java|system; ≤64 × ≤128; unique; needs code_execution),
+# network required|optional|none. ⚠ ABSENT = UNDECLARED, NEVER "none" — network: none is the only
+# positive statement of absence. Abstract: never a runtime/image name. Skill + agent; a prompt
+# refuses it (schema too). Parser ignores unknown keys inside it, schema closes it (house policy).
+# ExportAgentSkill now emits `compatibility`: author text first, verbatim, then the rendered
+# sentence; skipped if already contained (no growth on re-export), author alone past 500 chars,
+# overflowing packages as whole names + "and N more". Full exports keep the author field verbatim.
 # v0.32.0 (DC20-allowlist): AN EMPTY TOOL ALLOW-LIST SURVIVES A ROUND TRIP (go-exons#3).
 # ⛔ `tools.allow: []` / `mcp_servers[].tools: []` mean NO tools; absent means no narrowing.
 # `omitempty` erased the empty form on every re-emission (export, JSON store), turning "none"
