@@ -487,13 +487,10 @@ the context rather than on the engine.
 
 ### `{~exons.message~}` inside a referenced body
 
-Valid at **top level**: a fragment may define whole messages and `ExecuteAndExtractMessages` reads
-them.
-
-⚠ **Not valid nested inside another message.** A message tag strips NUL from its children to stop
-marker injection, so an inner message's delimiters are removed and its marker *text* survives into
-the outer message's content. The nested-message behaviour predates v0.34.0; what changed is that
-executing the body makes it reachable. Tracked as go-exons#5.
+At **top level** a fragment may define whole messages, and `ExecuteAndExtractMessages` reads them
+as separate messages. **Nested inside another message**, a fragment's message contributes its
+content only — see [Nested messages](#nested-messages-v0341) below. (In v0.34.0 the inner marker
+*text* leaked into the outer message's content; go-exons#5.)
 
 ### `WithRefVerbatim()` — the escape hatch
 
@@ -512,6 +509,42 @@ the raw body and let go-exons resolve the chain.
 ⚠ **Output-size accounting restarts per frame**, so the executor's ceiling is effectively
 per-frame rather than per-document. It is bounded by `RefMaxDepth`, but it is a change in what
 the cap means.
+
+## Nested messages (v0.34.1)
+
+A `{~exons.message~}` that executes **inside** another message contributes its **content only**.
+Its `role` and `cache` are dropped; the enclosing message owns both.
+
+```
+{~exons.message role="user"~}{~exons.message role="system"~}hallo{~/exons.message~}{~/exons.message~}
+```
+
+yields one message, `{Role: "user", Content: "hallo"}`.
+
+This holds however the inner message got there — written inline, through `{~exons.ref~}`, through
+`{~exons.include~}`, or through an `{~exons.block~}` an `extends` child places inside the parent's
+message — and at any depth. The typical case is a skill written to stand alone as its own system
+message and composed into a parent's system prompt: the skill's text lands where the parent put
+it. Messages that are **not** nested (top level of the document, or top level of a referenced or
+included body rendered at top level) stay separate messages, as before.
+
+- **The content is inserted as written**, whitespace included. The outer message's content is
+  trimmed at extraction as always; the inner one is not trimmed separately, so it cannot glue the
+  parent's words to its own.
+- **The inner tag is still checked.** An unrecognised `role` on a nested message is refused like
+  any other, and its `onerror=` governs that refusal.
+- **An empty or self-closing message** yields an empty message at top level and nothing when
+  nested. Before v0.34.1 it wrote an unterminated start marker that swallowed the next message.
+
+⛔ **Data still cannot forge a message.** The outermost message strips every NUL — the marker
+delimiter — from its entire content, including what a nested message contributed, so a value
+carrying a complete, correctly delimited marker arrives as inert text. Marker-*looking* text
+without NUL (`MSG_END` is plausible prose) is left exactly as written. Nesting is recognised from
+the render's own state, never from the output, so no value can make a top-level message nested
+or a nested one top level.
+
+⚠ With `WithRefVerbatim()` a referenced body is spliced as text, not executed: a message tag in
+it stays a literal tag, nested or not.
 
 ## Frontmatter keys read by these tags
 

@@ -379,7 +379,7 @@ func TestRefChain_TemplateEntryPointsResolveRefsToo(t *testing.T) {
 	})
 }
 
-func TestRefChain_MessageMarkersAreValidOnlyAtTopLevel(t *testing.T) {
+func TestRefChain_MessagesInAReferencedBody(t *testing.T) {
 	ctx := context.Background()
 
 	engine := refEngine(t, map[string]string{
@@ -396,21 +396,17 @@ func TestRefChain_MessageMarkersAreValidOnlyAtTopLevel(t *testing.T) {
 		assert.Equal(t, "hallo", msgs[0].Content)
 	})
 
-	t.Run("NAMED RESIDUAL: nested inside a message, the inner markers flatten", func(t *testing.T) {
-		// ⚠ Pinned as a STATED limitation, not as desired behaviour. The message tag strips NUL
-		// from its children to stop marker injection, so an inner message's delimiters go and its
-		// marker TEXT stays — the caller gets one message whose content carries `MSG_START:`.
-		//
-		// The nested-message behaviour predates this release; what v0.34.0 changes is that a
-		// fragment author can now reach it without seeing it, because the body is executed. It is
-		// recorded here rather than left to be discovered, and tracked as go-exons#5.
+	t.Run("nested inside a message, the inner message contributes its content only", func(t *testing.T) {
+		// go-exons#5. This subtest pinned the v0.34.0 limitation — the caller got one message
+		// whose content carried `MSG_START:system:false:halloMSG_END` — and now pins the decision
+		// taken on the issue: flatten deliberately, keep the content, drop the inner role.
+		// The full matrix (inline, include, extends, two deep, injection) is in
+		// exons.template.messages.nested_test.go.
 		tmpl, err := engine.Parse(
 			`{~exons.message role="user"~}{~exons.ref slug="m" /~}{~/exons.message~}`)
 		require.NoError(t, err)
 		msgs, err := tmpl.ExecuteAndExtractMessages(ctx, nil)
 		require.NoError(t, err)
-		require.Len(t, msgs, 1)
-		assert.Equal(t, "user", msgs[0].Role)
-		assert.Contains(t, msgs[0].Content, "MSG_START")
+		assert.Equal(t, []Message{{Role: "user", Content: "hallo"}}, msgs)
 	})
 }

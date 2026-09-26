@@ -19,7 +19,9 @@ type MessageResolver struct{}
 //   - MSG_START: Literal marker identifier
 //   - <role>: Message role (system|user|assistant|tool), always lowercase
 //   - <cache>: Cache hint (true|false)
-//   - <content>: Executed template content (may contain newlines, sanitized of null bytes)
+//   - <content>: Executed template content (may contain newlines, sanitized of null bytes).
+//     A message nested inside another contributes only its content here, with no markers of
+//     its own (go-exons#5)
 //   - MSG_END: Literal end marker
 //
 // Example output: "\x00MSG_START:user:false:Hello world\x00MSG_END\x00"
@@ -41,6 +43,25 @@ const (
 	// MessageFieldSep separates fields (role, cache, content) within the message.
 	MessageFieldSep = ":"
 )
+
+// insideMessageKey marks a render's context.Context as executing inside an {~exons.message~}.
+// Unexported and zero-sized, so no caller outside this package can set or forge it.
+type insideMessageKey struct{}
+
+// withinMessage returns ctx marked as rendering the content of a message.
+func withinMessage(ctx context.Context) context.Context {
+	if insideMessage(ctx) {
+		return ctx
+	}
+	return context.WithValue(ctx, insideMessageKey{}, true)
+}
+
+// insideMessage reports whether ctx is rendering the content of an enclosing message. A message
+// tag executing under such a context contributes its content only — see Executor.executeMessage.
+func insideMessage(ctx context.Context) bool {
+	nested, _ := ctx.Value(insideMessageKey{}).(bool)
+	return nested
+}
 
 // TagName returns the tag name this resolver handles.
 func (r *MessageResolver) TagName() string {

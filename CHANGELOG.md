@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.1] - 2026-09-27
+
+DC23-nestmsg — a message inside a message contributes its content only. Closes go-exons#5.
+
+### Fixed
+
+- ⛔ **A `{~exons.message~}` nested inside another message leaked its marker text.** The message
+  tag strips NUL from its children so that data can never forge a message boundary. The same guard
+  deleted a nested message's delimiters and left the marker **words**, so
+  `{~exons.message role="user"~}{~exons.message role="system"~}hallo{~/exons.message~}{~/exons.message~}`
+  yielded `{Role: "user", Content: "MSG_START:system:false:halloMSG_END"}`. v0.34.0 made this
+  reachable without writing it: a referenced or included body is executed now, so a skill written
+  as its own system message and composed into a parent's system prompt lands here. One real
+  aigentverse library already has that shape, dormant only behind an unrelated attribute error.
+  **Decision (option 2 on the issue): flatten on purpose.** The same template now yields
+  `{Role: "user", Content: "hallo"}`. The inner `role` and `cache` are dropped, and the content
+  is inserted as written. It holds for inline nesting, `{~exons.ref~}`, `{~exons.include~}` and
+  an `extends` block, at any depth. Messages that are not nested are unchanged.
+- **How:** the enclosing message renders its children under a `context.Context` that carries an
+  unexported key, and a message tag executing under that key writes no markers. context.Context
+  is the one value every route into a nested body already carries. Nothing is parsed back out
+  of rendered output.
+- ⛔ **The injection guard is unchanged.** The outermost message still strips every NUL from its
+  whole content, including what a nested message contributed. A value carrying a complete,
+  correctly delimited marker still arrives as inert text, whether it sits in the outer message,
+  a nested one, or a referenced body. Marker-*looking* prose without NUL is **not** stripped
+  (option 4 was rejected: `MSG_END` is plausible prose). The key's type is unexported, so no
+  caller can mark a context as nested.
+- **An empty or self-closing message swallowed the next message.** The end marker was written
+  only when the tag had children. So `{~exons.message role="user"~}{~/exons.message~}` (or
+  `role="user" /~}`) left an unterminated start marker, and the following system message came
+  back as *user* content carrying marker text. Found while fixing the above, because one function
+  now writes both markers. An empty message now yields an empty message at top level and
+  nothing when nested.
+
+### Behaviour change — read this before repinning
+
+- Output for a nested message changes from marker-text-in-content to content-only. A consumer
+  that post-processed the leaked `MSG_START:` text (none known) loses it.
+- An empty or self-closing top-level message now shows up as a `Message` with empty `Content`.
+  Before, it and the message after it merged into one corrupt message.
+- A nested message's role is still validated. `role="narrator"` inside a message is refused as it
+  is at top level, and its `onerror=` governs the refusal.
+
 ## [0.34.0] - 2026-09-26
 
 DC22-refchain — `{~exons.ref~}` resolves the whole chain. Reported as vAudience/atlas#696.
