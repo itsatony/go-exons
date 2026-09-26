@@ -7,13 +7,21 @@
 # turns an honest refactor into a red build.
 COVERAGE_THRESHOLD := 88
 
+# ⛔ The linter is PINNED and run through `go run`, never as a bare `golangci-lint`.
+# A bare call takes whatever is on PATH, and the shared binary on at least one of our build hosts
+# is v1 — which refuses this repo's v2 configuration with "you are using a configuration file for
+# golangci-lint v2 with golangci-lint v1" and fails the gate for a reason that has nothing to do
+# with the code. ⭐ A gate whose verdict depends on the machine is not a gate.
+GOLANGCI_LINT_VERSION := v2.12.2
+GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+
 # Run all tests with race detection
 test:
 	go test -v -race ./...
 
 # Run linter (matches CI exactly)
 lint:
-	golangci-lint run ./...
+	$(GOLANGCI_LINT) run ./...
 
 # Run tests with coverage report
 cover:

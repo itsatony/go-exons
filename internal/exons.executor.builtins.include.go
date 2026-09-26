@@ -6,6 +6,19 @@ import (
 
 // TemplateExecutor is the interface for executing nested templates.
 // This is used by IncludeResolver and InheritanceResolver to execute registered templates.
+// ParentAwareTemplateExecutor is the optional richer contract an engine may implement: execute a
+// registered template while carrying the CALLING context's reference frame and resolvers, rather
+// than re-deriving them from the engine. An engine that does not implement it keeps the older
+// behaviour, in which an include resets both.
+type ParentAwareTemplateExecutor interface {
+	ExecuteTemplateWithParent(
+		ctx context.Context,
+		name string,
+		data map[string]any,
+		parent interface{},
+	) (string, error)
+}
+
 type TemplateExecutor interface {
 	ExecuteTemplate(ctx context.Context, name string, data map[string]any) (string, error)
 	HasTemplate(name string) bool
@@ -68,9 +81,20 @@ func (r *IncludeResolver) Resolve(ctx context.Context, execCtx interface{}, attr
 	// Build context data for child template
 	childData := r.buildChildData(tmplCtx, attrs)
 
-	// Execute the template
-	// Note: The engine's ExecuteTemplate will create a new context with depth+1
-	result, err := engine.ExecuteTemplate(ctx, templateName, childData)
+	// Execute the template.
+	//
+	// ⛔ The parent context goes WITH it when the engine can take it. The included template gets
+	// a fresh context either way, and a fresh context used to mean the caller's reference frame
+	// (depth + chain) and its per-execution spec resolver were thrown away — which made
+	// {~exons.include~} a hole straight through the v0.34.0 reference guards. See
+	// Engine.ExecuteTemplateWithParent.
+	var result string
+	var err error
+	if parentAware, isParentAware := engineInterface.(ParentAwareTemplateExecutor); isParentAware {
+		result, err = parentAware.ExecuteTemplateWithParent(ctx, templateName, childData, tmplCtx)
+	} else {
+		result, err = engine.ExecuteTemplate(ctx, templateName, childData)
+	}
 	if err != nil {
 		return "", NewBuiltinError(err.Error(), TagNameInclude)
 	}

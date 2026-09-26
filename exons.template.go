@@ -79,6 +79,21 @@ func (t *Template) ExecuteWithContext(ctx context.Context, execCtx *Context) (st
 		execCtx = execCtx.WithEngine(t.engine)
 	}
 
+	// And the engine's spec resolver, when the context carries none.
+	//
+	// ⛔ Without this, Template.Execute and ExecuteAndExtractMessages could not resolve a single
+	// {~exons.ref~} — only Engine.Execute injected the adapter — so the chat-shaped entry point
+	// answered "spec resolver not available in context" while the release notes advertised
+	// reference chains. ⭐ A capability wired on one entry point and absent from its sibling is
+	// the same defect as one wired nowhere; it is just harder to notice.
+	if execCtx != nil && execCtx.SpecResolver() == nil {
+		if eng, ok := t.engine.(*Engine); ok && eng != nil {
+			if adapter := eng.getSpecAdapter(); adapter != nil {
+				execCtx = execCtx.WithSpecResolver(adapter)
+			}
+		}
+	}
+
 	// Resolve inheritance if the template extends another template.
 	//
 	// Every non-nil outcome error is returned. Two of the three used to be swallowed here — an

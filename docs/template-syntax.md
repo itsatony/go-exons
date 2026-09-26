@@ -424,6 +424,95 @@ did-you-mean suggestions drawn from the declared names.
 {~exons.for each="s" in="input.sources"~}...{~/exons.for~}
 ```
 
+## Built-in reference tag: `{~exons.ref~}` (v0.34.0)
+
+`{~exons.ref slug="my-fragment" /~}` pulls another document in through the engine's
+`SpecResolver`. Since **v0.34.0** the referenced body is **parsed and executed**, not spliced in
+as text.
+
+Before v0.34.0 it was spliced. A fragment's own `{~exons.var~}`, `{~exons.now~}` or nested
+`{~exons.ref~}` therefore reached the reader as literal tags — while `{~exons.include~}`, the tag
+that looks like its sibling, has always executed what it included.
+
+### What a referenced body can see
+
+- **The caller's context.** Verbatim splicing already implied caller scope: the body became part
+  of the calling document. A fragment reads the data of the document that pulled it in.
+- **Its own declared input defaults**, layered *underneath* whatever the caller bound. The caller
+  always wins; the reference supplies the fallback — the same direction as template inheritance,
+  and deliberately the same function (`mergeInputBinding`), so there is one rule rather than two
+  that can disagree.
+- Those defaults do **not** leak back to the caller. The reference renders in a child context.
+
+```text
+caller data: {"input": {"style": "locker"}}
+
+fragment "tone"  (declares input style, default "förmlich")
+  body: Ton: {~exons.var name="input.style" /~}
+
+{~exons.ref slug="tone" /~}   →  Ton: locker        (the caller bound it)
+{~exons.ref slug="tone" /~}   →  Ton: förmlich      (with nothing bound)
+```
+
+### Bounds
+
+Rendering a reference pushes a **frame** — depth + 1, and the slug onto the chain. Two guards
+that existed since the go-prompty port but could never fire are live as a result:
+
+- **Depth.** `RefMaxDepth` (10) bounds the chain. A distinct slug per level is what the cycle
+  check structurally cannot catch, which is why the depth limit is not redundant with it.
+- **Cycles.** An ancestor repeating in the chain refuses and **names the chain**
+  (`a -> b -> a`). A diamond — the same slug twice *side by side* — is legal and is the ordinary
+  reason to have fragments at all.
+
+Both refusals travel through the tag error funnel, so `onerror=` and `default=` govern them.
+
+### Two failures, two messages
+
+| message | meaning | where to look |
+|---|---|---|
+| `referenced spec not found` | **this** slug did not resolve | the reference |
+| `referenced spec could not be rendered` | the slug resolved and its body failed | the referenced document |
+
+⭐ **The split is per level, not per chain.** If `a` resolves and the reference *inside* `a` does
+not, the outer frame says *could not be rendered* and names `a`, and the inner frame says *not
+found* and names the missing slug. Read the innermost message — it is the one about the slug.
+
+### Through an `{~exons.include~}`
+
+A reference frame travels **through** an include, so `a` → include `t` → ref `a` is detected as a
+cycle rather than recursing until the include depth runs out. The calling context's spec resolver
+travels with it, so an included template can resolve references even when the resolver was put on
+the context rather than on the engine.
+
+### `{~exons.message~}` inside a referenced body
+
+Valid at **top level**: a fragment may define whole messages and `ExecuteAndExtractMessages` reads
+them.
+
+⚠ **Not valid nested inside another message.** A message tag strips NUL from its children to stop
+marker injection, so an inner message's delimiters are removed and its marker *text* survives into
+the outer message's content. The nested-message behaviour predates v0.34.0; what changed is that
+executing the body makes it reachable. Tracked as go-exons#5.
+
+### `WithRefVerbatim()` — the escape hatch
+
+⛔ **A migration path, not a configuration preference.** It restores the pre-0.34.0 splice, and
+exists for one shape of `SpecResolver`: one whose `ResolveSpec` returns text that is **already
+fully rendered**, and which therefore performs its own recursion, cycle detection and budget.
+
+Re-rendering rendered text is a no-op right up until that text contains a literal `{~…~}` — a
+quoted example, a fragment about the syntax itself, a user's own prose — and then it is an
+unknown-tag failure where there used to be inert text.
+
+⚠ **With it set, the depth limit and the circular check do not apply**, because nothing pushes a
+frame for them to read. A resolver that opts in owns those bounds itself. The fix is to return
+the raw body and let go-exons resolve the chain.
+
+⚠ **Output-size accounting restarts per frame**, so the executor's ceiling is effectively
+per-frame rather than per-document. It is bounded by `RefMaxDepth`, but it is a change in what
+the cap means.
+
 ## Frontmatter keys read by these tags
 
 | Key | Since | Meaning |

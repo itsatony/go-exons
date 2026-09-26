@@ -100,8 +100,12 @@ func (r *ResolverFunc) Validate(attrs Attributes) error {
 	return nil
 }
 
-// SpecResolverAdapter wraps a SpecResolver to implement SpecBodyResolver.
-// This adapter extracts only the template body from the full SpecResolver response.
+// SpecResolverAdapter wraps a SpecResolver to implement SpecBodyResolver and, since v0.34.0,
+// internal.SpecRefRenderer — see RenderSpecRef for what the second one buys.
+//
+// It is deliberately stateless beyond the wrapped resolver: the engine a referenced body is
+// rendered through comes from the execution context, so an adapter built by hand behaves
+// exactly like the one Engine.SetSpecResolver installs.
 type SpecResolverAdapter struct {
 	resolver SpecResolver
 }

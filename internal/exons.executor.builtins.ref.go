@@ -65,11 +65,48 @@ func (r *RefResolver) Resolve(ctx context.Context, execCtx interface{}, attrs At
 	chain := getRefChain(execCtx)
 	for _, refSlug := range chain {
 		if refSlug == slug {
-			return "", NewRefCircularError(slug, append(chain, slug))
+			// Appended into a FRESH slice. `chain` is the context's live one, and Context.fromState
+			// and Context.Child alias it rather than copying, so appending in place is safe only
+			// while every producer happens to hand back a slice with no spare capacity. That is an
+			// invariant nobody is enforcing, and the failure it buys is two sibling frames writing
+			// over each other's chain.
+			reported := make([]string, 0, len(chain)+1)
+			reported = append(reported, chain...)
+			reported = append(reported, slug)
+			return "", NewRefCircularError(slug, reported)
 		}
 	}
 
-	// Resolve the spec
+	// Resolve the spec — and, when the resolver can, RENDER it.
+	//
+	// Until v0.34.0 this returned the body and executeTag spliced it in as text, so a referenced
+	// document's own {~exons.ref~}, {~exons.var~} and {~exons.now~} reached the output as literal
+	// tags. ⭐ The two guards directly above are the evidence that this was never the intent: the
+	// depth limit and the circular-chain check could not fire, because nothing pushed a frame —
+	// they are dead code describing the recursion the port never wired (vAudience/atlas#696).
+	//
+	// A renderer implementation pushes that frame (depth+1, chain+slug) and executes the body in
+	// a context derived from this one, which is what makes both guards live for the first time.
+	if renderer, isRenderer := resolver.(SpecRefRenderer); isRenderer {
+		out, lookupFailed, err := renderer.RenderSpecRef(ctx, execCtx, slug, version)
+		if err == nil {
+			return out, nil
+		}
+		// ⛔ Two conditions, two messages. "Not found" sends an author to check the slug;
+		// "could not be rendered" sends them into the referenced document. Collapsing them
+		// would be this codebase's most-repeated defect committed on purpose.
+		if lookupFailed {
+			return "", NewBuiltinError(AppendHint(ErrMsgRefNotFound, HintRefNotFound), TagNameRef).
+				WithMetadata(LogFieldSpecSlug, slug).
+				WithMetadata(LogFieldSpecVersion, version).
+				WithCause(err)
+		}
+		return "", NewBuiltinError(ErrMsgRefRenderFailed, TagNameRef).
+			WithMetadata(LogFieldSpecSlug, slug).
+			WithMetadata(LogFieldSpecVersion, version).
+			WithCause(err)
+	}
+
 	body, err := resolver.ResolveSpecBody(ctx, slug, version)
 	if err != nil {
 		return "", NewBuiltinError(AppendHint(ErrMsgRefNotFound, HintRefNotFound), TagNameRef).
@@ -93,6 +130,32 @@ func (r *RefResolver) Validate(attrs Attributes) error {
 type SpecBodyResolver interface {
 	// ResolveSpecBody looks up a spec by slug and version and returns its template body.
 	ResolveSpecBody(ctx context.Context, slug string, version string) (string, error)
+}
+
+// SpecRefRenderer is the richer contract a spec resolver MAY implement: resolve the reference
+// and return its RENDERED output, executed in a context derived from execCtx with the reference
+// frame pushed.
+//
+// It is optional on purpose. A resolver that implements only SpecBodyResolver keeps the pre-
+// v0.34.0 verbatim splice, which is the honest behaviour for one that already returns rendered
+// text — re-executing rendered text is a no-op right up until the rendered text contains a
+// literal {~…~}, and then it is an unknown-tag failure where there used to be inert prose.
+//
+// ⛔ The classification travels BESIDE the error, never inside it. A sentinel wrapped into the
+// error was the obvious spelling and was wrong: BuiltinError and ExecutorError both expose their
+// cause through Unwrap, so an INNER reference's lookup sentinel stayed reachable by errors.Is
+// from every outer frame — and a four-deep chain reported "referenced spec not found" four times,
+// each naming a slug that resolves perfectly. ⭐ A sentinel that travels answers a question about
+// the whole chain when it was asked about one link.
+type SpecRefRenderer interface {
+	// RenderSpecRef returns the rendered output, or an error. lookupFailed is true only when it
+	// was THIS reference's own lookup that failed — it is decided by the only code that knows.
+	RenderSpecRef(
+		ctx context.Context,
+		execCtx interface{},
+		slug string,
+		version string,
+	) (out string, lookupFailed bool, err error)
 }
 
 // SpecResolverAccessor provides access to a spec resolver from context.

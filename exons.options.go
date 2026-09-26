@@ -19,6 +19,7 @@ type engineConfig struct {
 	envDenylist    []string // glob patterns; matching env vars are blocked
 	envDisabled    bool     // completely disable {~exons.env~}
 	markdownFences bool     // markdown code fences are inert regions
+	refVerbatim    bool     // {~exons.ref~} splices the referenced body as TEXT instead of rendering it
 }
 
 // defaultEngineConfig returns the default engine configuration.
@@ -124,5 +125,24 @@ func WithEnvDisabled() Option {
 func WithMarkdownFences() Option {
 	return func(c *engineConfig) {
 		c.markdownFences = true
+	}
+}
+
+// WithRefVerbatim makes {~exons.ref~} splice the referenced document's body into the output as
+// TEXT, without parsing or executing it — the only behaviour go-exons had before v0.34.0.
+//
+// ⛔ This is a migration path, not a configuration preference. It exists for one shape of
+// SpecResolver: one whose ResolveSpec returns text that is ALREADY fully rendered, and which
+// therefore performs its own reference recursion, cycle detection and budget. Rendering such a
+// body a second time is a no-op right up until it contains a literal {~…~} — a quoted example, a
+// fragment about the syntax itself, a user's own prose — and then it is an unknown-tag failure
+// where there used to be inert text.
+//
+// ⚠ With it set, RefMaxDepth and the circular-reference check DO NOT APPLY, because nothing
+// pushes a reference frame for them to read. A resolver that opts in owns those bounds itself.
+// The fix is to return the raw body and let go-exons resolve the chain; see RenderSpecRef.
+func WithRefVerbatim() Option {
+	return func(c *engineConfig) {
+		c.refVerbatim = true
 	}
 }

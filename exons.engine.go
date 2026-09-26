@@ -25,7 +25,20 @@ type Engine struct {
 	specResolver SpecResolver         // Spec resolver for reference resolution
 	specAdapter  *SpecResolverAdapter // Cached adapter (avoids per-call allocation)
 	specResMu    sync.RWMutex         // Protects specResolver and specAdapter
+
+	// bodyCache memoizes ParseBody by the body's own TEXT. Content-keyed, so it cannot serve a
+	// stale answer: a changed body is a different key. It exists because {~exons.ref~} began
+	// parsing on every resolution in v0.34.0 — an {~exons.for~} over 500 rows containing one
+	// reference lexed and parsed the same fragment 500 times, where it used to be a map lookup.
+	// ⚠ Bounded and CLEARED when full rather than evicted by age: fragments are few and stable,
+	// so a simple cap is predictable, and an LRU here would be machinery serving no measured need.
+	bodyCache   map[string]*Template
+	bodyCacheMu sync.RWMutex
 }
+
+// maxBodyCacheEntries bounds Engine.bodyCache. Reached only by an engine resolving hundreds of
+// DISTINCT fragment bodies, at which point the cache is clearing more than it is serving anyway.
+const maxBodyCacheEntries = 256
 
 // New creates a new exons Engine with the given options.
 func New(opts ...Option) (*Engine, error) {
@@ -171,6 +184,56 @@ func (e *Engine) Parse(source string) (*Template, error) {
 		spec.Body = templateBody
 	}
 
+	return e.parseTemplateBody(source, templateBody, lexerConfig, spec)
+}
+
+// ParseBody parses a source that is ALREADY a template body — one that carries no frontmatter
+// because whoever produced it has already taken it off.
+//
+// ⛔ It is not Parse minus a feature; it is Parse minus a MISREADING. Parse runs
+// ExtractConfigBlock, so a body whose first line is `---` — an ordinary markdown horizontal
+// rule — is handed to a YAML scanner, and a fragment that renders perfectly today becomes a
+// config-block error. A referenced spec's Body is exactly such a source: the producer stripped
+// the frontmatter, so any leading `---` left in it is CONTENT.
+func (e *Engine) ParseBody(body string) (*Template, error) {
+	e.bodyCacheMu.RLock()
+	cached, hit := e.bodyCache[body]
+	e.bodyCacheMu.RUnlock()
+	if hit {
+		return cached, nil
+	}
+
+	lexerConfig := internal.LexerConfig{
+		OpenDelim:      e.config.openDelim,
+		CloseDelim:     e.config.closeDelim,
+		MarkdownFences: e.config.markdownFences,
+	}
+	tmpl, err := e.parseTemplateBody(body, body, lexerConfig, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	e.bodyCacheMu.Lock()
+	if e.bodyCache == nil {
+		e.bodyCache = make(map[string]*Template, 16)
+	}
+	if len(e.bodyCache) >= maxBodyCacheEntries {
+		e.bodyCache = make(map[string]*Template, 16)
+	}
+	e.bodyCache[body] = tmpl
+	e.bodyCacheMu.Unlock()
+
+	return tmpl, nil
+}
+
+// parseTemplateBody is the half of Parse that runs AFTER any frontmatter has been accounted for.
+// Factored out so ParseBody and Parse cannot drift in how they lex and parse the same text.
+func (e *Engine) parseTemplateBody(
+	source string,
+	templateBody string,
+	lexerConfig internal.LexerConfig,
+	spec *Spec,
+) (*Template, error) {
 	// Create lexer with configured delimiters
 	lexer := internal.NewLexerWithConfig(templateBody, lexerConfig, e.logger)
 
@@ -437,6 +500,42 @@ func (e *Engine) TemplateCount() int {
 // It handles depth tracking for nested template inclusion.
 // Note: This method creates a copy of the data map to avoid mutating caller's data.
 func (e *Engine) ExecuteTemplate(ctx context.Context, name string, data map[string]any) (string, error) {
+	return e.executeRegisteredTemplate(ctx, name, data, nil)
+}
+
+// ExecuteTemplateWithParent executes a registered template CARRYING the calling context's
+// reference frame, spec resolver and template-source resolver. It implements
+// internal.ParentAwareTemplateExecutor, which {~exons.include~} uses when the engine offers it.
+//
+// ⛔ Without it, {~exons.include~} is a hole straight through the v0.34.0 reference guards, and
+// two distinct ones:
+//
+//   - The frame RESETS. `a` refs a template that refs `a` is a real cycle, and ExecuteTemplate's
+//     fresh context put refDepth back to 0 and the chain back to empty on every hop — so it
+//     recursed until the INCLUDE depth ran out, reported a depth message about the wrong
+//     construct, and never named the cycle. RefMaxDepth was bypassed entirely.
+//   - The RESOLVER resets. ExecuteTemplate re-reads the engine's own adapter, which is nil
+//     unless SetSpecResolver was called — and vaichat2 and aigentflow deliberately do not call
+//     it, injecting their adapter per execution instead. An included template that refs a spec
+//     failed with "spec resolver not available in context" on exactly their path.
+//
+// ⭐ Both are the same shape: state that belongs to the RENDER was re-derived from the ENGINE.
+func (e *Engine) ExecuteTemplateWithParent(
+	ctx context.Context,
+	name string,
+	data map[string]any,
+	parent interface{},
+) (string, error) {
+	return e.executeRegisteredTemplate(ctx, name, data, parent)
+}
+
+// executeRegisteredTemplate is the body both entry points share. parent may be nil.
+func (e *Engine) executeRegisteredTemplate(
+	ctx context.Context,
+	name string,
+	data map[string]any,
+	parent interface{},
+) (string, error) {
 	tmpl, ok := e.GetTemplate(name)
 	if !ok {
 		return "", NewTemplateNotFoundError(name)
@@ -469,6 +568,20 @@ func (e *Engine) ExecuteTemplate(ctx context.Context, name string, data map[stri
 	adapter := e.getSpecAdapter()
 	if adapter != nil {
 		execCtx = execCtx.WithSpecResolver(adapter)
+	}
+
+	// The CALLER's render state wins over anything re-derived from the engine — see the doc
+	// comment on ExecuteTemplateWithParent for the two defects that came from not carrying it.
+	if p, pok := parent.(*Context); pok && p != nil {
+		execCtx = execCtx.WithRefDepth(p.RefDepth()).WithRefChain(p.RefChain())
+		if r := p.SpecResolver(); r != nil {
+			if sr, sok := r.(SpecBodyResolver); sok {
+				execCtx = execCtx.WithSpecResolver(sr)
+			}
+		}
+		if ts := p.TemplateSourceResolver(); ts != nil {
+			execCtx = execCtx.WithTemplateSourceResolver(ts)
+		}
 	}
 
 	return tmpl.ExecuteWithContext(ctx, execCtx)

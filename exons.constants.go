@@ -1017,3 +1017,17 @@ func DefaultEnvDenyPatterns() []string {
 		"*_DSN",
 	}
 }
+
+// Log message and fields for the {~exons.ref~} renderer (v0.34.0).
+const (
+	// LogMsgRefVerbatimNoEngine is emitted when a reference degrades to the pre-v0.34.0
+	// verbatim splice because the execution context carries no *Engine to render through.
+	// ⚠ It is a WARN and not silent on purpose: the output is literal {~…~} tags, which read
+	// as an authoring mistake rather than as the wiring fault they are.
+	LogMsgRefVerbatimNoEngine = "exons.ref: no engine on the context, splicing the referenced body verbatim"
+
+	// LogFieldSpecSlug and LogFieldSpecVersion mirror the internal package's field names so a
+	// log line and the error metadata for the same reference use one vocabulary.
+	LogFieldSpecSlug    = "spec_slug"
+	LogFieldSpecVersion = "spec_version"
+)

@@ -569,6 +569,11 @@ const (
 	ErrMsgRefDepthExceeded = "reference resolution depth exceeded"
 	ErrMsgRefNoResolver    = "spec resolver not available in context"
 	ErrMsgRefInvalidSlug   = "invalid spec slug format"
+	// ErrMsgRefRenderFailed is the referenced body failing to RENDER, which is a different
+	// condition from the slug failing to RESOLVE and demands the opposite remedy: fix the
+	// referenced document, not the reference. Before v0.34.0 there was only one ref failure
+	// to name, because a referenced body was spliced as text and could not fail.
+	ErrMsgRefRenderFailed = "referenced spec could not be rendered"
 )
 
 // Log messages for reference resolver
