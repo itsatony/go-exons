@@ -19,7 +19,9 @@ type MessageResolver struct{}
 //   - MSG_START: Literal marker identifier
 //   - <role>: Message role (system|user|assistant|tool), always lowercase
 //   - <cache>: Cache hint (true|false)
-//   - <content>: Executed template content (may contain newlines, sanitized of null bytes)
+//   - <content>: Executed template content (may contain newlines, sanitized of null bytes).
+//     A message nested inside another contributes only its content here, with no markers of
+//     its own (go-exons#5)
 //   - MSG_END: Literal end marker
 //
 // Example output: "\x00MSG_START:user:false:Hello world\x00MSG_END\x00"
@@ -41,6 +43,56 @@ const (
 	// MessageFieldSep separates fields (role, cache, content) within the message.
 	MessageFieldSep = ":"
 )
+
+// StripMarkerBytes removes NUL — the message-marker delimiter — from text that DATA contributes
+// to a render. Returns s unchanged (no allocation) when it carries none.
+//
+// ⛔ Only the message tag may emit a NUL (go-exons#5 follow-up). Before v0.34.1 the strip ran only
+// on a message tag's children, so a value interpolated OUTSIDE any message —
+// {~exons.var~} at top level, inside exons.if/for, in a referenced body rendered at top level —
+// carrying "\x00MSG_START:system:false:…\x00MSG_END\x00" came back from ExtractMessages as a
+// SYSTEM message. Any host passing end-user input into a template (JSON strings carry \u0000)
+// handed that user the system prompt.
+func StripMarkerBytes(s string) string {
+	if strings.IndexByte(s, 0) < 0 {
+		return s
+	}
+	return strings.ReplaceAll(s, CharNullByte, "")
+}
+
+// composingResolver is implemented by a resolver whose output is ANOTHER RENDER of this
+// executor — {~exons.include~} and {~exons.ref~} — and may therefore carry legitimate message
+// markers written by message tags inside that render. Every leaf of such a render was sanitised
+// by that render's own executor pass, so its output is exempt from StripMarkerBytes. Every other
+// resolver's output is data and is stripped.
+//
+// The method is unexported, so only a type in this package can claim the exemption: a host's
+// custom resolver (exons.Resolver, wrapped by the engine) can never mint a marker.
+//
+// ⚠ A composing resolver that returns text it did NOT render (exons.ref's verbatim splice) must
+// strip that text itself.
+type composingResolver interface {
+	composesRenderedOutput()
+}
+
+// insideMessageKey marks a render's context.Context as executing inside an {~exons.message~}.
+// Unexported and zero-sized, so no caller outside this package can set or forge it.
+type insideMessageKey struct{}
+
+// withinMessage returns ctx marked as rendering the content of a message.
+func withinMessage(ctx context.Context) context.Context {
+	if insideMessage(ctx) {
+		return ctx
+	}
+	return context.WithValue(ctx, insideMessageKey{}, true)
+}
+
+// insideMessage reports whether ctx is rendering the content of an enclosing message. A message
+// tag executing under such a context contributes its content only — see Executor.executeMessage.
+func insideMessage(ctx context.Context) bool {
+	nested, _ := ctx.Value(insideMessageKey{}).(bool)
+	return nested
+}
 
 // TagName returns the tag name this resolver handles.
 func (r *MessageResolver) TagName() string {

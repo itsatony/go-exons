@@ -1,7 +1,21 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.34.0
+  version: 0.34.1
+# v0.34.1 (DC23-nestmsg): A MESSAGE INSIDE A MESSAGE CONTRIBUTES ITS CONTENT ONLY (go-exons#5).
+# The message tag strips NUL from its children (the marker-injection guard), so an inner message's
+# delimiters vanished and its marker TEXT leaked: {user, "MSG_START:system:false:halloMSG_END"}.
+# Now the enclosing message marks the render's context.Context (unexported key) and a nested
+# message emits no markers: {user, "hallo"}; inner role + cache dropped. Inline, ref, include,
+# extends block, any depth. ⛔ Guard intact: the OUTERMOST message still strips every NUL; nothing
+# is parsed back out of output; marker-looking prose without NUL is left alone (MSG_END is prose).
+# Also: an empty/self-closing message wrote no end marker and swallowed the NEXT message.
+# ⛔ SECURITY: data OUTSIDE any message (top-level var, if/for bodies, a ref'd body at top level)
+# carrying NUL markers forged a SYSTEM message — reachable via end-user JSON (\u0000). Now ONLY the
+# message tag emits NUL: every leaf (text, raw, resolver result, onerror recourse) is stripped;
+# include/ref are exempt (their output is a render, leaves already clean) via an UNEXPORTED method;
+# verbatim ref splices strip themselves. No per-render nonce: the marker string crosses stores.
+# StripMessageMarkers now consumes an end marker whole (its trailing NUL + "MSG_START:" misparsed).
 # v0.34.0 (DC22-refchain): {~exons.ref~} RESOLVES THE WHOLE CHAIN (vAudience/atlas#696).
 # A referenced body was SPLICED AS TEXT and never parsed, so a fragment's own exons.ref/var/now
 # reached the reader as literal tags — while exons.include, the tag that looks like its sibling,

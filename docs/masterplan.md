@@ -35,6 +35,7 @@ and prompts — safe to author by hand and by LLMs.
 | DC16-timbre | 0.27.0 | An agent can say how it should SOUND: a typed top-level `speech:` block, `transcription:` declared in the schema only, and the silent `requirements:` export loss that trap had already caused | shipped 2026-08-28 |
 | DC19-concord | 0.31.0 | `requirements.resources` (logical resources, `://` refused); the schema requires `description`, declares `requirements`, states the type prohibitions, and an agreement test holds it to `Parse` (aigentverse#80, #72) | 2026-09-23 |
 | DC21-environ | 0.33.0 | `requirements.environment` — code execution, informational packages, network — valid on skill and agent, rendered into the Agent-Skills `compatibility` field (go-exons#4, atlas#674) | 2026-09-25 |
+| DC23-nestmsg | 0.34.1 | A `{~exons.message~}` nested inside another (inline, ref, include, extends) contributes its content only instead of leaking marker text; an empty message no longer swallows the next (go-exons#5) | 2026-09-27 |
 
 ## DC11-verbatim — Syntax safety (0.15.0)
 

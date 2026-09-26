@@ -120,7 +120,9 @@ func (e *Executor) executeNodes(ctx context.Context, nodes []Node, execCtx Conte
 func (e *Executor) executeNode(ctx context.Context, node Node, execCtx ContextAccessor, depth int) (string, error) {
 	switch n := node.(type) {
 	case *TextNode:
-		return n.Content, nil
+		// Template text is a leaf that can reach the output — a referenced body's text is
+		// another author's — so it may not carry a marker delimiter either. See StripMarkerBytes.
+		return StripMarkerBytes(n.Content), nil
 
 	case *TagNode:
 		return e.executeTag(ctx, n, execCtx, depth)
@@ -416,7 +418,7 @@ func (e *Executor) executeTag(ctx context.Context, tag *TagNode, execCtx Context
 
 	// Handle raw blocks specially
 	if tag.IsRaw() {
-		return tag.RawContent, nil
+		return StripMarkerBytes(tag.RawContent), nil
 	}
 
 	// Look up resolver
@@ -447,6 +449,18 @@ func (e *Executor) executeTag(ctx context.Context, tag *TagNode, execCtx Context
 		return e.handleTagError(tagSite(tag), execCtx, NewExecutorErrorWithCause(ErrMsgResolverFailed, tag.Name, tag.Pos(), err))
 	}
 
+	if tag.Name == TagNameMessage {
+		return e.executeMessage(ctx, tag, execCtx, depth, result)
+	}
+
+	// ⛔ Only the message tag may emit a marker. Every other resolver's output is DATA — a var,
+	// an env value, an input, a host resolver — and is stripped of the delimiter here, at the one
+	// place all of them pass through. The exemption is the composing resolvers (include, ref),
+	// whose output is another render of this executor with its own leaves already sanitised.
+	if _, composes := resolver.(composingResolver); !composes {
+		result = StripMarkerBytes(result)
+	}
+
 	// For block tags with children, process children
 	if !tag.SelfClose && len(tag.Children) > 0 {
 		childResult, err := e.executeNodes(ctx, tag.Children, execCtx, depth+1)
@@ -454,18 +468,54 @@ func (e *Executor) executeTag(ctx context.Context, tag *TagNode, execCtx Context
 			return "", err
 		}
 		// Combine resolver result with children (resolver result comes first)
-		// For message tags, sanitize content and add the end marker after children
-		if tag.Name == TagNameMessage {
-			// Sanitize content to prevent marker injection attacks
-			// Strip null bytes which are used as marker delimiters
-			childResult = strings.ReplaceAll(childResult, CharNullByte, "")
-			return result + childResult + MessageEndMarker, nil
-		}
 		return result + childResult, nil
 	}
 
 	e.logger.Debug(LogMsgResolverComplete, slog.String(LogFieldTag, tag.Name))
 	return result, nil
+}
+
+// executeMessage renders an {~exons.message~} tag. startMarker is what MessageResolver.Resolve
+// returned for it.
+//
+// ⛔ A message INSIDE a message contributes its content and nothing else (go-exons#5). The
+// message tag strips NUL from its children so that DATA can never forge a message boundary, and
+// before v0.34.1 that same guard deleted an inner message's delimiters while leaving their marker
+// TEXT behind, so the caller received `MSG_START:system:false:…MSG_END` as prose. The inner tag
+// therefore knows it is nested — the enclosing message marks the render's context.Context, which
+// is the one value every route into a nested body carries (inline children, {~exons.ref~},
+// {~exons.include~}, an extends block) — and emits no markers to be mangled. Its role and cache
+// hint are dropped: the enclosing message owns both.
+//
+// ⭐ The guard is not weakened by this. Nothing is parsed back out of the children: an inner
+// message simply never writes markers, and the OUTERMOST message still strips every NUL from the
+// whole of its content, including whatever an inner message returned. Marker-looking text that
+// arrives as data stays inert text, exactly as before; it is not stripped, because `MSG_END` is
+// plausible prose.
+//
+// The end marker is written for an empty or self-closing message too. It used to be written only
+// when the tag had children, so `{~exons.message role="user"~}{~/exons.message~}` left an
+// unterminated start marker that swallowed the NEXT message into its own content.
+func (e *Executor) executeMessage(ctx context.Context, tag *TagNode, execCtx ContextAccessor, depth int, startMarker string) (string, error) {
+	nested := insideMessage(ctx)
+
+	content := ""
+	if !tag.SelfClose && len(tag.Children) > 0 {
+		childResult, err := e.executeNodes(withinMessage(ctx), tag.Children, execCtx, depth+1)
+		if err != nil {
+			return "", err
+		}
+		// Sanitize content to prevent marker injection: NUL is the marker delimiter. Every leaf is
+		// already stripped; this also covers what a composing resolver (include, ref) returned,
+		// whose top-level messages would otherwise open inside this one.
+		content = StripMarkerBytes(childResult)
+	}
+
+	e.logger.Debug(LogMsgResolverComplete, slog.String(LogFieldTag, tag.Name))
+	if nested {
+		return content, nil
+	}
+	return startMarker + content + MessageEndMarker, nil
 }
 
 // errorSite is everything the error funnel needs to know about the construct that failed.
@@ -558,7 +608,7 @@ func (e *Executor) handleTagError(site errorSite, execCtx ContextAccessor, err e
 	case ErrorStrategyDefault:
 		// Use the default attribute value if available
 		if defaultVal, hasDefault := site.attr(AttrDefault); hasDefault {
-			return defaultVal, nil
+			return StripMarkerBytes(defaultVal), nil
 		}
 		// No default specified - return empty string
 		return "", nil
@@ -570,7 +620,7 @@ func (e *Executor) handleTagError(site errorSite, execCtx ContextAccessor, err e
 	case ErrorStrategyKeepRaw:
 		// Keep the original tag source
 		if site.RawSource != "" {
-			return site.RawSource, nil
+			return StripMarkerBytes(site.RawSource), nil
 		}
 		// Fallback to empty if no raw source captured
 		return "", nil

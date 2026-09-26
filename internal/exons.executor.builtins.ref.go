@@ -16,6 +16,11 @@ func NewRefResolver() *RefResolver {
 	return &RefResolver{}
 }
 
+// composesRenderedOutput marks a reference's output as another render of this executor, whose
+// message markers are legitimate — see composingResolver. The verbatim paths, which return text
+// nobody rendered, strip it themselves.
+func (r *RefResolver) composesRenderedOutput() {}
+
 // TagName returns the tag name for this resolver.
 func (r *RefResolver) TagName() string {
 	return TagNameRef
@@ -114,7 +119,9 @@ func (r *RefResolver) Resolve(ctx context.Context, execCtx interface{}, attrs At
 			WithMetadata(LogFieldSpecVersion, version)
 	}
 
-	return body, nil
+	// Spliced, not rendered: this is data, and composingResolver exempts it from the executor's
+	// strip — so it is stripped here.
+	return StripMarkerBytes(body), nil
 }
 
 // Validate checks that the required attributes are present.
