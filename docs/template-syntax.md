@@ -424,6 +424,31 @@ did-you-mean suggestions drawn from the declared names.
 {~exons.for each="s" in="input.sources"~}...{~/exons.for~}
 ```
 
+## Built-in output tag: `{~exons.env~}` — OPT-IN (v0.35.0)
+
+`{~exons.env name="X" /~}` reads an environment variable of the process that renders the
+template. **Since v0.35.0 it is disabled by default** (go-exons#7): every known consumer renders
+templates it did not write — third-party agent specs, referenced fragments, caller uploads — and a
+suffix denylist lets an ordinary name (`DATABASE_URL`, an internal hostname) straight through.
+
+| Engine options | `exons.env` behaviour |
+|---|---|
+| none (default) | refused |
+| `WithEnvAllowlist(patterns)` (non-empty) | enabled for matching names only; the denylist is checked first |
+| `WithEnvEnabled()` | enabled for every name the denylist does not block |
+| `WithEnvDenylist(patterns)` | **narrows** an opted-in engine; it never enables the tag by itself |
+| `WithEnvDisabled()` | refused, and wins over `WithEnvEnabled`/`WithEnvAllowlist` in any order |
+
+`WithEnvAllowlist(nil)` clears the allowlist; the tag is then disabled again unless
+`WithEnvEnabled()` was also given. Prefer an allowlist of explicit names over `WithEnvEnabled()`.
+
+A refused tag is an ordinary tag failure and follows the error strategy. Under `throw` (the
+default) the render fails with an error that names `WithEnvAllowlist` and `WithEnvEnabled`, so an
+author who needed the value is told rather than handed an empty string — a `default=` attribute
+does **not** mask the refusal under `throw`. Under `default`, `remove`, `keepraw` and `log` (engine-
+wide or per-tag `onerror=`) the refusal resolves exactly as any other failure does; none of them
+ever yields the variable's value.
+
 ## Built-in reference tag: `{~exons.ref~}` (v0.34.0)
 
 `{~exons.ref slug="my-fragment" /~}` pulls another document in through the engine's

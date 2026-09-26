@@ -97,7 +97,7 @@ func TestIntegration_Include_WithData(t *testing.T) {
 // =============================================================================
 
 func TestIntegration_Env(t *testing.T) {
-	engine := MustNew()
+	engine := MustNew(WithEnvEnabled())
 	ctx := context.Background()
 
 	t.Setenv("EXONS_INTEG_TEST_VAR", "hello")
@@ -108,7 +108,7 @@ func TestIntegration_Env(t *testing.T) {
 }
 
 func TestIntegration_Env_Default(t *testing.T) {
-	engine := MustNew()
+	engine := MustNew(WithEnvEnabled())
 	ctx := context.Background()
 
 	result, err := engine.Execute(ctx, `{~exons.env name="EXONS_MISSING_VAR_XYZ" default="fallback" /~}`, nil)
@@ -685,7 +685,7 @@ func TestIntegration_Include_InheritsParentContext(t *testing.T) {
 // =============================================================================
 
 func TestIntegration_Env_WithRequired(t *testing.T) {
-	engine := MustNew()
+	engine := MustNew(WithEnvEnabled())
 	ctx := context.Background()
 
 	t.Setenv("EXONS_INTEG_REQUIRED", "present")

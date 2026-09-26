@@ -1,7 +1,15 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.34.1
+  version: 0.35.0
+# v0.35.0 (DC24-envoptin): {~exons.env~} IS OPT-IN (go-exons#7). ⚠ BREAKING DEFAULT.
+# Every known consumer renders templates it did not write (aigentverse agents, ref'd fragments,
+# caller uploads), and the old default — enabled behind a SUFFIX denylist — let an ordinary name
+# (DATABASE_URL, an internal hostname) through from the root, a message, a ref'd body or an include.
+# Now refused by default. WithEnvAllowlist(non-empty) opts in for the listed names only;
+# WithEnvEnabled() opts in for every name the denylist allows; WithEnvDenylist only narrows an
+# opted-in engine; WithEnvDisabled() still works and wins in any order. Under throw a refused tag
+# fails naming the enabling option (a default= does not mask it); other strategies apply normally.
 # v0.34.1 (DC23-nestmsg): A MESSAGE INSIDE A MESSAGE CONTRIBUTES ITS CONTENT ONLY (go-exons#5).
 # The message tag strips NUL from its children (the marker-injection guard), so an inner message's
 # delimiters vanished and its marker TEXT leaked: {user, "MSG_START:system:false:halloMSG_END"}.

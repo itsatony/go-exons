@@ -36,6 +36,7 @@ and prompts — safe to author by hand and by LLMs.
 | DC19-concord | 0.31.0 | `requirements.resources` (logical resources, `://` refused); the schema requires `description`, declares `requirements`, states the type prohibitions, and an agreement test holds it to `Parse` (aigentverse#80, #72) | 2026-09-23 |
 | DC21-environ | 0.33.0 | `requirements.environment` — code execution, informational packages, network — valid on skill and agent, rendered into the Agent-Skills `compatibility` field (go-exons#4, atlas#674) | 2026-09-25 |
 | DC23-nestmsg | 0.34.1 | A `{~exons.message~}` nested inside another (inline, ref, include, extends) contributes its content only instead of leaking marker text; an empty message no longer swallows the next (go-exons#5) | 2026-09-27 |
+| DC24-envoptin | 0.35.0 | `{~exons.env~}` is opt-in: refused by default; `WithEnvAllowlist` (listed names) or `WithEnvEnabled` opt in; `WithEnvDisabled` still wins; a Throw refusal names the option (go-exons#7) | 2026-09-27 |
 
 ## DC11-verbatim — Syntax safety (0.15.0)
 

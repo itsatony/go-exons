@@ -786,23 +786,24 @@ func TestEngine_Execute_Env(t *testing.T) {
 		os.Setenv("TEST_EXONS_VAR", "hello_env")
 		defer os.Unsetenv("TEST_EXONS_VAR")
 
-		engine := MustNew()
+		engine := MustNew(WithEnvEnabled())
 		result, err := engine.Execute(ctx, `{~exons.env name="TEST_EXONS_VAR" /~}`, nil)
 		require.NoError(t, err)
 		assert.Equal(t, "hello_env", result)
 	})
 
 	t.Run("env variable with default", func(t *testing.T) {
-		engine := MustNew()
+		engine := MustNew(WithEnvEnabled())
 		result, err := engine.Execute(ctx, `{~exons.env name="NONEXISTENT_EXONS_VAR_12345" default="fallback" /~}`, nil)
 		require.NoError(t, err)
 		assert.Equal(t, "fallback", result)
 	})
 
 	t.Run("env required variable missing", func(t *testing.T) {
-		engine := MustNew()
+		engine := MustNew(WithEnvEnabled())
 		_, err := engine.Execute(ctx, `{~exons.env name="NONEXISTENT_EXONS_VAR_12345" required="true" /~}`, nil)
-		assert.Error(t, err)
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "disabled", "must fail on the missing var, not on opt-in")
 	})
 }
 

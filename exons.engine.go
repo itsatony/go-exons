@@ -55,7 +55,7 @@ func New(opts ...Option) (*Engine, error) {
 	registry := internal.NewRegistry(logger)
 	builtinConfig := internal.BuiltinConfig{
 		Env: internal.EnvConfig{
-			Disabled:  config.envDisabled,
+			Disabled:  !config.envAccessEnabled(),
 			Allowlist: config.envAllowlist,
 			Denylist:  config.envDenylist,
 		},

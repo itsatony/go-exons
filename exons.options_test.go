@@ -35,7 +35,7 @@ func TestWithEnvDisabled(t *testing.T) {
 
 func TestWithEnvDenylist(t *testing.T) {
 	t.Run("custom denylist blocks matching vars", func(t *testing.T) {
-		engine, err := New(WithEnvDenylist([]string{"HOME"}))
+		engine, err := New(WithEnvEnabled(), WithEnvDenylist([]string{"HOME"}))
 		require.NoError(t, err)
 
 		source := `{~exons.env name="HOME" /~}`
@@ -48,7 +48,7 @@ func TestWithEnvDenylist(t *testing.T) {
 	})
 
 	t.Run("nil denylist allows all", func(t *testing.T) {
-		engine, err := New(WithEnvDenylist(nil))
+		engine, err := New(WithEnvEnabled(), WithEnvDenylist(nil))
 		require.NoError(t, err)
 
 		// PATH is always set and would normally be blocked by default patterns
