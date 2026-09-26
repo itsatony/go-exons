@@ -999,7 +999,8 @@ const (
 // DefaultEnvDenyPatterns returns the default glob patterns for environment variable
 // names that are blocked to prevent accidental secret exfiltration.
 // Returns a fresh slice each call — callers cannot mutate the defaults.
-// Override with WithEnvDenylist(nil) to allow all, or WithEnvAllowlist to restrict.
+// They apply only once {~exons.env~} is opted in (WithEnvEnabled or WithEnvAllowlist); the tag
+// is disabled by default. Override with WithEnvDenylist(nil) to remove deny filtering.
 func DefaultEnvDenyPatterns() []string {
 	return []string{
 		"*_KEY",

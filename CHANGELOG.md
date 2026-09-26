@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-09-27
+
+DC24-envoptin — `{~exons.env~}` is opt-in. Closes go-exons#7.
+
+### Changed
+
+- ⚠ **BREAKING DEFAULT: `{~exons.env~}` is disabled unless the engine opts in.** It used to be
+  enabled behind a suffix denylist (`*_KEY`, `*_SECRET`, …). Every known consumer renders
+  templates it did not write — aigentverse agents from any org, `{~exons.ref~}`'d fragments
+  (executed since v0.34.0), caller uploads — and for all of them a denylist-guarded env read is a
+  disclosure primitive: an ordinary name such as `DATABASE_URL` or an internal hostname passes a
+  suffix denylist. AIgentFlow measured it (DC-FORGE-194) through both the root template and a
+  referenced body. The default engine now refuses the tag on every route a template can take into
+  a body: the root, a message, a referenced body, an included template.
+- **How to opt in:**
+  - `WithEnvAllowlist(patterns)` — a **non-empty** allowlist now implies opt-in, for the matching
+    names only. This is the preferred form. `WithEnvAllowlist(nil)` clears it, and the tag is then
+    disabled again unless `WithEnvEnabled()` was also given.
+  - `WithEnvEnabled()` — **new**: every name the denylist does not block.
+- `WithEnvDenylist(patterns)` keeps its meaning and its default (`DefaultEnvDenyPatterns`), but it
+  only **narrows** an engine that opted in; it never enables the tag by itself. The denylist is
+  still checked before the allowlist.
+- `WithEnvDisabled()` still works. It is redundant on its own now, and it wins over
+  `WithEnvEnabled()` and `WithEnvAllowlist()` in any option order — a hard override for a caller
+  composing option lists it does not fully control.
+- **A refusal is legible.** Under the `throw` strategy (the default) a disabled `{~exons.env~}`
+  fails with `environment variable access is disabled; it is off by default since v0.35.0; opt in
+  with exons.WithEnvAllowlist(names) (preferred) or exons.WithEnvEnabled()`. A `default=`
+  attribute does **not** mask it under `throw`, so an author who needed the value is told instead
+  of handed an empty string. Under `default`, `remove`, `keepraw` and `log` (engine-wide or
+  per-tag `onerror=`) the refusal resolves like any other tag failure; none of them yields the
+  variable's value.
+
+### Migration
+
+- A consumer that renders only trusted templates and read env: add `WithEnvAllowlist([]string{…})`
+  naming the variables, or `WithEnvEnabled()`.
+- A consumer that already passed `WithEnvDisabled()`: nothing to do.
+- A consumer that relied on `WithEnvDenylist(nil)` to read everything: add `WithEnvEnabled()`.
+
+### Tests
+
+- `exons.env.optin_test.go`: the default refuses from the root, a message, a ref'd body, an
+  include and a ref inside a message, the error names both options, and a set variable's value
+  never reaches the output or the error; `WithEnvEnabled` reads (root and ref); the default and a
+  custom denylist still apply once enabled; a denylist alone does not enable; the allowlist admits
+  only listed names, a listed-but-denied name stays blocked, clearing it disables; `WithEnvDisabled`
+  wins in every order; the non-throw strategies resolve normally. Mutation-checked: an
+  always-enabled default (12 subtests fail), an allowlist that does not imply opt-in, and a
+  `WithEnvDisabled` that does not win are each caught.
+
 ## [0.34.1] - 2026-09-27
 
 DC23-nestmsg — a message inside a message contributes its content only, and only a message tag

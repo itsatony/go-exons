@@ -173,7 +173,7 @@ The `{~...~}` delimiter was chosen to never collide with prompt content (JSON, X
 | Switch | `{~exons.switch eval="x"~}{~exons.case value="a"~}...{~/exons.case~}{~/exons.switch~}` |
 | Skills Catalog | `{~exons.skills_catalog /~}` |
 | Tools Catalog | `{~exons.tools_catalog /~}` |
-| Env | `{~exons.env name="API_KEY" default="none" /~}` |
+| Env | `{~exons.env name="APP_REGION" default="none" /~}` — **off by default** since v0.35.0; opt in with `WithEnvAllowlist` or `WithEnvEnabled` |
 | Now | `{~exons.now format="date" tz="Europe/Berlin" /~}` |
 | Extends | `{~exons.extends template="parent"~}` |
 | Block | `{~exons.block name="content"~}...{~/exons.block~}` |
@@ -687,7 +687,7 @@ anthropicTools := spec.Tools.ToAnthropicTools()
 
 The template engine is security-hardened by default:
 
-- **Env var access control**: `{~exons.env~}` blocks common secret patterns (`*_KEY`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`, etc.) by default. Configure with `WithEnvAllowlist`, `WithEnvDenylist`, or `WithEnvDisabled`.
+- **Env var access is opt-in** (v0.35.0): `{~exons.env~}` is refused unless the engine is built with `WithEnvAllowlist(names)` (preferred — only the listed names) or `WithEnvEnabled()` (every name the denylist allows). Once enabled, common secret patterns (`*_KEY`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`, etc.) stay blocked by the default denylist (`WithEnvDenylist` to change it; it never enables the tag by itself). `WithEnvDisabled()` still works and wins over both opt-ins. Under the `throw` strategy a refused tag fails with an error naming the option that enables it.
 - **Output size limits**: Rendered output capped at 10MB by default (`WithMaxOutputSize` to override).
 - **Zip import protection**: Path traversal and decompression bomb defenses built in.
 - **Recursion limits**: Template inclusion, inheritance, and ref resolution all have configurable depth limits.

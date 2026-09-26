@@ -17,7 +17,8 @@ type engineConfig struct {
 	logger         *slog.Logger
 	envAllowlist   []string // glob patterns; if set, only matching env vars allowed
 	envDenylist    []string // glob patterns; matching env vars are blocked
-	envDisabled    bool     // completely disable {~exons.env~}
+	envEnabled     bool     // {~exons.env~} opted in for every name (WithEnvEnabled); off by default
+	envDisabled    bool     // {~exons.env~} refused even if opted in (WithEnvDisabled wins)
 	markdownFences bool     // markdown code fences are inert regions
 	refVerbatim    bool     // {~exons.ref~} splices the referenced body as TEXT instead of rendering it
 }
@@ -84,33 +85,67 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// WithEnvAllowlist restricts {~exons.env~} to only allow environment variables
-// matching the given glob patterns (case-insensitive, filepath.Match syntax).
-// If set, only matching variables are accessible; all others are blocked.
-// The denylist is still checked first.
-// Pass nil to clear any previously set allowlist.
+// WithEnvEnabled opts in to the {~exons.env~} tag for every variable name the denylist does not
+// block (DefaultEnvDenyPatterns unless replaced with WithEnvDenylist).
+//
+// ⛔ Since v0.35.0 {~exons.env~} is OFF by default. Every known consumer renders templates it did
+// not write — third-party agent specs, referenced fragments, caller uploads — and for all of them a
+// denylist-guarded env read is a disclosure primitive: an ordinary variable name (DATABASE_URL,
+// OPENAI_BASE_URL, an internal hostname) passes a suffix denylist. Enable it only when every
+// template the engine renders is trusted; otherwise prefer WithEnvAllowlist with explicit names.
+func WithEnvEnabled() Option {
+	return func(c *engineConfig) {
+		c.envEnabled = true
+	}
+}
+
+// WithEnvAllowlist opts in to {~exons.env~} for ONLY the environment variables matching the given
+// glob patterns (case-insensitive, filepath.Match syntax); every other name is refused.
+//
+// A non-empty allowlist implies opt-in — WithEnvEnabled is not needed alongside it. The denylist
+// is still checked first, so a listed name that also matches a deny pattern stays blocked.
+// Pass nil (or an empty slice) to clear a previously set allowlist; the tag then reverts to
+// disabled unless WithEnvEnabled was also given.
 func WithEnvAllowlist(patterns []string) Option {
 	return func(c *engineConfig) {
 		c.envAllowlist = patterns
 	}
 }
 
-// WithEnvDenylist sets glob patterns for environment variable names that are
-// blocked from access via {~exons.env~} (case-insensitive, filepath.Match syntax).
+// WithEnvDenylist sets glob patterns for environment variable names that are blocked from access
+// via {~exons.env~} (case-insensitive, filepath.Match syntax). The denylist is checked before the
+// allowlist and takes priority over it.
 // Default: DefaultEnvDenyPatterns (blocks *_KEY, *_SECRET, *_TOKEN, etc.)
-// Pass nil to allow all env vars (no deny filtering).
+// Pass nil to remove deny filtering.
+//
+// ⚠ The denylist does NOT enable the tag. It only narrows an engine that opted in through
+// WithEnvEnabled or WithEnvAllowlist; on an engine that did not opt in, every {~exons.env~} is
+// refused regardless of the denylist.
 func WithEnvDenylist(patterns []string) Option {
 	return func(c *engineConfig) {
 		c.envDenylist = patterns
 	}
 }
 
-// WithEnvDisabled completely disables the {~exons.env~} tag.
-// Any use will return an error.
+// WithEnvDisabled refuses the {~exons.env~} tag outright, and wins over WithEnvEnabled and
+// WithEnvAllowlist in any order.
+//
+// Since v0.35.0 this is the default, so the option is redundant on its own. It is kept, working,
+// so that a consumer which pinned the refusal explicitly stays refused, and as a hard override for
+// a caller that composes option lists it does not fully control.
 func WithEnvDisabled() Option {
 	return func(c *engineConfig) {
 		c.envDisabled = true
 	}
+}
+
+// envAccessEnabled reports whether {~exons.env~} may read the environment at all: an explicit
+// WithEnvDisabled refuses, otherwise WithEnvEnabled or a non-empty allowlist opts in.
+func (c *engineConfig) envAccessEnabled() bool {
+	if c.envDisabled {
+		return false
+	}
+	return c.envEnabled || len(c.envAllowlist) > 0
 }
 
 // WithMarkdownFences makes markdown code fences inert: exons tags, escapes,

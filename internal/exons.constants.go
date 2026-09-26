@@ -424,7 +424,7 @@ const (
 	ErrMsgEnvVarEmpty       = "environment variable is empty"
 	ErrMsgEnvVarDenied      = "environment variable access denied by denylist"
 	ErrMsgEnvVarNotInList   = "environment variable not in allowlist"
-	ErrMsgEnvDisabled       = "environment variable access is disabled"
+	ErrMsgEnvDisabled       = "environment variable access is disabled; it is off by default since v0.35.0; opt in with exons.WithEnvAllowlist(names) (preferred) or exons.WithEnvEnabled()"
 	ErrMsgEnvInvalidPattern = "invalid glob pattern in env var access control"
 )
 
