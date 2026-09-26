@@ -3,6 +3,8 @@ package exons
 import (
 	"context"
 	"log/slog"
+
+	"github.com/itsatony/go-exons/internal"
 )
 
 // RenderSpecRef resolves a reference AND renders it, implementing internal.SpecRefRenderer.
@@ -54,7 +56,7 @@ func (a *SpecResolverAdapter) RenderSpecRef(
 	// Splicing verbatim is then the only honest answer.
 	parent, ok := execCtx.(*Context)
 	if !ok || parent == nil {
-		return body, false, nil
+		return internal.StripMarkerBytes(body), false, nil
 	}
 
 	// ⛔ The engine comes from the CONTEXT, never from a field on this adapter.
@@ -75,12 +77,16 @@ func (a *SpecResolverAdapter) RenderSpecRef(
 		slog.Default().Warn(LogMsgRefVerbatimNoEngine,
 			slog.String(LogFieldSpecSlug, slug),
 			slog.String(LogFieldSpecVersion, version))
-		return body, false, nil
+		return internal.StripMarkerBytes(body), false, nil
 	}
 
 	// The operator asked for the old splice — see WithRefVerbatim.
+	//
+	// ⛔ Every verbatim return strips NUL: the text was not rendered here, so a marker in it did
+	// not come from a message tag, and {~exons.ref~} is exempt from the executor's own strip
+	// because its RENDERED output legitimately carries markers (internal.StripMarkerBytes).
 	if engine.config.refVerbatim {
-		return body, false, nil
+		return internal.StripMarkerBytes(body), false, nil
 	}
 
 	// ParseBody, never Parse: the resolver handed back a BODY, and Parse would offer its first

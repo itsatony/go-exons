@@ -47,10 +47,14 @@ func nestedMessages(t *testing.T, engine *Engine, source string, data map[string
 	assert.Equal(t, viaExtract, viaContext, "ExecuteAndExtractMessages vs ExecuteWithContext+ExtractMessagesFromOutput")
 	assert.Equal(t, out, withCtx)
 
-	// Every start marker in the output is one message the caller receives — an inner message
-	// that still wrote a marker would show up here as a surplus.
-	assert.Equal(t, len(viaExtract), strings.Count(out, internal.MessageStartMarker), "start markers vs messages")
-	assert.Equal(t, len(viaExtract), strings.Count(out, internal.MessageEndMarker), "end markers vs messages")
+	// Every NUL in the output belongs to the markers of a message the caller receives — an inner
+	// message that still wrote a marker, or data that smuggled a delimiter through, shows up here
+	// as a surplus. Counted as NULs rather than as marker substrings: the end marker's trailing
+	// NUL followed by the text `MSG_START:` reads as a start marker to strings.Count, though not
+	// to ExtractMessages, which consumes the end marker whole.
+	perMessage := strings.Count(internal.MessageStartMarker, internal.CharNullByte) +
+		strings.Count(internal.MessageEndMarker, internal.CharNullByte)
+	assert.Equal(t, len(viaExtract)*perMessage, strings.Count(out, internal.CharNullByte), "NULs vs messages")
 	return out, viaExtract
 }
 

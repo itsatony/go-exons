@@ -35,6 +35,10 @@ func NewIncludeResolver() *IncludeResolver {
 	return &IncludeResolver{}
 }
 
+// composesRenderedOutput marks an include's output as another render of this executor, whose
+// message markers are legitimate — see composingResolver.
+func (r *IncludeResolver) composesRenderedOutput() {}
+
 // TagName returns the tag name for this resolver.
 func (r *IncludeResolver) TagName() string {
 	return TagNameInclude

@@ -536,7 +536,14 @@ included body rendered at top level) stay separate messages, as before.
 - **An empty or self-closing message** yields an empty message at top level and nothing when
   nested. Before v0.34.1 it wrote an unterminated start marker that swallowed the next message.
 
-⛔ **Data still cannot forge a message.** The outermost message strips every NUL — the marker
+⛔ **Only a message tag can emit a message marker** (v0.34.1). The executor strips NUL, the marker
+delimiter, from everything else that reaches the output: template text, raw blocks, every tag's
+result (`exons.var`, `exons.input`, `exons.env`, host resolvers) and `onerror=` recourse. So a data
+value carrying a complete marker renders as inert text anywhere in a document, not only inside a
+message. `exons.include` and `exons.ref` pass their output through, because it is itself such a
+render and its top-level messages are real; a reference spliced verbatim is stripped.
+
+⛔ **Data still cannot forge a message inside one either.** The outermost message strips every NUL — the marker
 delimiter — from its entire content, including what a nested message contributed, so a value
 carrying a complete, correctly delimited marker arrives as inert text. Marker-*looking* text
 without NUL (`MSG_END` is plausible prose) is left exactly as written. Nesting is recognised from

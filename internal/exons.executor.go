@@ -120,7 +120,9 @@ func (e *Executor) executeNodes(ctx context.Context, nodes []Node, execCtx Conte
 func (e *Executor) executeNode(ctx context.Context, node Node, execCtx ContextAccessor, depth int) (string, error) {
 	switch n := node.(type) {
 	case *TextNode:
-		return n.Content, nil
+		// Template text is a leaf that can reach the output — a referenced body's text is
+		// another author's — so it may not carry a marker delimiter either. See StripMarkerBytes.
+		return StripMarkerBytes(n.Content), nil
 
 	case *TagNode:
 		return e.executeTag(ctx, n, execCtx, depth)
@@ -416,7 +418,7 @@ func (e *Executor) executeTag(ctx context.Context, tag *TagNode, execCtx Context
 
 	// Handle raw blocks specially
 	if tag.IsRaw() {
-		return tag.RawContent, nil
+		return StripMarkerBytes(tag.RawContent), nil
 	}
 
 	// Look up resolver
@@ -449,6 +451,14 @@ func (e *Executor) executeTag(ctx context.Context, tag *TagNode, execCtx Context
 
 	if tag.Name == TagNameMessage {
 		return e.executeMessage(ctx, tag, execCtx, depth, result)
+	}
+
+	// ⛔ Only the message tag may emit a marker. Every other resolver's output is DATA — a var,
+	// an env value, an input, a host resolver — and is stripped of the delimiter here, at the one
+	// place all of them pass through. The exemption is the composing resolvers (include, ref),
+	// whose output is another render of this executor with its own leaves already sanitised.
+	if _, composes := resolver.(composingResolver); !composes {
+		result = StripMarkerBytes(result)
 	}
 
 	// For block tags with children, process children
@@ -495,8 +505,10 @@ func (e *Executor) executeMessage(ctx context.Context, tag *TagNode, execCtx Con
 		if err != nil {
 			return "", err
 		}
-		// Sanitize content to prevent marker injection: NUL is the marker delimiter.
-		content = strings.ReplaceAll(childResult, CharNullByte, "")
+		// Sanitize content to prevent marker injection: NUL is the marker delimiter. Every leaf is
+		// already stripped; this also covers what a composing resolver (include, ref) returned,
+		// whose top-level messages would otherwise open inside this one.
+		content = StripMarkerBytes(childResult)
 	}
 
 	e.logger.Debug(LogMsgResolverComplete, slog.String(LogFieldTag, tag.Name))
@@ -596,7 +608,7 @@ func (e *Executor) handleTagError(site errorSite, execCtx ContextAccessor, err e
 	case ErrorStrategyDefault:
 		// Use the default attribute value if available
 		if defaultVal, hasDefault := site.attr(AttrDefault); hasDefault {
-			return defaultVal, nil
+			return StripMarkerBytes(defaultVal), nil
 		}
 		// No default specified - return empty string
 		return "", nil
@@ -608,7 +620,7 @@ func (e *Executor) handleTagError(site errorSite, execCtx ContextAccessor, err e
 	case ErrorStrategyKeepRaw:
 		// Keep the original tag source
 		if site.RawSource != "" {
-			return site.RawSource, nil
+			return StripMarkerBytes(site.RawSource), nil
 		}
 		// Fallback to empty if no raw source captured
 		return "", nil

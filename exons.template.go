@@ -345,11 +345,11 @@ func StripMessageMarkers(output string) string {
 	for {
 		start := strings.Index(rest, internal.MessageStartMarker)
 		if start < 0 {
-			b.WriteString(rest)
+			b.WriteString(strings.ReplaceAll(rest, internal.MessageEndMarker, ""))
 			break
 		}
 		// Everything before the marker is prose the author wrote outside any message.
-		b.WriteString(rest[:start])
+		b.WriteString(strings.ReplaceAll(rest[:start], internal.MessageEndMarker, ""))
 		rest = rest[start+len(internal.MessageStartMarker):]
 		// The header is `<role>:<cache>:` — two field separators. A truncated header means
 		// malformed output; drop what is left of it rather than emit a NUL.
@@ -361,9 +361,21 @@ func StripMessageMarkers(output string) string {
 			}
 			rest = rest[sep+len(internal.MessageFieldSep):]
 		}
+		// ⛔ Consume the message's END marker as a unit, the way ExtractMessages does, before
+		// looking for the next start. The end marker's trailing NUL followed by prose that
+		// begins `MSG_START:` — a data value that was stripped of its own NULs, or an author
+		// writing about the syntax — reads as a start marker to a bare search. Searching from
+		// the content instead split the end marker, leaked a NUL into the returned text and
+		// dropped the prose's first two `:`-fields as though they were a header.
+		end := strings.Index(rest, internal.MessageEndMarker)
+		if end < 0 {
+			b.WriteString(rest)
+			break
+		}
+		b.WriteString(rest[:end])
+		rest = rest[end+len(internal.MessageEndMarker):]
 	}
-	// The end markers carry the remaining NULs and delimit nothing the caller needs.
-	return strings.ReplaceAll(b.String(), internal.MessageEndMarker, "")
+	return b.String()
 }
 
 // internalAttributesAdapter wraps internal.Attributes to implement the public Attributes interface.
