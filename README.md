@@ -169,7 +169,7 @@ The `{~...~}` delimiter was chosen to never collide with prompt content (JSON, X
 | Loop | `{~exons.for item="x" index="i" in="items"~}...{~/exons.for~}` |
 | Include | `{~exons.include template="header" /~}` |
 | Message | `{~exons.message role="system"~}...{~/exons.message~}` |
-| Ref | `{~exons.ref slug="my-skill" /~}` |
+| Ref | `{~exons.ref slug="my-skill" /~}` — the referenced body is **rendered**, chain and all (v0.34.0) |
 | Switch | `{~exons.switch eval="x"~}{~exons.case value="a"~}...{~/exons.case~}{~/exons.switch~}` |
 | Skills Catalog | `{~exons.skills_catalog /~}` |
 | Tools Catalog | `{~exons.tools_catalog /~}` |

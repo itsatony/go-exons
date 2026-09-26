@@ -7,6 +7,124 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-09-26
+
+DC22-refchain — `{~exons.ref~}` resolves the whole chain. Reported as vAudience/atlas#696.
+
+### Fixed
+
+- **A referenced body is now parsed and executed, not spliced as text.** `RefResolver.Resolve`
+  returned the body and `executeTag` returned a self-closing tag's output unchanged, so a
+  referenced document's own `{~exons.ref~}`, `{~exons.var~}`, `{~exons.now~}` and
+  `{~exons.include~}` reached the reader as **literal tags** — while `{~exons.include~}`, the tag
+  that looks like its sibling, has always executed what it included. Unchanged since the
+  go-prompty port.
+- **`RefMaxDepth` (10) and the circular-reference check now apply.** ⭐ They were dead code that
+  documented the intended design: nothing outside tests ever called `Context.WithRefDepth` /
+  `WithRefChain`, so the depth was always `0` and the chain always empty. Rendering a reference
+  pushes the frame, which is what makes both guards live for the first time. A cycle refuses and
+  **names its chain** (`a -> b -> a`) — something `NewRefCircularError` has always been able to
+  say and had never been asked to.
+- **A lookup failure and a render failure are two different messages.** "referenced spec not
+  found" sends an author to check the slug; "referenced spec could not be rendered" sends them
+  into the referenced document. Before this release only the first condition could occur.
+
+### Added
+
+- **`WithRefVerbatim()`** keeps the pre-0.34.0 splice. ⛔ It is a migration path, not a
+  configuration preference: it exists for a `SpecResolver` whose `ResolveSpec` returns text that
+  is **already fully rendered** and which therefore owns its own recursion, cycle detection and
+  budget. ⚠ **With it set, `RefMaxDepth` and the circular check do not apply**, because nothing
+  pushes a frame for them to read.
+- **`Engine.ParseBody(body)`** parses a source that is already a template body. ⛔ It is not
+  `Parse` minus a feature, it is `Parse` minus a **misreading**: `Parse` runs
+  `ExtractConfigBlock`, so a body whose first line is `---` — an ordinary markdown horizontal
+  rule — is handed to a YAML scanner and a fragment that renders today becomes
+  `YAML frontmatter not properly closed`. A referenced spec's `Body` is exactly such a source.
+- **`internal.SpecRefRenderer`** — the optional richer contract a spec resolver may implement
+  (resolve *and* render). A resolver implementing only `SpecBodyResolver` keeps the old splice.
+
+### Build
+
+- **`make lint` pins golangci-lint** (`go run …@v2.12.2`) instead of calling whatever is on
+  `PATH`. The shared binary on at least one of our build hosts is v1, which refuses this repo's
+  v2 configuration and failed `make ci-local` for a reason that had nothing to do with the code.
+  ⭐ A gate whose verdict depends on the machine is not a gate.
+
+### Behaviour change — read this before repinning
+
+`SpecResolver.ResolveSpec` is now expected to return the **raw** body. Two contracts exist in the
+wild:
+
+| consumer | returns | effect |
+| --- | --- | --- |
+| vaichat2, aigentflow | raw `spec.Body` | ✅ intended — nested references resolve, and their comments claiming transitive expansion become true |
+| aigentverse (`prismSpecResolver`) | pre-rendered text | ⚠ would be rendered a second time — set `WithRefVerbatim()` or return the raw body |
+
+Re-rendering rendered text is a no-op right up until that text contains a literal `{~…~}` — a
+quoted example, a fragment about the syntax itself, a user's own prose — and then it is an
+unknown-tag failure where there used to be inert text.
+
+⚠ **For vaichat2 and aigentflow this is still a change**: a chain that is deeper than
+`RefMaxDepth`, or circular, used to render (as literal tags) and now **refuses**. That is the
+correct outcome, and it is a new refusal on a path that never refused.
+
+### Review findings fixed before release
+
+The first cut of this release was reviewed and four defects were reproduced against it. All are
+fixed here, each with a regression test; they are listed because they share one shape — **render
+state that was re-derived from the ENGINE instead of carried from the CALLER**.
+
+- **A nested lookup miss was reported as the outer slug missing.** The classification travelled as
+  a sentinel wrapped into the error, and `BuiltinError`/`ExecutorError` both `Unwrap` to their
+  cause — so an inner miss stayed reachable by `errors.Is` from every outer frame, and a four-deep
+  chain said "referenced spec not found" four times, each naming a slug that resolves. ⭐ *A
+  sentinel that travels answers a question about the whole chain when it was asked about one
+  link.* The classification now travels **beside** the error, decided by the only code that knows.
+- **`{~exons.include~}` reset the reference frame**, so a cycle through an include was not
+  detected: it recursed until the *include* depth ran out, reported a depth message about the
+  wrong construct and never named the cycle — `RefMaxDepth` bypassed entirely.
+- **`{~exons.include~}` also lost a context-supplied spec resolver**, because it re-read the
+  engine's adapter, which is nil unless `SetSpecResolver` was called — and vaichat2 and
+  aigentflow deliberately do not call it. An included template that referenced a spec failed with
+  *"spec resolver not available in context"* on exactly their path. Both are fixed by
+  `Engine.ExecuteTemplateWithParent` (`internal.ParentAwareTemplateExecutor`), which the include
+  built-in uses when the engine offers it.
+- **A missing or foreign engine on the context degraded to the verbatim splice silently.** It now
+  logs a WARN — literal `{~…~}` in the output reads as an authoring mistake, not as the wiring
+  fault it is.
+- **`Template.Execute` and `ExecuteAndExtractMessages` could not resolve a reference at all** —
+  only `Engine.Execute` injected the adapter, so the chat-shaped entry point refused every chain
+  the release notes advertise. They now inherit the engine's resolver when the context carries
+  none.
+
+### Performance
+
+- **`ParseBody` results are memoized by the body's own text**, bounded at 256 entries. Rendering a
+  reference parses, where splicing was a map lookup; an `{~exons.for~}` over 500 rows containing
+  one reference parsed the same fragment 500 times. Content-keyed, so it cannot serve a stale
+  answer.
+
+### Named residual
+
+⚠ **`{~exons.message~}` inside a referenced body is valid only at TOP LEVEL.** Nested inside
+another message, the inner markers flatten: the message tag strips NUL from its children to stop
+marker injection, so the delimiters go and the marker *text* survives into the outer message's
+content. The nested-message behaviour predates this release; executing the body is what makes it
+reachable. Pinned by a test that states it is a limitation, and tracked as **go-exons#5**.
+
+### Scope of a referenced body
+
+- It renders in a context **derived from the caller's**. Verbatim splicing already implied caller
+  scope, and a shared fragment that cannot read the document it was pulled into is not worth
+  pulling in.
+- The referenced document's **declared input defaults** fill in where the caller bound nothing,
+  through the same `mergeInputBinding` the top-level render uses — one rule, not two that can
+  disagree. The caller always wins; the reference supplies the fallback.
+- Those defaults **do not leak back** to the caller: the frame is a child context.
+- ⚠ **Output-size accounting restarts per frame**, so the effective ceiling is per-frame rather
+  than per-document. Bounded by `RefMaxDepth`, but it is a change in what the cap means.
+
 ## [0.33.0] - 2026-09-25
 
 DC21-environ — a skill or agent declares the execution environment it needs. Closes go-exons#4

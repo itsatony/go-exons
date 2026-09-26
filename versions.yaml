@@ -1,7 +1,19 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.33.0
+  version: 0.34.0
+# v0.34.0 (DC22-refchain): {~exons.ref~} RESOLVES THE WHOLE CHAIN (vAudience/atlas#696).
+# A referenced body was SPLICED AS TEXT and never parsed, so a fragment's own exons.ref/var/now
+# reached the reader as literal tags — while exons.include, the tag that looks like its sibling,
+# executed what it included. ⭐ RefMaxDepth=10 and the circular-chain check have been dead code
+# since the go-prompty port: nothing ever pushed a frame for them to read. They are LIVE now.
+# Scope: the CALLER's context, with the referenced document's input DEFAULTS layered underneath
+# (mergeInputBinding — the same function the top-level render uses, not a second rule).
+# A cycle refuses and NAMES its chain; a lookup failure and a render failure are two messages.
+# ⛔ WithRefVerbatim() keeps the old splice for a resolver returning ALREADY-RENDERED text
+# (aigentverse's prismSpecResolver) — a migration path, not a preference: with it set, the depth
+# limit and the cycle check DO NOT APPLY. ⚠ Behaviour change for every consumer handing go-exons
+# a raw body (vaichat2, aigentflow): a deep or circular chain that used to render now REFUSES.
 # v0.33.0 (DC21-environ): A SKILL CAN SAY WHAT IT NEEDS TO RUN (go-exons#4, atlas#674 SKILLful).
 # requirements.environment: code_execution required|optional, packages [<ecosystem>:<name>]
 # (informational; python|node|r|ruby|rust|go|java|system; ≤64 × ≤128; unique; needs code_execution),
