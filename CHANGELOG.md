@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-09-27
+
+DC26-strictattrs — `Parse` judges grammar only; a gate can now ask it to judge attributes too.
+Closes go-exons#11.
+
+### Added
+
+- **`WithStrictAttributes()`**, an opt-in engine option. `Engine.Parse` accepted any grammatically
+  valid document, so `{~exons.include ref="x" /~}` (include takes `template=`) and
+  `{~exons.message~}` (no `role=`) parsed cleanly and then failed at every render; a consumer whose
+  intake gate was "does it parse?" published documents no engine could render (found via
+  vAudience/aigentverse#107). With the option set, `Parse` and `ParseBody` run the same traversal
+  `Engine.Validate` runs (`validateNodes`: every tag, its children, every `if` / `for` / `switch`
+  branch) and refuse exactly the issues `Validate` reports with `SeverityError`. Warnings (an
+  unknown tag, a missing include target) are never refused. No error strategy and no `onerror=`
+  lifts the check: it judges the document, not a render.
+- **`ErrStrictAttributes`** (sentinel) and **`StrictAttributeError{Issues []ValidationIssue}`**. A
+  strict refusal is a go-cuserr error with code `ErrCodeValidation` and `MetaKeyTag` / line /
+  column / offset naming the first issue, wrapping a `*StrictAttributeError` that carries every
+  refused issue in document order: `errors.Is(err, exons.ErrStrictAttributes)` and `errors.As`
+  both reach it. Built by **`NewStrictAttributeError(issues)`**.
+- **Frontmatter is covered.** `Parse` renders `{~…~}` tags inside the YAML frontmatter through the
+  same engine before decoding it, and that render parses through `Parse`, so a strict engine checks
+  those tags too (refusal wrapped as the frontmatter error, positions relative to the frontmatter
+  text). Under the default throw strategy that render already refused such a tag; under a lenient
+  strategy it was kept or removed silently. `RegisterTemplate` and the `ParseBody` of a body
+  `{~exons.ref~}` resolves are checked as well.
+
+### Documentation
+
+- `Engine.Parse`'s doc comment and the README now state that Parse judges grammar only and that an
+  intake or publish gate must also run `Engine.Validate` and refuse `result.Errors()`, with an
+  example of both that and the strict engine. The README's `Validate` example is corrected (it
+  returns `(*ValidationResult, error)`).
+- `ValidationResult.Errors()` / `Warnings()` already existed (proposal 3 of #11); they are now
+  documented in the README and covered by a test proving they partition `Issues()`.
+
+### Unchanged
+
+- ⛔ **The default `Parse` is byte-for-byte unchanged.** A stricter default would newly refuse
+  stored documents in every consumer at once on a library bump; the option belongs at an intake or
+  publish gate, where a refusal reaches an author who can fix it.
+
 ## [0.36.0] - 2026-09-27
 
 DC25-rendered — a resolver that renders its own children keeps their messages. Closes go-exons#9.

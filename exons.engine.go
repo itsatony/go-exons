@@ -129,6 +129,18 @@ func (e *Engine) getSpecResolverForCatalog() SpecResolver {
 // If the source contains YAML frontmatter (delimited by --- on separate lines),
 // it is extracted and parsed as a Spec configuration. The frontmatter must appear
 // at the start of the source (after optional whitespace/BOM).
+//
+// ⚠ Parse judges GRAMMAR, not whether each tag's attributes satisfy its resolver. A document such
+// as `{~exons.include ref="x" /~}` (include takes template=) or `{~exons.message~}` (no role=)
+// parses cleanly and then fails at every render. An intake or publish gate must therefore also run
+// Validate and refuse its error-severity issues:
+//
+//	if _, err := engine.Parse(source); err != nil { return err }
+//	res, _ := engine.Validate(source)
+//	if errs := res.Errors(); len(errs) > 0 { return refuse(errs) }
+//
+// or build the gate's engine WithStrictAttributes(), which makes Parse itself refuse them. The
+// default stays grammar-only so that upgrading go-exons never refuses a document already stored.
 func (e *Engine) Parse(source string) (*Template, error) {
 	// Create lexer config
 	lexerConfig := internal.LexerConfig{
@@ -195,6 +207,8 @@ func (e *Engine) Parse(source string) (*Template, error) {
 // rule — is handed to a YAML scanner, and a fragment that renders perfectly today becomes a
 // config-block error. A referenced spec's Body is exactly such a source: the producer stripped
 // the frontmatter, so any leading `---` left in it is CONTENT.
+//
+// Like Parse it judges grammar only unless the engine was built WithStrictAttributes().
 func (e *Engine) ParseBody(body string) (*Template, error) {
 	e.bodyCacheMu.RLock()
 	cached, hit := e.bodyCache[body]
@@ -250,7 +264,25 @@ func (e *Engine) parseTemplateBody(
 		return nil, NewParseError(ErrMsgParseFailed, Position{}, err)
 	}
 
+	if e.config.strictAttrs {
+		if strictErr := e.refuseInvalidAttributes(ast); strictErr != nil {
+			return nil, strictErr
+		}
+	}
+
 	return newTemplateWithConfig(source, templateBody, ast, e.executor, e.config, e, spec), nil
+}
+
+// refuseInvalidAttributes is WithStrictAttributes' check. It runs the one traversal Validate runs
+// (validateNodes), so the two cannot disagree about what a resolver refuses, and keeps only the
+// error-severity issues.
+func (e *Engine) refuseInvalidAttributes(ast *internal.RootNode) error {
+	result := &ValidationResult{}
+	e.validateNodes(ast.Children, result)
+	if errs := result.Errors(); len(errs) > 0 {
+		return NewStrictAttributeError(errs)
+	}
+	return nil
 }
 
 // resolveConfigEnvVars resolves {~exons.env~} tags in the YAML frontmatter.

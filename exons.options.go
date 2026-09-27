@@ -21,6 +21,7 @@ type engineConfig struct {
 	envDisabled    bool     // {~exons.env~} refused even if opted in (WithEnvDisabled wins)
 	markdownFences bool     // markdown code fences are inert regions
 	refVerbatim    bool     // {~exons.ref~} splices the referenced body as TEXT instead of rendering it
+	strictAttrs    bool     // Parse/ParseBody also refuse the error-severity issues Validate reports
 }
 
 // defaultEngineConfig returns the default engine configuration.
@@ -184,5 +185,40 @@ func WithMarkdownFences() Option {
 func WithRefVerbatim() Option {
 	return func(c *engineConfig) {
 		c.refVerbatim = true
+	}
+}
+
+// WithStrictAttributes makes Parse and ParseBody refuse a template whose tags their own resolvers
+// refuse: `{~exons.include ref="x" /~}` with no template=, `{~exons.message~}` with no role=, an
+// onerror= that names no strategy, a for-loop with no item=. By default Parse judges GRAMMAR only
+// and those documents parse, then fail at every render (go-exons#11).
+//
+// With it set, Parse walks the parsed AST with the same traversal Engine.Validate uses — every
+// tag, its children, and every branch of if / for / switch — and refuses exactly the issues
+// Validate would report with SeverityError. Warnings (an unknown tag, a missing include target)
+// are never refused: a resolver or template can still be registered after the parse. The refusal
+// matches errors.Is(err, ErrStrictAttributes), and errors.As with a *StrictAttributeError yields
+// every issue with its tag name and position.
+//
+// ⛔ It is OPT-IN on purpose. A stricter default would newly refuse STORED documents in every
+// consumer at once — registries, runtimes and caches that parse what they persisted months ago —
+// on nothing more than a library bump. A consumer turns it on at its intake or publish gate, where
+// a refusal reaches the author who can fix it.
+//
+// It judges the DOCUMENT, not a render, so no error strategy lifts it — neither the engine's nor a
+// tag's own onerror=. A tag that would fail at render but be removed by onerror="remove" is still
+// refused, exactly as Validate reports it.
+//
+// Frontmatter (decided, go-exons#11): Parse renders `{~…~}` tags inside the YAML frontmatter
+// through the same engine before decoding it, and that render parses through Parse, so on a strict
+// engine the frontmatter's tags are checked too. Under the default throw strategy that render
+// already refuses such a tag; under a lenient strategy it would be kept or removed silently, and
+// strict mode is what refuses it. Such a refusal arrives wrapped as the frontmatter error (ErrCodeConfig)
+// with positions relative to the frontmatter text; errors.Is(err, ErrStrictAttributes) still
+// matches. Templates registered with RegisterTemplate are parsed through Parse and checked as well,
+// and a body {~exons.ref~} resolves at execute time goes through ParseBody and is checked there.
+func WithStrictAttributes() Option {
+	return func(c *engineConfig) {
+		c.strictAttrs = true
 	}
 }

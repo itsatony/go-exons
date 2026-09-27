@@ -38,6 +38,7 @@ and prompts — safe to author by hand and by LLMs.
 | DC23-nestmsg | 0.34.1 | A `{~exons.message~}` nested inside another (inline, ref, include, extends) contributes its content only instead of leaking marker text; an empty message no longer swallows the next (go-exons#5) | 2026-09-27 |
 | DC24-envoptin | 0.35.0 | `{~exons.env~}` is opt-in: refused by default; `WithEnvAllowlist` (listed names) or `WithEnvEnabled` opt in; `WithEnvDisabled` still wins; a Throw refusal names the option (go-exons#7) | 2026-09-27 |
 | DC25-rendered | 0.36.0 | A resolver that renders its own children returns `RenderedBody` (`RenderedSpecResolver`, `ExecuteRendered`), so a referenced child's messages survive the splice without a plain verbatim string regaining the power to forge one (go-exons#9) | 2026-09-27 |
+| DC26-strictattrs | 0.37.0 | `Parse` judges grammar only and now says so; opt-in `WithStrictAttributes()` makes `Parse`/`ParseBody` refuse the error-severity issues `Validate` reports (`ErrStrictAttributes`, `*StrictAttributeError`), default unchanged (go-exons#11) | 2026-09-27 |
 
 ## DC11-verbatim — Syntax safety (0.15.0)
 
