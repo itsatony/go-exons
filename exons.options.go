@@ -176,6 +176,11 @@ func WithMarkdownFences() Option {
 // ⚠ With it set, RefMaxDepth and the circular-reference check DO NOT APPLY, because nothing
 // pushes a reference frame for them to read. A resolver that opts in owns those bounds itself.
 // The fix is to return the raw body and let go-exons resolve the chain; see RenderSpecRef.
+//
+// ⛔ A body spliced through this option is a plain string, and since v0.34.1 every message
+// marker in it is STRIPPED — the string carries no proof it was rendered, and an unproven NUL
+// is a forged message. A resolver whose bodies are go-exons renders with messages that must
+// survive implements RenderedSpecResolver instead (go-exons#9).
 func WithRefVerbatim() Option {
 	return func(c *engineConfig) {
 		c.refVerbatim = true

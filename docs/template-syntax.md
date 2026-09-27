@@ -535,6 +535,32 @@ the raw body and let go-exons resolve the chain.
 per-frame rather than per-document. It is bounded by `RefMaxDepth`, but it is a change in what
 the cap means.
 
+### `RenderedSpecResolver` — a resolver that renders its own children (v0.36.0)
+
+A resolver that renders each referenced child **itself** (its own recursion, cycle detection and
+budgets) and still needs the child's messages to survive implements `RenderedSpecResolver`
+alongside `ResolveSpec`:
+
+```go
+func (r *myResolver) ResolveRenderedSpec(ctx context.Context, slug, version string) (exons.RenderedBody, error) {
+    src := r.lookup(slug, version)
+    return r.engine.ExecuteRendered(ctx, src, r.data) // or tmpl.ExecuteRendered
+}
+```
+
+`{~exons.ref~}` then splices that body as-is — **not rendered again**, with or without
+`WithRefVerbatim()` — and keeps its message markers: at top level the child's messages stay
+messages; inside an enclosing `{~exons.message~}` it contributes content only (the nested rule
+below). The depth limit and circular check do not apply, as with `WithRefVerbatim()`.
+
+⛔ **Why a type and not an option (go-exons#9).** A plain verbatim string is stripped of every
+marker (below), because nothing proves it was rendered, and an unproven NUL is a forged message.
+`RenderedBody` has an unexported field: it is filled only by `Engine.ExecuteRendered` /
+`Template.ExecuteRendered` (a render, whose every NUL a message tag wrote), `RenderedText(s)`
+(unrendered glue — a heading, a placeholder — **stripped** on the way in), and `JoinRendered` /
+`TrimRightSpace`, which cannot open or close a marker. So the proof travels with the text, and
+a string the resolver did not render cannot be passed off as rendered.
+
 ## Nested messages (v0.34.1)
 
 A `{~exons.message~}` that executes **inside** another message contributes its **content only**.
@@ -566,7 +592,8 @@ delimiter, from everything else that reaches the output: template text, raw bloc
 result (`exons.var`, `exons.input`, `exons.env`, host resolvers) and `onerror=` recourse. So a data
 value carrying a complete marker renders as inert text anywhere in a document, not only inside a
 message. `exons.include` and `exons.ref` pass their output through, because it is itself such a
-render and its top-level messages are real; a reference spliced verbatim is stripped.
+render and its top-level messages are real; a reference spliced verbatim is stripped, unless it
+arrives as a `RenderedBody` (v0.36.0, above).
 
 ⛔ **Data still cannot forge a message inside one either.** The outermost message strips every NUL — the marker
 delimiter — from its entire content, including what a nested message contributed, so a value

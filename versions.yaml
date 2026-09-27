@@ -1,7 +1,15 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.35.0
+  version: 0.36.0
+# v0.36.0 (DC25-rendered): A RESOLVER THAT RENDERS ITS OWN CHILDREN KEEPS THEIR MESSAGES (go-exons#9).
+# v0.34.1 strips every NUL from a verbatim ref splice, which silently dropped the messages of a
+# body the resolver HAD rendered with go-exons (aigentverse). Fix is a TYPE, not an option:
+# RenderedBody (unexported field) is filled only by Engine/Template.ExecuteRendered, RenderedText
+# (strips), JoinRendered, TrimRightSpace — so its every NUL is a real marker by construction.
+# RenderedSpecResolver (optional, embeds SpecResolver) returns it; exons.ref splices it unrendered,
+# markers kept at top level, flattened via StripMessageMarkers inside a message. Plain strings are
+# still stripped: the v0.34.1 forging fix is untouched. Additive.
 # v0.35.0 (DC24-envoptin): {~exons.env~} IS OPT-IN (go-exons#7). ⚠ BREAKING DEFAULT.
 # Every known consumer renders templates it did not write (aigentverse agents, ref'd fragments,
 # caller uploads), and the old default — enabled behind a SUFFIX denylist — let an ordinary name

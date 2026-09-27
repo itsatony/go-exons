@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-09-27
+
+DC25-rendered — a resolver that renders its own children keeps their messages. Closes go-exons#9.
+
+### Fixed
+
+- **A referenced child's messages vanished when the resolver had rendered it itself.** Since
+  v0.34.1 a reference spliced verbatim (`WithRefVerbatim()`, or any plain string a resolver hands
+  back) is stripped of every NUL, because a plain string carries no proof it was rendered. For a
+  resolver that DOES render each child with go-exons under its own budgets — aigentverse's, the
+  shape `WithRefVerbatim()` was created for — that turned the child's genuine message markers into
+  plain words, and `ExtractMessagesFromOutput` dropped the content without an error:
+  `{~exons.message role="user"~}hello{~/exons.message~}{~exons.ref slug="msgfrag" /~}` with
+  `msgfrag` = a system message yielded only the user message (v0.34.0 yielded both).
+
+### Added
+
+- **`RenderedBody`** — rendered text in a type only go-exons can fill (unexported field; zero value
+  is empty). Producers: `(*Engine).ExecuteRendered`, `(*Template).ExecuteRendered` (the same render
+  as `Execute`, typed), `RenderedText(s)` (for text go-exons did NOT render — a heading, a
+  placeholder, glue; **every NUL is stripped**), `JoinRendered(parts...)` and
+  `RenderedBody.TrimRightSpace()`. Readers: `String()`, `Len()`, `IsEmpty()`.
+- **`RenderedSpecResolver`** — an optional interface embedding `SpecResolver` with
+  `ResolveRenderedSpec(ctx, slug, version) (RenderedBody, error)`. When the configured resolver
+  implements it, `{~exons.ref~}` splices the returned body **without rendering it again** (with or
+  without `WithRefVerbatim()`; implementing the interface is the declaration). At top level the
+  body's messages stay messages. **Inside an enclosing `{~exons.message~}` it contributes its
+  content only** — its markers are removed whole via `StripMessageMarkers`, not left as words —
+  the v0.34.1 flatten rule. As with `WithRefVerbatim()`, `RefMaxDepth` and the circular check do
+  not apply; the resolver owns those bounds. An error is reported as "referenced spec not found".
+
+### Security
+
+- ⛔ **The v0.34.1 forging fix is unchanged.** A plain verbatim string is still stripped wherever
+  it is spliced; no option makes a string trusted.
+- **Why a type and not `WithRefVerbatimRendered()`.** An engine option would TRUST the resolver
+  about every string it ever returns, including those it did not render: a placeholder for a
+  missing child, a heading assembled from recipe data (aigentverse's mosaic assembly is exactly
+  that), a cache entry written by other code. A NUL in any of them would be a forged message
+  again, and nothing would say so. `RenderedBody` makes the claim CHECKABLE: by induction over its
+  four producers, every NUL inside one was written by a message tag — a render sanitises every
+  leaf (v0.34.1), `RenderedText` strips, and concatenation or trailing-whitespace trimming of
+  complete markers produces only shapes a single render could produce itself. The trust decision
+  stays where the rendering happened, enforced by the compiler rather than by a comment.
+- The flatten inside a message reads the render's own `context.Context` key (unexported, as in
+  v0.34.1), so no value can make a nested splice top level.
+
+### Compatibility
+
+- Additive. `SpecResolver` is unchanged; existing implementers behave exactly as before.
+
+### Tests
+
+- `exons.rendered_test.go`: the aigentverse repro (plain string → user only, kept; `RenderedBody` →
+  user + system, with and without `WithRefVerbatim`); a rendered body is not rendered again (a
+  literal tag survives); inside a message it flattens (inline, prose kept in order, beside a
+  top-level splice, through `exons.if`) with no marker text; a two-level chain keeps every level;
+  forging: child data stays stripped, `RenderedText` strips, forged-prose glue joined between two
+  real messages yields exactly two, the zero value splices nothing; lookup failure is not-found;
+  the API. Every render goes through all three message-reading paths with the NUL-count invariant.
+  Mutation-checked: no flatten (4 subtests fail), `RenderedText` not stripping, and the adapter
+  ignoring the interface (8 subtests fail) are each caught. The v0.34.1 forgery suite is unchanged
+  and green.
+
 ## [0.35.0] - 2026-09-27
 
 DC24-envoptin — `{~exons.env~}` is opt-in. Closes go-exons#7.
