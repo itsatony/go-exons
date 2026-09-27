@@ -1,6 +1,7 @@
 package exons
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -100,6 +101,7 @@ const (
 	ErrMsgUnknownTagInTemplate = "unknown tag in template"
 	ErrMsgInvalidOnErrorAttr   = "invalid onerror attribute value"
 	ErrMsgMissingIncludeTarget = "included template not found"
+	ErrMsgStrictAttributes     = "tag attributes refused by strict parse"
 
 	// Markdown fence mode validation warnings (WithMarkdownFences)
 	WarnMsgTagLikeInInertFence   = "tag-like syntax inside inert code fence - add 'exons' info string to render"
@@ -597,6 +599,65 @@ func NewInputValidationError(inputName, reason string) error {
 func NewRequiredInputMissingError(inputName string) error {
 	return cuserr.NewValidationError(ErrCodeConfig, ErrMsgRequiredInputMissing).
 		WithMetadata(MetaKeyInputName, inputName)
+}
+
+// ErrStrictAttributes is the sentinel every strict-parse refusal matches (WithStrictAttributes):
+//
+//	if errors.Is(err, exons.ErrStrictAttributes) { … }
+//
+// errors.As with a *StrictAttributeError reaches every refused issue, not only the first.
+var ErrStrictAttributes = errors.New(ErrMsgStrictAttributes)
+
+// StrictAttributeError carries every error-severity issue a strict Parse refused. Issues is never
+// empty and is in document order; the first is the one the error message names.
+//
+// It is the same []ValidationIssue Engine.Validate would report as errors for that template body,
+// so a consumer that already renders Validate findings renders these with the same code.
+type StrictAttributeError struct {
+	Issues []ValidationIssue
+}
+
+// Error names the first refused tag, its position and the resolver's reason, and how many
+// further issues were refused with it. The ErrMsgStrictAttributes prefix is the enclosing
+// go-cuserr error's own message, so it is not repeated here.
+func (e *StrictAttributeError) Error() string {
+	if len(e.Issues) == 0 {
+		return ErrMsgStrictAttributes
+	}
+	first := e.Issues[0]
+	msg := fmt.Sprintf(strictAttrErrFmt, first.TagName, first.Position, first.Message)
+	if extra := len(e.Issues) - 1; extra > 0 {
+		msg += fmt.Sprintf(strictAttrMoreFmt, extra)
+	}
+	return msg
+}
+
+// Is makes every StrictAttributeError match ErrStrictAttributes.
+func (e *StrictAttributeError) Is(target error) bool {
+	return target == ErrStrictAttributes
+}
+
+// Format strings for StrictAttributeError.Error.
+const (
+	strictAttrErrFmt  = "tag %q at %s: %s"
+	strictAttrMoreFmt = " (and %d more)"
+)
+
+// NewStrictAttributeError wraps the refused issues in the package's usual go-cuserr shape:
+// ErrCodeValidation, with MetaKeyTag / line / column / offset naming the FIRST issue. The cause is
+// a *StrictAttributeError, so errors.Is(err, ErrStrictAttributes) and errors.As both reach it.
+func NewStrictAttributeError(issues []ValidationIssue) error {
+	cause := &StrictAttributeError{Issues: issues}
+	err := cuserr.WrapWithCustomError(cause, cuserr.ErrorCategoryValidation, ErrCodeValidation, ErrMsgStrictAttributes)
+	if len(issues) == 0 {
+		return err
+	}
+	first := issues[0]
+	return err.
+		WithMetadata(MetaKeyTag, first.TagName).
+		WithMetadata(MetaKeyLine, strconv.Itoa(first.Position.Line)).
+		WithMetadata(MetaKeyColumn, strconv.Itoa(first.Position.Column)).
+		WithMetadata(MetaKeyOffset, strconv.Itoa(first.Position.Offset))
 }
 
 // NewFrontmatterError creates an error for YAML frontmatter extraction failures

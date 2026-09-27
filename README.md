@@ -654,7 +654,9 @@ estimate, _ := tmpl.EstimateTokens(ctx, data)
 
 ```go
 // AST validation (checks for unknown tags, missing attributes)
-result := engine.Validate(source)
+result, _ := engine.Validate(source)
+result.Errors()   // error-severity issues only
+result.Warnings() // warning-severity issues only
 
 // Dry run (static analysis without execution)
 dryRun, _ := tmpl.DryRun()
@@ -662,6 +664,43 @@ dryRun, _ := tmpl.DryRun()
 // Human-readable execution walkthrough
 explanation, _ := tmpl.Explain(ctx, data)
 ```
+
+### Parse judges grammar, not attributes — gate on Validate too
+
+`Engine.Parse` accepts any document that is grammatically well formed. It does **not** run each
+tag's resolver on its attributes, so `{~exons.include ref="x" /~}` (include takes `template=`) or
+`{~exons.message~}` (no `role=`) parses cleanly and then fails at every render. An intake or
+publish gate must also run `Validate` and refuse its error-severity issues:
+
+```go
+if _, err := engine.Parse(source); err != nil {
+    return err
+}
+res, _ := engine.Validate(source)
+if errs := res.Errors(); len(errs) > 0 {
+    return refuse(errs) // each issue carries TagName, Position and the resolver's reason
+}
+```
+
+Or build the gate's engine with `WithStrictAttributes()`, and `Parse` / `ParseBody` refuse those
+documents themselves, walking every tag, its children and every `if` / `for` / `switch` branch
+exactly as `Validate` does:
+
+```go
+gate := exons.MustNew(exons.WithStrictAttributes())
+if _, err := gate.Parse(source); err != nil {
+    var sae *exons.StrictAttributeError
+    if errors.As(err, &sae) { // or errors.Is(err, exons.ErrStrictAttributes)
+        return refuse(sae.Issues)
+    }
+    return err
+}
+```
+
+It is opt-in on purpose: a stricter default would newly refuse stored documents in every consumer
+on a library bump. Only error-severity issues are refused (an unknown tag stays a warning), no
+error strategy or `onerror=` lifts the check, and frontmatter tags — rendered through `Parse`
+during config extraction — are checked too.
 
 ## Tool Format Export
 

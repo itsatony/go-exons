@@ -1,7 +1,15 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.36.0
+  version: 0.37.0
+# v0.37.0 (DC26-strictattrs): PARSE JUDGES GRAMMAR; A GATE CAN NOW ASK FOR ATTRIBUTES TOO (go-exons#11).
+# Parse accepted {~exons.include ref=…/~} (no template=) and {~exons.message~} (no role=), which
+# every render then refuses; Validate already reported them as SeverityError. Docs now say a gate
+# must run Validate and refuse Errors(). New opt-in WithStrictAttributes(): Parse/ParseBody refuse
+# exactly Validate's error-severity issues (same validateNodes traversal, children + if/for/switch),
+# as ErrCodeValidation wrapping *StrictAttributeError{Issues}; errors.Is(err, ErrStrictAttributes).
+# No strategy/onerror= lifts it; warnings never refused; frontmatter tags checked (rendered via
+# Parse). ⛔ Default unchanged: a stricter default would refuse stored documents fleet-wide. Additive.
 # v0.36.0 (DC25-rendered): A RESOLVER THAT RENDERS ITS OWN CHILDREN KEEPS THEIR MESSAGES (go-exons#9).
 # v0.34.1 strips every NUL from a verbatim ref splice, which silently dropped the messages of a
 # body the resolver HAD rendered with go-exons (aigentverse). Fix is a TYPE, not an option:
