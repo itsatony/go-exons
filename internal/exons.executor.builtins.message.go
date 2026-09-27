@@ -246,3 +246,12 @@ func ExtractMessages(output string) []MessageInfo {
 
 	return messages
 }
+
+// InsideMessage reports whether ctx is rendering the content of an enclosing {~exons.message~}.
+//
+// Exported for the root package's reference splice only: a RenderedBody spliced inside a message
+// must contribute its content only (the v0.34.1 flatten rule), and the splice cannot learn its
+// position any other way. It READS the key; nothing outside this package can SET it.
+func InsideMessage(ctx context.Context) bool {
+	return insideMessage(ctx)
+}

@@ -35,13 +35,27 @@ import (
 //     ⛔ It is a migration path, not the destination: re-rendering rendered text is a no-op only
 //     until that text contains a literal {~…~}, and then it is an unknown-tag failure where
 //     there used to be inert prose. The fix for such a resolver is to return the raw body and
-//     let this function do the chain.
+//     let this function do the chain — or, when it must keep rendering children itself, to
+//     implement RenderedSpecResolver, whose RenderedBody keeps the child's messages (a plain
+//     verbatim string is stripped of every marker since v0.34.1; go-exons#9).
 func (a *SpecResolverAdapter) RenderSpecRef(
 	ctx context.Context,
 	execCtx interface{},
 	slug string,
 	version string,
 ) (out string, lookupFailed bool, err error) {
+	// A resolver that hands back RenderedBody values has already rendered the reference, and
+	// says so in a type only go-exons can fill (go-exons#9). Its markers are genuine, so they
+	// are kept — flattened to content when this reference sits inside a message. Checked first,
+	// and on every path: the claim does not depend on which engine or context is splicing.
+	if rendered, ok := a.resolver.(RenderedSpecResolver); ok {
+		body, rerr := rendered.ResolveRenderedSpec(ctx, slug, version)
+		if rerr != nil {
+			return "", true, rerr
+		}
+		return spliceRendered(ctx, body), false, nil
+	}
+
 	spec, body, err := a.resolver.ResolveSpec(ctx, slug, version)
 	if err != nil {
 		// ⛔ Reported through the SECOND return, never by wrapping a sentinel into the error.
@@ -82,8 +96,9 @@ func (a *SpecResolverAdapter) RenderSpecRef(
 
 	// The operator asked for the old splice — see WithRefVerbatim.
 	//
-	// ⛔ Every verbatim return strips NUL: the text was not rendered here, so a marker in it did
-	// not come from a message tag, and {~exons.ref~} is exempt from the executor's own strip
+	// ⛔ Every verbatim return strips NUL: a plain string carries no proof it was rendered, so a
+	// marker in it is not known to come from a message tag (a resolver that DID render returns a
+	// RenderedBody instead — handled above), and {~exons.ref~} is exempt from the executor's own strip
 	// because its RENDERED output legitimately carries markers (internal.StripMarkerBytes).
 	if engine.config.refVerbatim {
 		return internal.StripMarkerBytes(body), false, nil
