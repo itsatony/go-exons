@@ -16,6 +16,17 @@ const (
 	ProviderCohere    = "cohere"
 )
 
+// SerializedProviders lists the providers Config.ProviderFormat has an arm for, in the order the
+// constants are declared. It is the published schema's ExecutionConfig.provider `examples`
+// (pinned by schema.TestSchemaProviderIsAnOpenSet) and NOT a validity set: provider is an open
+// string, resolved by the executor against its own catalog (go-exons#15).
+func SerializedProviders() []string {
+	return []string{
+		ProviderOpenAI, ProviderAnthropic, ProviderGoogle, ProviderGemini, ProviderVertex,
+		ProviderVLLM, ProviderAzure, ProviderMistral, ProviderCohere,
+	}
+}
+
 // Model parameter map keys (for ToMap conversion).
 const (
 	ParamKeyTemperature       = "temperature"
