@@ -19,6 +19,11 @@
       "minLength": 1,
       "maxLength": 1024
     },
+    "display_name": {
+      "type": "string",
+      "description": "Optional human-friendly name a consumer shows in place of the slug (\"Churn Analyst\" for churn-analyst). Free-form and not unique; name stays the identity and the address. At most 80 characters (characters, not bytes). A go-exons key, not an Agent Skills one: the stripped Agent Skills export leaves it out.",
+      "maxLength": 80
+    },
     "type": {
       "$ref": "#/$defs/DocumentType"
     },

@@ -610,6 +610,7 @@ it stays a literal tag, nested or not.
 | Key | Since | Meaning |
 |---|---|---|
 | `subtype` | v0.19.0 | Refines `type: prompt` only: `fragment` (a composable piece meant to be *referenced*) or `template` (carries `inputs:`, meant to be *executed* with per-run values). Empty means unspecified. |
+| `display_name` | v0.38.0 | Optional human-friendly name a consumer shows in place of the slug (`Churn Analyst` for `churn-analyst`). Free-form, not unique, at most 80 characters; `name` stays the identity. Read through `Spec.EffectiveDisplayName()`, which falls back to `name`. Left out of the stripped Agent Skills export. The A2A card's `name` uses it. |
 | `recommended_agents` | v0.16.0 | A list of curatorial "made for @org/name" associations. Carried verbatim; never resolved by this library. |
 
 `inputs:` maps a name to an `InputDef`. The kind vocabulary (v0.19.0, completing

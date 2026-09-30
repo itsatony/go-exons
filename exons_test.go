@@ -1527,6 +1527,7 @@ func TestKnownSpecFields_MatchesSpecStruct(t *testing.T) {
 		Speech:            &SpeechConfig{Voice: "sage"},
 		Requirements:      &SpecRequirements{MCP: []MCPRequirement{{Capability: "dns-management"}}},
 		RecommendedAgents: []string{"@vai/mary"},
+		DisplayName:       "Test Doc",
 		Extensions:        map[string]any{"custom": "ext"},
 	}
 

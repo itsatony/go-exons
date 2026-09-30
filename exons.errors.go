@@ -290,6 +290,7 @@ const (
 	ErrMsgSpecNameInvalidFormat   = "spec name must be slug format (lowercase letters, digits, hyphens)"
 	ErrMsgSpecDescriptionRequired = "spec description is required"
 	ErrMsgSpecDescriptionTooLong  = "spec description exceeds maximum length"
+	ErrMsgSpecDisplayNameTooLong  = "spec display_name exceeds maximum length"
 	// input_order validation. Only a DECLARED order can fail these; a derived one is
 	// read off the mapping it orders and is correct by construction.
 	ErrMsgSpecInputOrderUnknown   = "input_order names an input that is not declared"
@@ -765,6 +766,13 @@ func NewSpecDescriptionRequiredError() error {
 // NewSpecDescriptionTooLongError creates an error for spec description exceeding max length.
 func NewSpecDescriptionTooLongError(maxLen int) error {
 	return cuserr.NewValidationError(ErrCodeSpec, ErrMsgSpecDescriptionTooLong).
+		WithMetadata(MetaKeyMaxLength, strconv.Itoa(maxLen))
+}
+
+// NewSpecDisplayNameTooLongError creates an error for a display_name exceeding
+// SpecDisplayNameMaxLength characters.
+func NewSpecDisplayNameTooLongError(maxLen int) error {
+	return cuserr.NewValidationError(ErrCodeSpec, ErrMsgSpecDisplayNameTooLong).
 		WithMetadata(MetaKeyMaxLength, strconv.Itoa(maxLen))
 }
 

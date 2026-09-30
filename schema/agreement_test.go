@@ -116,6 +116,10 @@ func agreementCorpus() []agreementCase {
 		agree("description 1024 non-ASCII characters", "name: doc\ndescription: "+umlauts(1024)+"\ntype: agent\n", true),
 		agree("description 1025 non-ASCII characters", "name: doc\ndescription: "+umlauts(1025)+"\ntype: agent\n", false),
 		diverge("type missing", agreementHead, false, true, schemaStricterType),
+		// display_name (v0.38.0): optional, counted in characters like description.
+		agree("display_name 80 non-ASCII characters", agent("display_name: "+umlauts(80)+"\n"), true),
+		agree("display_name 81 non-ASCII characters", agent("display_name: "+umlauts(81)+"\n"), false),
+		agree("display_name with spaces and capitals", agent("display_name: Churn Analyst (DACH)\n"), true),
 
 		// --- requirements: undeclared in the schema before v0.31.0, so ANY value passed it.
 		agree("requirements with every field", agent(`requirements:
@@ -427,6 +431,11 @@ func TestSchemaRequirementsBoundsAreTheGoConstants(t *testing.T) {
 	description := root["properties"].(map[string]any)["description"].(map[string]any)
 	if got, _ := description["maxLength"].(float64); int(got) != exons.SpecDescriptionMaxLength {
 		t.Errorf("description maxLength = %v, want exons.SpecDescriptionMaxLength (%d)", got, exons.SpecDescriptionMaxLength)
+	}
+
+	displayName := root["properties"].(map[string]any)["display_name"].(map[string]any)
+	if got, _ := displayName["maxLength"].(float64); int(got) != exons.SpecDisplayNameMaxLength {
+		t.Errorf("display_name maxLength = %v, want exons.SpecDisplayNameMaxLength (%d)", got, exons.SpecDisplayNameMaxLength)
 	}
 
 	reqs := defs["SpecRequirements"].(map[string]any)["properties"].(map[string]any)

@@ -127,6 +127,7 @@ func (s *Spec) ExportFull() ([]byte, error) {
 var knownSpecFields = map[string]bool{
 	SpecFieldName:              true,
 	SpecFieldDescription:       true,
+	SpecFieldDisplayName:       true,
 	SpecFieldContentFormat:     true,
 	SpecFieldRecommendedAgents: true,
 	SpecFieldInputs:            true,
@@ -163,6 +164,11 @@ func (s *Spec) buildSerializeMap(opts *SerializeOptions) map[string]any {
 	}
 	if s.Description != "" {
 		m[SpecFieldDescription] = s.Description
+	}
+	// display_name is a go-exons key, not an Agent Skills one (that spec's
+	// top-level keys are a closed set), so a stripped export leaves it out.
+	if opts.IncludeExtensions && s.DisplayName != "" {
+		m[SpecFieldDisplayName] = s.DisplayName
 	}
 	// content_format is a go-exons extension key: keep it out of
 	// Agent Skills compatible exports (which strip non-standard fields).
