@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-09-30
+
+A display name for every document type (vAudience/aigentverse DC301-displayname). The slug in
+`name:` is an address and hard to read; a consumer listing definitions had nothing else to show.
+
+### Added
+
+- **`Spec.DisplayName`** (`display_name:`), an optional, free-form, non-unique name a consumer
+  SHOWS. `name` stays the identity and the address; nothing resolves by display name. A typed
+  field, so the key no longer lands in `Extensions` (no consumer in the stack read it from there;
+  searched aigentverse, atlas, aigentflow and vaichat2 at origin/main before shipping).
+- **`SpecDisplayNameMaxLength` = 80**, counted in characters like the description.
+  `Spec.Validate` refuses a longer value with `ErrMsgSpecDisplayNameTooLong`
+  (`NewSpecDisplayNameTooLongError`, `MetaKeyMaxLength`), the same shape as the description's
+  length error. An empty value is valid.
+- **`Spec.EffectiveDisplayName()`**: the trimmed display name, or `name` when it is blank.
+- **`SpecFieldDisplayName`**, the schema's `display_name` property (`maxLength` pinned to the Go
+  constant by `TestSchemaRequirementsBoundsAreTheGoConstants`), and agreement rows at 80 / 81
+  non-ASCII characters.
+
+### Changed
+
+- **The A2A card's `name`** is `EffectiveDisplayName()`, and so is a synthesized skill's `name`;
+  the synthesized skill's `id` stays the slug. A document without `display_name` produces the
+  byte-identical card it did before.
+- **Serialization**: `ExportFull` writes `display_name` after `description`; the stripped
+  Agent Skills export (`AgentSkillsExportOptions`) leaves it out, like `recommended_agents`,
+  because that spec's top-level keys are a closed set. A consumer wanting it in a SKILL.md puts
+  it in `metadata` itself.
+
 ## [0.37.0] - 2026-09-27
 
 DC26-strictattrs — `Parse` judges grammar only; a gate can now ask it to judge attributes too.

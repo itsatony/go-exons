@@ -61,7 +61,9 @@ type A2ACardOptions struct {
 // CompileAgentCard generates an A2A v1.0.1 Agent Card from this Spec's configuration.
 // This is a pure metadata transformation — no template execution occurs.
 //
-// Name is taken from the Spec and must not be empty. Transport endpoints are not part
+// Name is taken from the Spec and must not be empty; the card's human-readable
+// name is EffectiveDisplayName (display_name, falling back to name), while a
+// synthesized skill's ID stays the slug. Transport endpoints are not part
 // of the definition, so they come from opts.SupportedInterfaces; a declaration-only
 // card supplies a single registry-definition interface. The returned card is not
 // guaranteed to be fully conformant on its own (e.g. if the caller supplies no
@@ -100,7 +102,7 @@ func (s *Spec) CompileAgentCard(ctx context.Context, opts *A2ACardOptions) (*a2a
 	}
 
 	card := &a2a.AgentCard{
-		Name:                 s.Name,
+		Name:                 s.EffectiveDisplayName(),
 		Description:          s.Description,
 		SupportedInterfaces:  interfaces,
 		Version:              a2aResolveVersion(s, opts),
@@ -187,7 +189,7 @@ func a2aCompileSkills(ctx context.Context, s *Spec, resolver SpecResolver) []a2a
 		}
 		return []a2a.AgentSkill{{
 			ID:          s.Name,
-			Name:        s.Name,
+			Name:        s.EffectiveDisplayName(),
 			Description: desc,
 			Tags:        tagsCopy(),
 		}}

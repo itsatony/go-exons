@@ -2,6 +2,7 @@ package exons
 
 import (
 	"regexp"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/itsatony/go-exons/execution"
@@ -25,6 +26,17 @@ type Spec struct {
 	Name        string       `yaml:"name" json:"name"`
 	Description string       `yaml:"description,omitempty" json:"description,omitempty"`
 	Type        DocumentType `yaml:"type,omitempty" json:"type,omitempty"`
+
+	// DisplayName is the optional human-friendly name a consumer SHOWS — "Churn
+	// Analyst" beside the slug `churn-analyst`. Name stays the identity and the
+	// address; DisplayName is free-form text, not unique, never used to resolve
+	// anything, and at most SpecDisplayNameMaxLength characters. Read it through
+	// EffectiveDisplayName, which falls back to Name when it is blank.
+	//
+	// ⚠ It is a go-exons key, not an Agent Skills one: the stripped Agent Skills
+	// export (AgentSkillsExportOptions) leaves it out, exactly like
+	// recommended_agents, because that spec allows a closed set of top-level keys.
+	DisplayName string `yaml:"display_name,omitempty" json:"display_name,omitempty"`
 
 	// Subtype refines Type. Today it is meaningful only for DocumentTypePrompt,
 	// where SubtypePromptFragment marks a composable piece meant to be referenced
@@ -233,6 +245,11 @@ func (s *Spec) Validate() error {
 		return NewSpecDescriptionTooLongError(SpecDescriptionMaxLength)
 	}
 
+	// Validate display name (optional, max length in CHARACTERS, like description).
+	if utf8.RuneCountInString(s.DisplayName) > SpecDisplayNameMaxLength {
+		return NewSpecDisplayNameTooLongError(SpecDisplayNameMaxLength)
+	}
+
 	// Validate document type if set
 	if s.Type != "" && !isValidDocumentType(s.Type) {
 		return NewSpecValidationError(ErrMsgInvalidDocumentType, string(s.Type))
@@ -343,6 +360,19 @@ func (s *Spec) GetSlug() string {
 	return s.Name
 }
 
+// EffectiveDisplayName returns the name a consumer should SHOW for this spec:
+// DisplayName with surrounding whitespace trimmed, or Name when that is blank.
+// Never use it as an identifier — GetSlug is the identity.
+func (s *Spec) EffectiveDisplayName() string {
+	if s == nil {
+		return ""
+	}
+	if dn := strings.TrimSpace(s.DisplayName); dn != "" {
+		return dn
+	}
+	return s.Name
+}
+
 // EffectiveType returns the document type, defaulting to "skill" if not set.
 func (s *Spec) EffectiveType() DocumentType {
 	if s == nil || s.Type == "" {
@@ -360,6 +390,7 @@ func (s *Spec) Clone() *Spec {
 	clone := &Spec{
 		Name:          s.Name,
 		Description:   s.Description,
+		DisplayName:   s.DisplayName,
 		Type:          s.Type,
 		Subtype:       s.Subtype,
 		Credential:    s.Credential,

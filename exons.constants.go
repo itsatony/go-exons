@@ -469,6 +469,11 @@ const (
 	// CHARACTERS (runes) since v0.31.0 — bytes before, which refused non-ASCII
 	// descriptions the schema and the Agent Skills spec accept.
 	SpecDescriptionMaxLength = 1024
+	// SpecDisplayNameMaxLength is the maximum length of the optional display_name,
+	// in CHARACTERS (runes). Sized for a heading, a picker row or a card title —
+	// long enough for "Senior Customer Success Escalation Analyst (DACH)", short
+	// enough that no consumer has to truncate a list row mid-word.
+	SpecDisplayNameMaxLength = 80
 	// SpecSlugPattern is the regex pattern for valid spec names/slugs.
 	// Must start with lowercase letter, followed by lowercase letters, digits, or hyphens.
 	SpecSlugPattern = `^[a-z][a-z0-9-]*$`
@@ -478,8 +483,10 @@ const (
 // Used in buildSerializeMap and extension key filtering.
 const (
 	// Standard fields
-	SpecFieldName          = "name"
-	SpecFieldDescription   = "description"
+	SpecFieldName        = "name"
+	SpecFieldDescription = "description"
+	// SpecFieldDisplayName is the frontmatter key for Spec.DisplayName.
+	SpecFieldDisplayName   = "display_name"
 	SpecFieldInputs        = "inputs"
 	SpecFieldInputOrder    = "input_order" // authored order of `inputs` (Spec.InputOrder)
 	SpecFieldOutputs       = "outputs"

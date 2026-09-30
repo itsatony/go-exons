@@ -1,7 +1,11 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.37.0
+  version: 0.38.0
+# v0.38.0 (aigentverse DC301-displayname): Spec.DisplayName (display_name:), optional, free-form,
+# not unique, ≤ SpecDisplayNameMaxLength (80) characters, refused by Validate like description.
+# EffectiveDisplayName() falls back to name. The A2A card name uses it; the synthesized skill id
+# stays the slug. ExportFull writes it, the Agent Skills export strips it. Additive.
 # v0.37.0 (DC26-strictattrs): PARSE JUDGES GRAMMAR; A GATE CAN NOW ASK FOR ATTRIBUTES TOO (go-exons#11).
 # Parse accepted {~exons.include ref=…/~} (no template=) and {~exons.message~} (no role=), which
 # every render then refuses; Validate already reported them as SeverityError. Docs now say a gate
