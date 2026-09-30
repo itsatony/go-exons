@@ -26,8 +26,8 @@ package exons
 // validates today, and refusing it now would break a document that works.
 type SpeechConfig struct {
 	// Provider is the TTS vendor (e.g. "openai", "elevenlabs"). It is NOT drawn
-	// from the ExecutionConfig provider enum — that enum names LLM providers and
-	// carries no TTS-only vendor, so reusing it would refuse a working value.
+	// from the ExecutionConfig provider vocabulary — that set names LLM providers
+	// and carries no TTS-only vendor, so reusing it would refuse a working value.
 	Provider string `yaml:"provider,omitempty" json:"provider,omitempty"`
 
 	// Model is the TTS model (e.g. "gpt-4o-mini-tts"). Without it, Voice has no

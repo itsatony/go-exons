@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/itsatony/go-exons/execution"
 )
 
 // schemaPath returns the absolute path to exons.schema.json relative to this test file.
@@ -175,32 +177,46 @@ func TestSchemaDocumentTypeEnum(t *testing.T) {
 	}
 }
 
-func TestSchemaProviderEnum(t *testing.T) {
+// TestSchemaProviderIsAnOpenSet pins go-exons#15. ExecutionConfig.provider was a closed
+// nine-value enum while the Go field is a free string with no Validate(), and every executor
+// resolves the value against its own model catalog — so the enum refused live providers
+// (bedrock, ollama, xai, …) in every editor validating against this schema. It is now an
+// open set: no enum, and the examples are exactly the providers execution/ gives a
+// provider-specific serialization, derived from those constants rather than restated.
+func TestSchemaProviderIsAnOpenSet(t *testing.T) {
 	schema := loadSchema(t)
 	defs := schema["$defs"].(map[string]any)
 	ec := defs["ExecutionConfig"].(map[string]any)
 	props := ec["properties"].(map[string]any)
 	provider := props["provider"].(map[string]any)
 
-	enumRaw, ok := provider["enum"].([]any)
-	if !ok {
-		t.Fatal("ExecutionConfig.provider enum missing")
+	if _, closed := provider["enum"]; closed {
+		t.Fatal("ExecutionConfig.provider must not carry an enum: the provider set is the executor's catalog, not the document format's (go-exons#15)")
+	}
+	if provider["type"] != "string" {
+		t.Errorf("ExecutionConfig.provider type = %v, want string", provider["type"])
 	}
 
-	expected := map[string]bool{
-		"openai": true, "anthropic": true, "google": true,
-		"gemini": true, "vertex": true, "vllm": true,
-		"azure": true, "mistral": true, "cohere": true,
+	examplesRaw, ok := provider["examples"].([]any)
+	if !ok {
+		t.Fatal("ExecutionConfig.provider examples missing: editors complete from them")
 	}
-	for _, v := range enumRaw {
+	expected := map[string]bool{}
+	for _, p := range execution.SerializedProviders() {
+		expected[p] = true
+	}
+	if len(expected) == 0 {
+		t.Fatal("execution.SerializedProviders() is empty")
+	}
+	for _, v := range examplesRaw {
 		s, _ := v.(string)
 		if !expected[s] {
-			t.Errorf("unexpected provider enum value: %q", s)
+			t.Errorf("provider example %q has no serialization arm in execution/", s)
 		}
 		delete(expected, s)
 	}
 	for missing := range expected {
-		t.Errorf("missing provider enum value: %q", missing)
+		t.Errorf("provider %q has a serialization arm but is not a schema example", missing)
 	}
 }
 

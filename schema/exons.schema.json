@@ -837,7 +837,7 @@
       "properties": {
         "provider": {
           "type": "string",
-          "description": "TTS provider identifier (e.g. 'openai', 'elevenlabs'). Deliberately NOT the ExecutionConfig.provider enum, which names LLM providers and carries no TTS-only vendor."
+          "description": "TTS provider identifier (e.g. 'openai', 'elevenlabs'). Deliberately NOT the ExecutionConfig.provider vocabulary, which names LLM providers and carries no TTS-only vendor."
         },
         "model": {
           "type": "string",
@@ -883,7 +883,7 @@
       "properties": {
         "provider": {
           "type": "string",
-          "description": "STT provider identifier (e.g. 'speechmatics', 'assemblyai', 'openai'). Not the ExecutionConfig.provider enum, for the same reason SpeechConfig.provider is not."
+          "description": "STT provider identifier (e.g. 'speechmatics', 'assemblyai', 'openai'). Not the ExecutionConfig.provider vocabulary, for the same reason SpeechConfig.provider is not."
         },
         "model": {
           "type": "string",
@@ -971,8 +971,8 @@
       "properties": {
         "provider": {
           "type": "string",
-          "description": "LLM provider identifier.",
-          "enum": ["openai", "anthropic", "google", "gemini", "vertex", "vllm", "azure", "mistral", "cohere"]
+          "description": "LLM provider identifier. Deliberately NOT constrained by an enum: the provider set belongs to the executing system's model catalog, which moves every release (bedrock, ollama, xai, scaleway, nebius and others are live providers a closed list would refuse), so go-exons declares and the executor resolves. The examples are the providers go-exons' ProviderFormat serializes a response format for; any other value is a valid document, and ProviderFormat reports it as an unsupported provider for structured output.",
+          "examples": ["openai", "anthropic", "google", "gemini", "vertex", "vllm", "azure", "mistral", "cohere"]
         },
         "model": {
           "type": "string",

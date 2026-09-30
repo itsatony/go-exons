@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-09-30
+
+`ExecutionConfig.provider` is an open set in the published schema (#15, from aigentverse
+DC300-modelpick).
+
+### Changed
+
+- **`schema/exons.schema.json`: `ExecutionConfig.provider` no longer carries an `enum`.** The nine
+  values it listed were a snapshot. The Go field is a free string with no `Validate()`, and every
+  executor resolves the value against its own model catalog. The enum therefore refused live
+  providers (bedrock, deepseek, ollama, perplexity, qwen, scaleway, nebius, xai, …) in every editor
+  and CI job that validates against the published schema. The property now follows the input
+  `kind` precedent: `type: string`, a description saying why it is open, and `examples` for
+  completion. This is a relaxation, so a document that validated before still validates.
+- The `SpeechConfig` / `TranscriptionConfig` provider descriptions now point at the provider
+  "vocabulary" rather than an enum that no longer exists.
+
+### Added
+
+- **`execution.SerializedProviders()`**: the providers `Config.ProviderFormat` has an arm for.
+  It is the schema's `examples` for `provider`, pinned by `TestSchemaProviderIsAnOpenSet`, and it
+  is not a validity set. `TestSerializedProvidersAreExactlyProviderFormatsArms` holds it to the
+  switch in both directions.
+
+### Removed
+
+- `TestSchemaProviderEnum`, replaced by `TestSchemaProviderIsAnOpenSet`.
+
 ## [0.38.0] - 2026-09-30
 
 A display name for every document type (vAudience/aigentverse DC301-displayname). The slug in
