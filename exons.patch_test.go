@@ -247,6 +247,9 @@ func TestPatchSource_SelfCheckRefusesAWrongSplice(t *testing.T) {
 	_, err := PatchSource([]byte("---\nname: a\ndescription: d\ntype: agent\n---\n"), lying)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrPatchSelfCheck), "%v", err)
+	assert.Contains(t, err.Error(), "display_name", "names the differing key")
+	assert.NotContains(t, err.Error(), "Something else", "never the values")
+	assert.NotContains(t, err.Error(), "Shown", "never the values")
 }
 
 // An unquoted tag in a key the parser does not type (an extension) is YAML as written — a flow

@@ -101,4 +101,4 @@ well as validates.
   leaking into the strict-attributes Parse walk.
 - Agreement corpus: 105 rows (80 agree, 6 parser-stricter, 19 schema-stricter).
 - `make ci-local` green on the branch: build, vet, gofmt, tidy, golangci-lint v2.12.2 (0 issues),
-  race tests, total coverage 91.0 % (floor 88; root package 92.0 %).
+  race tests, total coverage 91.1 % (floor 88; root package 92.0 %).

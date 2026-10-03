@@ -3,6 +3,7 @@ package exons
 import (
 	"bytes"
 	"errors"
+	"sort"
 	"strings"
 
 	"github.com/itsatony/go-cuserr"
@@ -588,6 +589,10 @@ func pruneContainer(s *Spec, path string) {
 
 // sameDocument compares two specs by their canonical YAML encoding (struct tags, sorted maps; the
 // allow-lists keep nil apart from empty through their own marshallers) and their bodies.
+//
+// ⚠ On a mismatch it names only the TOP-LEVEL KEYS that differ, never their values: a document can
+// carry anything an author wrote (context, extensions, credential refs), and this error travels to
+// logs and API responses.
 func sameDocument(want, got *Spec) error {
 	w, err := yaml.Marshal(want)
 	if err != nil {
@@ -597,10 +602,32 @@ func sameDocument(want, got *Spec) error {
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(w, g) || want.Body != got.Body {
-		return errors.New(ErrMsgPatchSelfCheckDetail + "\n--- want\n" + string(w) + "--- got\n" + string(g))
+	if bytes.Equal(w, g) && want.Body == got.Body {
+		return nil
 	}
-	return nil
+	var wm, gm map[string]any
+	_ = yaml.Unmarshal(w, &wm)
+	_ = yaml.Unmarshal(g, &gm)
+	keys := map[string]struct{}{}
+	for k := range wm {
+		keys[k] = struct{}{}
+	}
+	for k := range gm {
+		keys[k] = struct{}{}
+	}
+	var differ []string
+	for k := range keys {
+		wb, _ := yaml.Marshal(wm[k])
+		gb, _ := yaml.Marshal(gm[k])
+		if !bytes.Equal(wb, gb) {
+			differ = append(differ, k)
+		}
+	}
+	if want.Body != got.Body {
+		differ = append(differ, "(body)")
+	}
+	sort.Strings(differ)
+	return errors.New(ErrMsgPatchSelfCheckDetail + ": " + strings.Join(differ, ", "))
 }
 
 // Patch refusal sentinels. Every PatchSource error matches ErrPatchRefused and exactly one of the

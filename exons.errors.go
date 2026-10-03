@@ -295,7 +295,7 @@ const (
 	ErrMsgPatchUnsupportedShape = "frontmatter shape is not editable in place"
 	ErrMsgPatchResultInvalid    = "patched document does not pass Parse/Validate"
 	ErrMsgPatchSelfCheck        = "patched document does not decode to the original with the edits applied"
-	ErrMsgPatchSelfCheckDetail  = "canonical encodings differ"
+	ErrMsgPatchSelfCheckDetail  = "the decoded result differs from the expected one at"
 	ErrMsgPatchZeroEdit         = "a zero SourceEdit — build edits with the Set… constructors"
 	ErrMsgPatchRootNotBlock     = "frontmatter root must be a non-empty block mapping"
 	ErrMsgPatchNotMapping       = "expected a mapping at"
