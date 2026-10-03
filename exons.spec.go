@@ -281,6 +281,11 @@ func (s *Spec) Validate() error {
 		if s.Requirements != nil && s.Requirements.Environment != nil {
 			return NewSpecValidationError(ErrMsgPromptNoEnvironment, s.Name)
 		}
+		// A key present with an empty mapping (`resource_modes: {}`) is refused too,
+		// as an empty environment block is: the prohibition is on the KEY.
+		if s.Requirements != nil && s.Requirements.ResourceModes != nil {
+			return NewSpecValidationError(ErrMsgPromptNoResourceModes, s.Name)
+		}
 
 	case DocumentTypeSkill:
 		if len(s.Skills) > 0 {
@@ -329,6 +334,9 @@ func (s *Spec) Validate() error {
 		}
 	}
 	if err := s.ValidateRequirements(); err != nil {
+		return err
+	}
+	if err := s.Tools.Validate(); err != nil {
 		return err
 	}
 	if err := s.validateInputOrder(); err != nil {

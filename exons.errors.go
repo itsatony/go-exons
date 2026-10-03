@@ -276,6 +276,21 @@ const (
 	// ErrMsgPromptNoEnvironment: a prompt runs nothing, so it has no environment to need.
 	ErrMsgPromptNoEnvironment = "prompt type does not support requirements.environment (valid on skill and agent)"
 
+	// requirements.resource_modes validation messages (v0.40.0, vAudience/atlas#803).
+	ErrMsgResourceModeKindForm = "requirements.resource_modes key must be a resource kind: a lowercase token (a letter, then letters, digits, '_', '.' or '-')"
+	ErrMsgResourceModeInvalid  = "requirements.resource_modes value must be: all, listed or none"
+	// ErrMsgResourceModeWithEntries names the contradiction and both ways out.
+	ErrMsgResourceModeWithEntries = "requirements.resource_modes all/none contradicts requirements.resources entries of the same kind: remove the entries, or set the mode to listed"
+	// ErrMsgResourceModeListedEmpty: listed with nothing listed reads as a narrowing and means none.
+	ErrMsgResourceModeListedEmpty = "requirements.resource_modes listed needs at least one requirements.resources entry of that kind (write none to allow no resource of it)"
+	// ErrMsgPromptNoResourceModes: a prompt binds no resources, so it has no mode to declare.
+	ErrMsgPromptNoResourceModes = "prompt type does not support requirements.resource_modes (valid on skill and agent)"
+
+	// Tool allow-list validation messages (v0.40.0).
+	ErrMsgToolAllowEntryEmpty = "tool allow-list entries must not be empty"
+	ErrMsgToolAllowEntryDup   = "tool allow-list entries must be unique"
+	ErrMsgToolAllowTooMany    = "tool allow-list exceeds the maximum number of entries"
+
 	// Credential and manifest validation messages
 	ErrMsgCredentialNotFound         = "credential label not found in credentials map"
 	ErrMsgCredentialMissingProvider  = "credential must specify a provider"

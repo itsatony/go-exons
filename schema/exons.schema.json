@@ -133,7 +133,7 @@
   },
   "allOf": [
     {
-      "description": "A prompt carries no skills, no tool functions, and no constraints, memory, dispatch or registry block, and no requirements.environment — a prompt runs nothing (Spec.Validate, type prompt).",
+      "description": "A prompt carries no skills, no tool functions, and no constraints, memory, dispatch or registry block, and no requirements.environment or requirements.resource_modes — a prompt runs nothing (Spec.Validate, type prompt).",
       "if": {
         "required": ["type"],
         "properties": {
@@ -154,7 +154,8 @@
           "registry": false,
           "requirements": {
             "properties": {
-              "environment": false
+              "environment": false,
+              "resource_modes": false
             }
           }
         }
@@ -324,9 +325,12 @@
         },
         "allow": {
           "type": "array",
-          "description": "Allowlist of tool names the agent may use, from EVERY source (inline functions, MCP servers, tools a runtime adds). Absent means no narrowing; an explicit empty list [] means NO tools. The two are different documents and a round trip keeps them apart.",
+          "description": "Allowlist of tool names the agent may use, from EVERY source (inline functions, MCP servers, tools a runtime adds). Absent means no narrowing (mode all); an explicit empty list [] means NO tools (mode none); a list means only those (mode listed) — Spec.ToolMode reads it, and there is deliberately no second spelling. Names are compared verbatim: non-empty, unique, at most 512.",
+          "maxItems": 512,
+          "uniqueItems": true,
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
         }
       }
@@ -372,9 +376,12 @@
         },
         "tools": {
           "type": "array",
-          "description": "Narrows the tools this server exposes. Absent means every tool the server lists; an explicit empty list [] means none.",
+          "description": "Narrows the tools this server exposes. Absent means every tool the server lists; an explicit empty list [] means none. Names are compared verbatim: non-empty, unique, at most 512.",
+          "maxItems": 512,
+          "uniqueItems": true,
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
         }
       }
@@ -523,6 +530,23 @@
         },
         "environment": {
           "$ref": "#/$defs/EnvironmentRequirement"
+        },
+        "resource_modes": {
+          "type": "object",
+          "description": "Per resource kind: all (every resource of the kind), listed (only the resources entries of that kind) or none. An absent kind is derived: entries of the kind present means listed, otherwise all. The parser also refuses all/none beside entries of the same kind, and listed with no entry of it. Valid on skill and agent documents only.",
+          "maxProperties": 256,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_.-]*$",
+            "maxLength": 512
+          },
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "all",
+              "listed",
+              "none"
+            ]
+          }
         }
       }
     },

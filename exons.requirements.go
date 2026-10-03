@@ -89,6 +89,12 @@ type SpecRequirements struct {
 	// needs (code execution, informational packages, network). Valid on skill
 	// and agent documents only; see EnvironmentRequirement. Added in v0.33.0.
 	Environment *EnvironmentRequirement `yaml:"environment,omitempty" json:"environment,omitempty"`
+	// ResourceModes says, per resource KIND, whether the definition may use
+	// every resource of that kind, only the listed ones, or none at all. Added
+	// in v0.40.0 (vAudience/atlas#803). Read it through ResourceMode, never
+	// directly: an absent key is derived, not "unset". Valid on skill and agent
+	// documents only — a prompt refuses it. See ResourceMode.
+	ResourceModes map[string]ResourceMode `yaml:"resource_modes,omitempty" json:"resource_modes,omitempty"`
 }
 
 // MCPRequirement declares one abstract MCP capability requirement. Capability is
@@ -242,6 +248,9 @@ func (r *SpecRequirements) Validate() error {
 	if err := r.validateResources(); err != nil {
 		return err
 	}
+	if err := r.validateResourceModes(); err != nil {
+		return err
+	}
 	return r.Environment.Validate()
 }
 
@@ -309,6 +318,12 @@ func (r *SpecRequirements) Clone() *SpecRequirements {
 		copy(clone.Resources, r.Resources)
 	}
 	clone.Environment = r.Environment.Clone()
+	if r.ResourceModes != nil {
+		clone.ResourceModes = make(map[string]ResourceMode, len(r.ResourceModes))
+		for k, v := range r.ResourceModes {
+			clone.ResourceModes[k] = v
+		}
+	}
 	return clone
 }
 
