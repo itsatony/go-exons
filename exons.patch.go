@@ -206,7 +206,9 @@ const MaxPatchEdits = 64
 // block (tools, requirements, requirements.resource_modes, execution), the block's whole entry is
 // deleted instead — including any comment lines indented inside that block. Comment lines at or
 // left of an entry's column are never part of it and always stay. Inserted lines use the
-// frontmatter's dominant line ending.
+// frontmatter's dominant line ending. ⚠ One exception to the key-line comment: a FLOW-style block
+// (`tools: {allow: [a], …}`) spanning several lines is re-emitted whole, and a comment on its key
+// line is not carried over.
 //
 // It refuses — returning an error matching ErrPatchRefused and no bytes — when:
 //   - the document has no frontmatter (ErrPatchNoFrontmatter) or does not pass Parse
@@ -214,8 +216,9 @@ const MaxPatchEdits = 64
 //     frontmatter that is YAML only after its `{~…~}` tags render is refused; quoting the tag makes
 //     it plain YAML;
 //   - the frontmatter contains a line break other than "\n"/"\r\n" (U+0085, U+2028, U+2029, a
-//     lone "\r"), an alias or anchor in an edited entry, or a non-mapping where a block is expected
-//     (ErrPatchUnsupportedShape);
+//     lone "\r"); an edited entry holds an alias or anchor, or a single- or double-quoted scalar
+//     spanning several lines (its continuation lines cannot be told from comments); or a
+//     non-mapping sits where a block is expected (ErrPatchUnsupportedShape);
 //   - an edit is invalid, or there are more than MaxPatchEdits (ErrPatchEditInvalid);
 //   - the result fails Parse or Spec.ValidateStrict (ErrPatchResultInvalid, wrapping the reason).
 //     The STRICT check runs on the result only: a stored document with a duplicate tools.allow
@@ -463,7 +466,10 @@ func patchFrontmatter(fm []byte, e SourceEdit) ([]byte, []string, error) {
 			if err != nil {
 				return nil, nil, newPatchError(ErrPatchEditInvalid, e.Path(), err)
 			}
-			_, end := entryLines(cur, len(cur.Content)/2-1, indent, text.lines)
+			_, end, err := entryLines(cur, len(cur.Content)/2-1, indent, text.lines)
+			if err != nil {
+				return nil, nil, newPatchError(ErrPatchUnsupportedShape, e.Path(), err)
+			}
 			if err := text.insertAfter(end, lines); err != nil {
 				return nil, nil, err
 			}
@@ -478,7 +484,10 @@ func patchFrontmatter(fm []byte, e SourceEdit) ([]byte, []string, error) {
 			if e.remove {
 				return removeEntry(text, frames, e.path)
 			}
-			start, end := entryLines(cur, j, indent, text.lines)
+			start, end, err := entryLines(cur, j, indent, text.lines)
+			if err != nil {
+				return nil, nil, newPatchError(ErrPatchUnsupportedShape, e.Path(), err)
+			}
 			comment := keyNode.LineComment
 			if comment == "" && start == end {
 				comment = val.LineComment
@@ -500,7 +509,10 @@ func patchFrontmatter(fm []byte, e SourceEdit) ([]byte, []string, error) {
 			if e.remove {
 				return fm, nil, nil
 			}
-			start, end := entryLines(cur, j, indent, text.lines)
+			start, end, err := entryLines(cur, j, indent, text.lines)
+			if err != nil {
+				return nil, nil, newPatchError(ErrPatchUnsupportedShape, e.Path(), err)
+			}
 			lines, err := renderEntry(key, nestValue(e.path[i+1:], leaf), indent, keyNode.LineComment, text.cr)
 			if err != nil {
 				return nil, nil, newPatchError(ErrPatchEditInvalid, e.Path(), err)
@@ -516,7 +528,10 @@ func patchFrontmatter(fm []byte, e SourceEdit) ([]byte, []string, error) {
 			if err := setInNode(val, e.path[i+1:], leaf); err != nil {
 				return nil, nil, newPatchError(ErrPatchUnsupportedShape, e.Path(), err)
 			}
-			start, end := entryLines(cur, j, indent, text.lines)
+			start, end, err := entryLines(cur, j, indent, text.lines)
+			if err != nil {
+				return nil, nil, newPatchError(ErrPatchUnsupportedShape, e.Path(), err)
+			}
 			lines, err := renderEntry(key, val, indent, keyNode.LineComment, text.cr)
 			if err != nil {
 				return nil, nil, newPatchError(ErrPatchEditInvalid, e.Path(), err)
@@ -546,7 +561,10 @@ func removeEntry(text *fmLines, frames []pathFrame, path []string) ([]byte, []st
 	if hasAnchorOrAlias(f.m.Content[2*f.entry+1]) {
 		return nil, nil, newPatchError(ErrPatchUnsupportedShape, strings.Join(path, "."), errors.New(ErrMsgPatchAnchor))
 	}
-	start, end := entryLines(f.m, f.entry, f.indent, text.lines)
+	start, end, err := entryLines(f.m, f.entry, f.indent, text.lines)
+	if err != nil {
+		return nil, nil, newPatchError(ErrPatchUnsupportedShape, strings.Join(path, "."), err)
+	}
 	if err := text.replace(start, end, nil); err != nil {
 		return nil, nil, err
 	}
@@ -566,8 +584,17 @@ func removeEntry(text *fmLines, frames []pathFrame, path []string) ([]byte, []st
 //
 // The value ends at the first non-blank, non-comment line indented less than the key, or at the
 // key's own indentation unless that line continues a compact block sequence (`key:\n- a`).
-func entryLines(m *yaml.Node, j, indent int, lines []string) (int, int) {
+//
+// ⛔ It refuses an entry whose value holds a quoted scalar spanning several lines (re-review
+// MEDIUM). A continuation line of a quoted scalar may sit at ANY indentation and may start with
+// "#", so neither the indentation rule nor the comment self-check can tell its text from a real
+// comment: a fragment of the old value can survive as a "comment" while a real comment is dropped,
+// and the counts balance. Such an entry is edited by hand.
+func entryLines(m *yaml.Node, j, indent int, lines []string) (int, int, error) {
 	key, val := m.Content[2*j], m.Content[2*j+1]
+	if hasMultiLineQuotedScalar(val, lines) {
+		return 0, 0, errors.New(ErrMsgPatchMultiLineQuoted)
+	}
 	start := key.Line
 	end := start
 	compactSeq := val.Kind == yaml.SequenceNode && val.Style&yaml.FlowStyle == 0
@@ -593,7 +620,56 @@ func entryLines(m *yaml.Node, j, indent int, lines []string) (int, int) {
 		}
 		end = n
 	}
-	return start, end
+	return start, end, nil
+}
+
+// hasMultiLineQuotedScalar reports whether n or any node under it is a single- or double-quoted
+// scalar whose closing quote is not on the line it opens on.
+func hasMultiLineQuotedScalar(n *yaml.Node, lines []string) bool {
+	if n == nil {
+		return false
+	}
+	if n.Kind == yaml.ScalarNode && n.Style&(yaml.SingleQuotedStyle|yaml.DoubleQuotedStyle) != 0 {
+		if !quotedClosesOnItsLine(n, lines) {
+			return true
+		}
+	}
+	for _, c := range n.Content {
+		if hasMultiLineQuotedScalar(c, lines) {
+			return true
+		}
+	}
+	return false
+}
+
+// quotedClosesOnItsLine scans the scalar's opening line from its column for the closing quote,
+// honouring the style's escapes (” in single quotes, \x in double quotes). An unreadable
+// position counts as NOT closing — the caller then refuses, which is the safe answer.
+func quotedClosesOnItsLine(n *yaml.Node, lines []string) bool {
+	if n.Line < 1 || n.Line > len(lines) {
+		return false
+	}
+	line := lines[n.Line-1]
+	col := n.Column - 1
+	if col < 0 || col >= len(line) {
+		return false
+	}
+	quote := line[col]
+	if quote != '\'' && quote != '"' {
+		return false
+	}
+	for i := col + 1; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case quote == '"' && c == '\\':
+			i++ // skip the escaped byte
+		case c == quote && quote == '\'' && i+1 < len(line) && line[i+1] == '\'':
+			i++ // '' is an escaped quote
+		case c == quote:
+			return true
+		}
+	}
+	return false
 }
 
 // renderEntry renders `key: value` with yaml.v3 at two-space indentation, shifted to indent, and

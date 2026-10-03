@@ -76,7 +76,6 @@ func TestPatchSource_ReviewH2_BlockScalarHashLinesLeaveWithTheValue(t *testing.T
 		{"literal, replaced", "display_name: |\n  Team Bot\n  # internal codename: falcon\n", SetDisplayName("New"), "display_name: New\n"},
 		{"literal, removed", "display_name: |\n  Team Bot\n  # internal codename: falcon\n", SetDisplayName(""), ""},
 		{"folded with a blank line, replaced", "display_name: >\n  Team\n\n  # falcon\n", SetDisplayName("New"), "display_name: New\n"},
-		{"multi-line double-quoted, removed", "display_name: \"Team\n  # falcon\"\n", SetDisplayName(""), ""},
 		{"nested literal, replaced", "execution:\n  model: |\n    m\n    # falcon\n  provider: p\n", SetExecutionModel("m2"), "execution:\n  model: m2\n  provider: p\n"},
 	}
 	for _, tc := range cases {
@@ -183,4 +182,34 @@ func TestPatchSource_ReviewM3_IntermediateFailureIsInternal(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrPatchInternal), "%v", err)
 	assert.False(t, errors.Is(err, ErrPatchSourceInvalid))
+}
+
+// Re-review MEDIUM: a quoted scalar's continuation line may sit at any indentation and start with
+// "#", so it can pass as a comment and balance the comment self-check. An edited entry holding a
+// multi-line quoted scalar is refused; one elsewhere in the document is left alone.
+func TestPatchSource_ReReview_MultiLineQuotedScalarInAnEditedEntryIsRefused(t *testing.T) {
+	head := "---\nname: a\ndescription: d\ntype: agent\n"
+	reproducer := head + "tools:\n  allow:\n    # x\"\n    - \"a\n# x\"\nx-k: 1\n---\nbody\n"
+	_, err := Parse([]byte(reproducer))
+	require.NoError(t, err, "the reproducer is a valid document")
+	out, err := PatchSource([]byte(reproducer), SetToolsAllow([]string{"z"}))
+	requireRefused(t, out, err, ErrPatchUnsupportedShape)
+	assert.Contains(t, err.Error(), ErrMsgPatchMultiLineQuoted)
+
+	// (A multi-line quoted value was an H2 golden case; since the re-review it is refused instead.)
+	double := head + "display_name: \"Team\n  # falcon\"\nx-k: 1\n---\nbody\n"
+	out, err = PatchSource([]byte(double), SetDisplayName(""))
+	requireRefused(t, out, err, ErrPatchUnsupportedShape)
+
+	single := head + "display_name: 'Team\n  # falcon'\nx-k: 1\n---\nbody\n"
+	out, err = PatchSource([]byte(single), SetDisplayName(""))
+	requireRefused(t, out, err, ErrPatchUnsupportedShape)
+
+	// Escapes keep a one-line scalar one line: \" in double quotes, '' in single quotes.
+	oneLine := head + "display_name: \"Te\\\"am\"\nx-a: 'it''s'\nx-k: 1\n---\nbody\n"
+	assert.Equal(t, head+"display_name: New\nx-a: 'it''s'\nx-k: 1\n---\nbody\n", mustPatch(t, oneLine, SetDisplayName("New")))
+
+	// A multi-line quoted scalar OUTSIDE the edited entries is untouched and does not block.
+	elsewhere := head + "x-note: \"two\n  lines\"\nexecution:\n  model: m\n---\nbody\n"
+	assert.Equal(t, head+"x-note: \"two\n  lines\"\nexecution:\n  model: n2\n---\nbody\n", mustPatch(t, elsewhere, SetExecutionModel("n2")))
 }

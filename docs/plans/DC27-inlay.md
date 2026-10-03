@@ -120,6 +120,10 @@ well as validates.
   severity ignoring `onerror=`/the engine strategy; entries deriving `listed` again; an
   intermediate failure reported as the source's fault; any CRLF meaning CRLF; the key-line
   comment contains-guard; boolean-looking key quoting; the edit cap.
+- Re-review (1 MEDIUM, 2 LOW): an edited entry holding a multi-line quoted scalar is refused
+  (its continuation lines may sit at any indentation and start with `#`, which fooled the
+  comment self-check); the flow-style key-line comment exception is documented; the
+  result-invalid message names `ValidateStrict`. Revert-checked.
 - Agreement corpus: 105 rows (76 agree, 5 parser-stricter, 24 schema-stricter).
 - Review round 1 (3 HIGH, 3 MEDIUM, 6 LOW) fixed with a test per finding; see the commit log.
 - `make ci-local` green on the branch: build, vet, gofmt, tidy, golangci-lint v2.12.2 (0 issues),

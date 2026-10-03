@@ -557,8 +557,10 @@ out, err := exons.PatchSource(src,
 Edits: `SetToolsAllow`, `SetRequirementsResources`, `SetResourceMode`, `SetSkills`,
 `SetExecutionProvider` / `SetExecutionModel` / `SetExecutionReasoningEffort`, `SetDisplayName`
 (at most `MaxPatchEdits` per call). An edited entry's own lines (its key line and every deeper
-line) are replaced; a comment on its key line is carried over, other comments inside it go with
-it, and removing a block's last key deletes the whole block. The source must pass `Parse`; the
+line) are replaced; a comment on its key line is carried over (not for a multi-line flow-style
+block, which is re-emitted whole), other comments inside it go with it, and removing a block's
+last key deletes the whole block. An edited entry holding a quoted scalar that spans several
+lines is refused — its continuation lines cannot be told from comments. The source must pass `Parse`; the
 result must pass `Parse` and `ValidateStrict`, decode to the original with the edits applied, and
 add no comment line, or PatchSource returns an error matching `ErrPatchRefused` (plus one
 specific `ErrPatch…` sentinel, `*PatchError` via `errors.As`) and no bytes.

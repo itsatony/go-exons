@@ -47,14 +47,17 @@ inside the new `resource_modes` key, and a document without that key is never na
     unknown keys, `credentials:`, `{~…~}` values (never rendered), the body.
   - An edited entry's lines — its key line and every line indented deeper — are replaced by the
     re-rendered value; a comment on the key line is carried over, comments on its other lines go
-    with it. Removing a block's last key deletes the block's whole entry, comments inside it
-    included. Inserted lines use the dominant line ending; boolean-looking keys are quoted.
+    with it — except in a multi-line FLOW-style block (`tools: {…}`), which is re-emitted whole
+    without its key-line comment. Removing a block's last key deletes the block's whole entry,
+    comments inside it included. Inserted lines use the dominant line ending; boolean-looking
+    keys are quoted. An edited entry holding a quoted scalar spanning several lines is refused.
   - The source must pass `Parse`. The result must pass `Parse` and `ValidateStrict` (so a patch
     to a document with a duplicate allow entry must repair it), decode to the original with the
     edits applied, and carry no comment line the source lacked. Otherwise: no bytes, and an error
     matching `ErrPatchRefused` plus one of `ErrPatchNoFrontmatter`, `ErrPatchSourceInvalid`,
     `ErrPatchEditInvalid`, `ErrPatchUnsupportedShape` (also: a U+0085/U+2028/U+2029 or lone `\r`
-    line break in the frontmatter), `ErrPatchResultInvalid`, `ErrPatchSelfCheck`,
+    line break in the frontmatter, a multi-line quoted scalar in an edited entry),
+    `ErrPatchResultInvalid` (names `ValidateStrict`), `ErrPatchSelfCheck`,
     `ErrPatchInternal` (its own bookkeeping, including a recovered panic) — `*PatchError`, code
     `EXONS_PATCH`. Use it instead of Parse → Serialize for a stored document: `ExportFull` drops
     credentials and comments, and `Engine.Parse` renders frontmatter tags.
