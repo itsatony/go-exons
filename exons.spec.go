@@ -336,14 +336,26 @@ func (s *Spec) Validate() error {
 	if err := s.ValidateRequirements(); err != nil {
 		return err
 	}
-	if err := s.Tools.Validate(); err != nil {
-		return err
-	}
 	if err := s.validateInputOrder(); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// ValidateStrict runs Validate and then the checks a WRITER applies before it publishes or stores
+// a document, which Parse deliberately does not: today, the tool allow-lists
+// (ToolsConfig.Validate — non-empty, unique, at most MaxToolAllowEntries).
+//
+// ⛔ Parse stays tolerant on purpose (v0.40.0 review H3): a reader that refused a stored document
+// over a duplicate allow entry would lose an agent that works, on nothing more than a library bump.
+// A registry calls ValidateStrict at publish; PatchSource calls it on its RESULT, so a patch that
+// touches a bad document must also repair it. The published schema states the strict rules.
+func (s *Spec) ValidateStrict() error {
+	if err := s.Validate(); err != nil {
+		return err
+	}
+	return s.Tools.Validate()
 }
 
 // ValidateOptional performs validation only if the spec has enough fields to

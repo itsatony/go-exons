@@ -46,6 +46,10 @@ const (
 	// resources entries of the same kind — a cross-field rule over a map key and a
 	// list's item field, which JSON Schema cannot express (v0.40.0).
 	parserOnlyResourceModes = "parser-only: resource_modes agrees with the resources entries of its kind"
+	// schemaStricterToolLists: the schema states the allow-list rules (non-empty, unique, ≤512)
+	// that a WRITER enforces with Spec.ValidateStrict; Parse stays tolerant so a stored document
+	// carrying a duplicate still loads (v0.40.0 review H3).
+	schemaStricterToolLists = "schema-stricter: tool allow-lists are checked by ValidateStrict, not Parse"
 )
 
 // divergenceDirection is which instrument is the stricter one for a reason.
@@ -70,6 +74,7 @@ var divergenceVocabulary = map[string]divergenceDirection{
 	schemaStricterType:      schemaStricter,
 	schemaStricterNull:      schemaStricter,
 	schemaStricterScalar:    schemaStricter,
+	schemaStricterToolLists: schemaStricter,
 }
 
 // Corpus floors. The corpus is hand-listed, so its size is the thing a careless
@@ -78,9 +83,9 @@ var divergenceVocabulary = map[string]divergenceDirection{
 // (TestSchemaAndParserAgree's reverse axis), or the vocabulary holds dead entries.
 const (
 	agreementCorpusFloor         = 105
-	agreementAgreeRowsFloor      = 80
-	agreementParserStricterFloor = 6
-	agreementSchemaStricterFloor = 19
+	agreementAgreeRowsFloor      = 76
+	agreementParserStricterFloor = 5
+	agreementSchemaStricterFloor = 24
 )
 
 // agreementCase is one document and the verdict EACH instrument must return for it.
@@ -170,14 +175,15 @@ func agreementCorpus() []agreementCase {
 		agree("tools allow EMPTY (no tools)", agent("tools:\n  allow: []\n"), true),
 		agree("mcp server with transport and tools", agent("tools:\n  mcp_servers:\n    - name: s\n      url: https://mcp.example.com/mcp\n      transport: sse\n      tools: [search]\n"), true),
 		agree("mcp server tools EMPTY (none)", agent("tools:\n  mcp_servers:\n    - name: s\n      url: https://mcp.example.com/mcp\n      tools: []\n"), true),
-		// v0.40.0: the lists are validated — non-empty, unique, ≤ MaxToolAllowEntries.
-		agree("tools allow duplicated", agent("tools:\n  allow: [a, a]\n"), false),
-		agree("tools allow empty entry", agent("tools:\n  allow: [a, \"\"]\n"), false),
+		// v0.40.0: the schema states the writer's rules (non-empty, unique, ≤ MaxToolAllowEntries);
+		// Parse does not enforce them, Spec.ValidateStrict does.
+		diverge("tools allow duplicated", agent("tools:\n  allow: [a, a]\n"), false, true, schemaStricterToolLists),
+		diverge("tools allow empty entry", agent("tools:\n  allow: [a, \"\"]\n"), false, true, schemaStricterToolLists),
 		agree("tools allow 512 entries", agent("tools:\n  allow: ["+toolNames(512)+"]\n"), true),
-		agree("tools allow 513 entries", agent("tools:\n  allow: ["+toolNames(513)+"]\n"), false),
+		diverge("tools allow 513 entries", agent("tools:\n  allow: ["+toolNames(513)+"]\n"), false, true, schemaStricterToolLists),
 		agree("tools allow on a prompt", prompt("tools:\n  allow: [a]\n"), true),
-		agree("mcp server tools duplicated", agent("tools:\n  mcp_servers:\n    - name: s\n      url: https://mcp.example.com/mcp\n      tools: [x, x]\n"), false),
-		agree("mcp server tools empty entry", agent("tools:\n  mcp_servers:\n    - name: s\n      url: https://mcp.example.com/mcp\n      tools: [\"\"]\n"), false),
+		diverge("mcp server tools duplicated", agent("tools:\n  mcp_servers:\n    - name: s\n      url: https://mcp.example.com/mcp\n      tools: [x, x]\n"), false, true, schemaStricterToolLists),
+		diverge("mcp server tools empty entry", agent("tools:\n  mcp_servers:\n    - name: s\n      url: https://mcp.example.com/mcp\n      tools: [\"\"]\n"), false, true, schemaStricterToolLists),
 
 		// --- requirements.resource_modes (v0.40.0, vAudience/atlas#803).
 		agree("resource_modes none for a kind with no entries", agent("requirements:\n  resource_modes:\n    corpus: none\n"), true),
@@ -191,7 +197,7 @@ func agreementCorpus() []agreementCase {
 		agree("resource_modes on a prompt", prompt("requirements:\n  resource_modes:\n    corpus: none\n"), false),
 		agree("resource_modes empty mapping on a prompt", prompt("requirements:\n  resource_modes: {}\n"), false),
 		diverge("resource_modes none beside entries of the kind", agent("requirements:\n  resources:\n    - ref: docs\n      kind: corpus\n  resource_modes:\n    corpus: none\n"), true, false, parserOnlyResourceModes),
-		diverge("resource_modes all beside entries of the kind", agent("requirements:\n  resources:\n    - ref: docs\n      kind: corpus\n  resource_modes:\n    corpus: all\n"), true, false, parserOnlyResourceModes),
+		agree("resource_modes all beside entries of the kind", agent("requirements:\n  resources:\n    - ref: docs\n      kind: corpus\n  resource_modes:\n    corpus: all\n"), true),
 		diverge("resource_modes listed with no entry of the kind", agent("requirements:\n  resource_modes:\n    corpus: listed\n"), true, false, parserOnlyResourceModes),
 		diverge("resource_modes null on a prompt", prompt("requirements:\n  resource_modes: ~\n"), false, true, schemaStricterNull),
 
@@ -551,12 +557,12 @@ func TestSchemaRequirementsBoundsAreTheGoConstants(t *testing.T) {
 		t.Errorf("requirements.resource_modes propertyNames maxLength = %v, want exons.MaxRequirementFieldLen (%d)", got, exons.MaxRequirementFieldLen)
 	}
 	modeEnum := modes["additionalProperties"].(map[string]any)["enum"].([]any)
-	wantModes := make([]any, 0, len(exons.ResourceModes()))
-	for _, m := range exons.ResourceModes() {
+	wantModes := make([]any, 0, len(exons.ResourceModeVocabulary()))
+	for _, m := range exons.ResourceModeVocabulary() {
 		wantModes = append(wantModes, string(m))
 	}
 	if fmt.Sprint(modeEnum) != fmt.Sprint(wantModes) {
-		t.Errorf("requirements.resource_modes enum = %v, want exons.ResourceModes() %v", modeEnum, wantModes)
+		t.Errorf("requirements.resource_modes enum = %v, want exons.ResourceModeVocabulary() %v", modeEnum, wantModes)
 	}
 	allowLists := map[string]map[string]any{
 		"ToolsConfig.allow": defs["ToolsConfig"].(map[string]any)["properties"].(map[string]any)["allow"].(map[string]any),

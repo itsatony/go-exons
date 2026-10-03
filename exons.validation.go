@@ -164,6 +164,25 @@ type renderabilityChecker interface {
 	CheckRenderable(attrs internal.Attributes) error
 }
 
+// renderabilitySeverity is the severity of a "this engine cannot execute the tag" finding, decided
+// exactly as Execute decides whether that failure stops the render: the tag's own onerror= wins,
+// else the engine's error strategy (WithErrorStrategy); only throw — the default, and what an
+// unrecognised onerror= parses to — stops it. Under any other strategy Execute keeps going
+// (default=, removal, raw text, a log line), so the finding is a WARNING (review M1).
+//
+// ⚠ A caller that renders through ExecuteWithContext with its OWN context strategy can differ from
+// the engine's; Validate cannot see that context and judges by the engine's.
+func (e *Engine) renderabilitySeverity(attrs internal.Attributes) ValidationSeverity {
+	strategy := e.config.errorStrategy
+	if s, ok := attrs.Get(AttrOnError); ok {
+		strategy = ParseErrorStrategy(s)
+	}
+	if strategy == ErrorStrategyThrow {
+		return SeverityError
+	}
+	return SeverityWarning
+}
+
 // validateNodes recursively validates a slice of AST nodes.
 func (e *Engine) validateNodes(nodes []internal.Node, result *ValidationResult) {
 	for _, node := range nodes {
@@ -205,7 +224,7 @@ func (e *Engine) validateTagNode(tag *internal.TagNode, result *ValidationResult
 	if !e.registry.Has(tag.Name) {
 		severity := SeverityWarning
 		if result.renderability {
-			severity = SeverityError
+			severity = e.renderabilitySeverity(tag.Attributes)
 		}
 		result.issues = append(result.issues, ValidationIssue{
 			Severity: severity,
@@ -228,7 +247,7 @@ func (e *Engine) validateTagNode(tag *internal.TagNode, result *ValidationResult
 			if checker, ok := resolver.(renderabilityChecker); ok {
 				if err := checker.CheckRenderable(tag.Attributes); err != nil {
 					result.issues = append(result.issues, ValidationIssue{
-						Severity: SeverityError,
+						Severity: e.renderabilitySeverity(tag.Attributes),
 						Message:  err.Error(),
 						Position: e.internalPosToPublic(tag.Pos()),
 						TagName:  tag.Name,

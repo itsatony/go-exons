@@ -539,8 +539,8 @@ const (
 // Nested frontmatter keys named by validation messages and by PatchSource's
 // typed edit paths (v0.40.0). Each is the yaml tag of the field it names.
 const (
-	// SpecFieldResourceModes is the key of SpecRequirements.ResourceModes.
-	SpecFieldResourceModes = "resource_modes"
+	// RequirementsFieldResourceModes is the key of SpecRequirements.ResourceModes.
+	RequirementsFieldResourceModes = "resource_modes"
 	// RequirementsFieldResources is the key of SpecRequirements.Resources.
 	RequirementsFieldResources = "resources"
 	// ToolsFieldAllow is the key of ToolsConfig.Allow.

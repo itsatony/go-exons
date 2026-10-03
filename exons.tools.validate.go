@@ -3,8 +3,8 @@ package exons
 import "strconv"
 
 // MaxToolAllowEntries bounds tools.allow and every mcp_servers[].tools list
-// (v0.40.0). A runtime's whole catalogue is far below it (atlas's per-turn
-// capability ceiling is 512), so a longer list is a paste, not a narrowing.
+// (v0.40.0). It is go-exons' own sanity bound on a hand- or LLM-written list — a
+// longer list is a paste, not a narrowing — and not any runtime's ceiling.
 const MaxToolAllowEntries = 512
 
 // Validate checks the tool allow-lists: tools.allow and each
@@ -13,10 +13,9 @@ const MaxToolAllowEntries = 512
 // trimmed or case-folded — because a runtime matches them against tool names
 // exactly, and a validator that normalised would bless a name nothing matches.
 //
-// ⚠ BEHAVIOUR CHANGE in v0.40.0: before it, nothing validated these lists. A
-// duplicate was harmless to a set-based runtime but an empty string or an
-// oversized list was accepted into every store. nil and [] are both still
-// valid and still mean different things (absent = no narrowing, [] = none).
+// It is a WRITER's check: Spec.ValidateStrict runs it, Spec.Validate and Parse
+// do not, so a stored document carrying a duplicate still loads. nil and [] are
+// both valid and mean different things (absent = no narrowing, [] = none).
 // Safe on a nil receiver.
 func (tc *ToolsConfig) Validate() error {
 	if tc == nil {

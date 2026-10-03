@@ -3,6 +3,7 @@ package exons
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -101,7 +102,7 @@ func SetRequirementsResources(res []ResourceRequirement) SourceEdit {
 // with the resources entries of the kind is judged on the RESULT, so an edit list may change both.
 func SetResourceMode(kind string, mode ResourceMode) SourceEdit {
 	e := SourceEdit{
-		path: []string{SpecFieldRequirements, SpecFieldResourceModes, kind}, value: string(mode), remove: mode == "",
+		path: []string{SpecFieldRequirements, RequirementsFieldResourceModes, kind}, value: string(mode), remove: mode == "",
 		apply: func(s *Spec) {
 			if mode == "" {
 				if s.Requirements != nil {
@@ -187,26 +188,50 @@ func copyStrings(in []string) []string {
 	return out
 }
 
+// MaxPatchEdits bounds the edits one PatchSource call accepts. Each edit re-parses the
+// frontmatter, so the bound keeps one call's cost proportional to a sane request.
+const MaxPatchEdits = 64
+
 // PatchSource applies edits to the frontmatter of an exons document and returns the new document.
 // Edits apply in order (a later edit to the same path wins); the result is judged once, at the end.
 //
-// Preserved byte for byte, outside the edited entries: comments, key order, blank lines, quoting
-// and flow style, unknown keys (Extensions), credentials, `{~…~}` templated values (never
-// rendered), the delimiters and the body. Inside an edited entry the value is re-emitted by
-// yaml.v3 (two-space indentation, at the entry's own column); a comment on the entry's key line
-// is kept; comments between the lines of a replaced value are not. Removing the last key of a
-// block (tools, requirements, requirements.resource_modes, execution) removes the block, so no
-// empty `tools:` is left behind; comments are never removed.
+// WHAT IS KEPT: every line outside the edited entries, byte for byte — comments, key order, blank
+// lines, quoting and flow style, unknown keys (Extensions), credentials, `{~…~}` templated values
+// (never rendered), the delimiters and the body.
+//
+// WHAT AN EDIT REPLACES: the edited entry's lines — its key line and every line indented deeper
+// than its key — are replaced by the new value rendered by yaml.v3 (two-space indentation, at the
+// entry's own column). A comment on the entry's key line is carried over; any comment on the
+// value's other lines is dropped with them. A removal deletes those lines; when it empties a
+// block (tools, requirements, requirements.resource_modes, execution), the block's whole entry is
+// deleted instead — including any comment lines indented inside that block. Comment lines at or
+// left of an entry's column are never part of it and always stay. Inserted lines use the
+// frontmatter's dominant line ending.
 //
 // It refuses — returning an error matching ErrPatchRefused and no bytes — when:
-//   - the document has no frontmatter, or does not itself pass Parse (ErrPatchSourceInvalid): a
-//     frontmatter that is YAML only after its tags are rendered cannot be edited without rendering
-//     it, so quote the tag (the engine's documented advice) and it can;
-//   - an edit is invalid or meets a shape it will not edit textually — an alias or anchor in the
-//     edited entry, a non-mapping where a block is expected (ErrPatchUnsupportedShape);
-//   - the result fails Parse or Spec.Validate (ErrPatchResultInvalid, wrapping the reason);
-//   - the result does not decode to the original with the edits applied (ErrPatchSelfCheck).
-func PatchSource(src []byte, edits ...SourceEdit) ([]byte, error) {
+//   - the document has no frontmatter (ErrPatchNoFrontmatter) or does not pass Parse
+//     (ErrPatchSourceInvalid, wrapping the parse error). PatchSource never renders, so a
+//     frontmatter that is YAML only after its `{~…~}` tags render is refused; quoting the tag makes
+//     it plain YAML;
+//   - the frontmatter contains a line break other than "\n"/"\r\n" (U+0085, U+2028, U+2029, a
+//     lone "\r"), an alias or anchor in an edited entry, or a non-mapping where a block is expected
+//     (ErrPatchUnsupportedShape);
+//   - an edit is invalid, or there are more than MaxPatchEdits (ErrPatchEditInvalid);
+//   - the result fails Parse or Spec.ValidateStrict (ErrPatchResultInvalid, wrapping the reason).
+//     The STRICT check runs on the result only: a stored document with a duplicate tools.allow
+//     entry can be patched, and the patch must repair it — setting tools.allow does;
+//   - the result does not decode to the original with the edits applied, or carries a comment line
+//     the source did not have (ErrPatchSelfCheck);
+//   - this package miscounted its own text (ErrPatchInternal; also any recovered panic).
+func PatchSource(src []byte, edits ...SourceEdit) (out []byte, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			out, err = nil, newPatchError(ErrPatchInternal, "", fmt.Errorf("%s: %v", ErrMsgPatchPanic, r))
+		}
+	}()
+	if len(edits) > MaxPatchEdits {
+		return nil, newPatchError(ErrPatchEditInvalid, "", errors.New(ErrMsgPatchTooManyEdits))
+	}
 	prefix, fm, suffix, ok := splitFrontmatter(src)
 	if !ok {
 		return nil, newPatchError(ErrPatchNoFrontmatter, "", nil)
@@ -214,6 +239,10 @@ func PatchSource(src []byte, edits ...SourceEdit) ([]byte, error) {
 	if _, err := Parse(src); err != nil {
 		return nil, newPatchError(ErrPatchSourceInvalid, "", err)
 	}
+	if unsupportedLineBreak(fm) {
+		return nil, newPatchError(ErrPatchUnsupportedShape, "", errors.New(ErrMsgPatchLineBreak))
+	}
+	sourceFM := fm
 
 	pruned := make([][]string, len(edits))
 	for i, e := range edits {
@@ -231,7 +260,7 @@ func PatchSource(src []byte, edits ...SourceEdit) ([]byte, error) {
 		pruned[i] = p
 	}
 
-	out := make([]byte, 0, len(prefix)+len(fm)+len(suffix))
+	out = make([]byte, 0, len(prefix)+len(fm)+len(suffix))
 	out = append(out, prefix...)
 	out = append(out, fm...)
 	out = append(out, suffix...)
@@ -240,9 +269,12 @@ func PatchSource(src []byte, edits ...SourceEdit) ([]byte, error) {
 	if err != nil {
 		return nil, newPatchError(ErrPatchResultInvalid, "", err)
 	}
+	if err := got.ValidateStrict(); err != nil {
+		return nil, newPatchError(ErrPatchResultInvalid, "", err)
+	}
 	want, err := Parse(src)
 	if err != nil {
-		return nil, newPatchError(ErrPatchSourceInvalid, "", err)
+		return nil, newPatchError(ErrPatchInternal, "", err)
 	}
 	// In edit order, each edit followed by the pruning ITS text edit performed: a later edit may
 	// recreate a block an earlier one emptied.
@@ -255,6 +287,53 @@ func PatchSource(src []byte, edits ...SourceEdit) ([]byte, error) {
 	if err := sameDocument(want, got); err != nil {
 		return nil, newPatchError(ErrPatchSelfCheck, "", err)
 	}
+	if err := noNewComments(sourceFM, fm); err != nil {
+		return nil, newPatchError(ErrPatchSelfCheck, "", err)
+	}
+	return out, nil
+}
+
+// noNewComments refuses a result carrying a comment line the source did not have. An edit only
+// ever removes text or writes values, so a NEW comment means a value's own lines were left behind
+// and now read as a comment (review H2's class: a `#` line of a block scalar outliving its key).
+// Comments are compared as a multiset of trimmed lines, read from yaml.v3's own comment fields.
+func noNewComments(source, result []byte) error {
+	have, err := commentLines(source)
+	if err != nil {
+		return err
+	}
+	now, err := commentLines(result)
+	if err != nil {
+		return err
+	}
+	for line, n := range now {
+		if n > have[line] {
+			return errors.New(ErrMsgPatchNewComment)
+		}
+	}
+	return nil
+}
+
+func commentLines(fm []byte) (map[string]int, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(fm, &doc); err != nil {
+		return nil, err
+	}
+	out := map[string]int{}
+	var walk func(n *yaml.Node)
+	walk = func(n *yaml.Node) {
+		for _, c := range []string{n.HeadComment, n.LineComment, n.FootComment} {
+			for _, l := range strings.Split(c, "\n") {
+				if l = strings.TrimSpace(l); l != "" {
+					out[l]++
+				}
+			}
+		}
+		for _, ch := range n.Content {
+			walk(ch)
+		}
+	}
+	walk(&doc)
 	return out, nil
 }
 
@@ -291,17 +370,47 @@ type fmLines struct {
 
 func (f *fmLines) String() string { return strings.Join(f.lines, "\n") }
 
-// replace swaps lines [from, to] (1-based, inclusive) for repl.
-func (f *fmLines) replace(from, to int, repl []string) {
+// replace swaps lines [from, to] (1-based, inclusive) for repl; to == from-1 inserts before
+// from. Out-of-range positions are refused, never sliced: a position that disagrees with the
+// text means the node tree and the lines were counted differently, and guessing would edit the
+// wrong bytes.
+func (f *fmLines) replace(from, to int, repl []string) error {
+	if from < 1 || to < from-1 || to > len(f.lines) {
+		return newPatchError(ErrPatchInternal, "", errors.New(ErrMsgPatchLineRange))
+	}
 	out := make([]string, 0, len(f.lines)-(to-from+1)+len(repl))
 	out = append(out, f.lines[:from-1]...)
 	out = append(out, repl...)
 	out = append(out, f.lines[to:]...)
 	f.lines = out
+	return nil
 }
 
 // insertAfter inserts repl after line at (1-based; 0 inserts at the top).
-func (f *fmLines) insertAfter(at int, repl []string) { f.replace(at+1, at, repl) }
+func (f *fmLines) insertAfter(at int, repl []string) error { return f.replace(at+1, at, repl) }
+
+// dominantCRLF reports whether CRLF is the frontmatter's dominant line ending, so inserted lines
+// match the lines around them (a mixed document keeps its majority style).
+func dominantCRLF(fm []byte) bool {
+	crlf := bytes.Count(fm, []byte("\r\n"))
+	return crlf > bytes.Count(fm, []byte("\n"))-crlf
+}
+
+// unsupportedLineBreak reports whether fm contains a line break yaml.v3 counts and this package's
+// "\n"-split does not — U+0085, U+2028, U+2029, or a "\r" not followed by "\n". With one present the
+// node tree's line numbers and the text's would disagree (review H1: a slice out of range).
+func unsupportedLineBreak(fm []byte) bool {
+	if bytes.ContainsRune(fm, '\u0085') || bytes.ContainsRune(fm, '\u2028') || bytes.ContainsRune(fm, '\u2029') {
+		return true
+	}
+	for i, c := range fm {
+		// A "\r" ending fm is fine: fm is always followed by the "\n" before the closing delimiter.
+		if c == '\r' && i+1 < len(fm) && fm[i+1] != '\n' {
+			return true
+		}
+	}
+	return false
+}
 
 // pathFrame is one level of the walk: the mapping holding path[level], the index of that key's
 // entry in it (or -1), and the column its keys start at.
@@ -316,12 +425,13 @@ type pathFrame struct {
 func patchFrontmatter(fm []byte, e SourceEdit) ([]byte, []string, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(fm, &doc); err != nil {
-		return nil, nil, newPatchError(ErrPatchSourceInvalid, e.Path(), err)
+		// The source parsed (PatchSource checked), so this is text an EARLIER edit produced.
+		return nil, nil, newPatchError(ErrPatchInternal, e.Path(), err)
 	}
 	if doc.Kind != yaml.DocumentNode || len(doc.Content) != 1 || !isBlockMapping(doc.Content[0]) {
 		return nil, nil, newPatchError(ErrPatchUnsupportedShape, e.Path(), errors.New(ErrMsgPatchRootNotBlock))
 	}
-	text := &fmLines{lines: strings.Split(string(fm), "\n"), cr: bytes.Contains(fm, []byte("\r\n"))}
+	text := &fmLines{lines: strings.Split(string(fm), "\n"), cr: dominantCRLF(fm)}
 
 	var leaf *yaml.Node
 	if !e.remove {
@@ -350,7 +460,9 @@ func patchFrontmatter(fm []byte, e SourceEdit) ([]byte, []string, error) {
 				return nil, nil, newPatchError(ErrPatchEditInvalid, e.Path(), err)
 			}
 			_, end := entryLines(cur, len(cur.Content)/2-1, indent, text.lines)
-			text.insertAfter(end, lines)
+			if err := text.insertAfter(end, lines); err != nil {
+				return nil, nil, err
+			}
 			return []byte(text.String()), nil, nil
 		}
 
@@ -371,7 +483,9 @@ func patchFrontmatter(fm []byte, e SourceEdit) ([]byte, []string, error) {
 			if err != nil {
 				return nil, nil, newPatchError(ErrPatchEditInvalid, e.Path(), err)
 			}
-			text.replace(start, end, lines)
+			if err := text.replace(start, end, lines); err != nil {
+				return nil, nil, err
+			}
 			return []byte(text.String()), nil, nil
 		}
 
@@ -387,7 +501,9 @@ func patchFrontmatter(fm []byte, e SourceEdit) ([]byte, []string, error) {
 			if err != nil {
 				return nil, nil, newPatchError(ErrPatchEditInvalid, e.Path(), err)
 			}
-			text.replace(start, end, lines)
+			if err := text.replace(start, end, lines); err != nil {
+				return nil, nil, err
+			}
 			return []byte(text.String()), nil, nil
 		case val.Kind == yaml.MappingNode: // flow style ({…}) — re-emit this one entry, still flow
 			if hasAnchorOrAlias(val) {
@@ -401,7 +517,9 @@ func patchFrontmatter(fm []byte, e SourceEdit) ([]byte, []string, error) {
 			if err != nil {
 				return nil, nil, newPatchError(ErrPatchEditInvalid, e.Path(), err)
 			}
-			text.replace(start, end, lines)
+			if err := text.replace(start, end, lines); err != nil {
+				return nil, nil, err
+			}
 			return []byte(text.String()), nil, nil
 		default:
 			return nil, nil, newPatchError(ErrPatchUnsupportedShape, e.Path(), errors.New(ErrMsgPatchNotMapping+": "+strings.Join(e.path[:i+1], ".")))
@@ -425,16 +543,25 @@ func removeEntry(text *fmLines, frames []pathFrame, path []string) ([]byte, []st
 		return nil, nil, newPatchError(ErrPatchUnsupportedShape, strings.Join(path, "."), errors.New(ErrMsgPatchAnchor))
 	}
 	start, end := entryLines(f.m, f.entry, f.indent, text.lines)
-	text.replace(start, end, nil)
+	if err := text.replace(start, end, nil); err != nil {
+		return nil, nil, err
+	}
 	return []byte(text.String()), pruned, nil
 }
 
 // entryLines returns the 1-based, inclusive line range of entry j of block mapping m: from its
-// key's line to its value's last content line. Blank lines and comment-only lines after the value
-// are NOT included (they belong to what follows, or to nobody), so a replacement keeps them.
+// key's line to the last line that belongs to its value.
 //
-// The value ends at the first content line indented less than the key, or at the key's own
-// indentation unless that line continues a compact block sequence (`key:\n- a`).
+// ⛔ EVERY LINE INDENTED DEEPER THAN THE KEY BELONGS TO THE ENTRY, "#" LINES INCLUDED. Inside a
+// `|` / `>` block scalar or a multi-line quoted scalar a line starting with "#" is CONTENT, not a
+// comment; treating it as a comment left it behind as a comment after a replace or remove — value
+// text resurfacing in the document (review H2). A comment-only line at or left of the key's column
+// does not belong to the entry and does not end it (it may sit between compact sequence items);
+// blank lines likewise. Trailing blank and shallow comment lines are never included, so a
+// replacement keeps them.
+//
+// The value ends at the first non-blank, non-comment line indented less than the key, or at the
+// key's own indentation unless that line continues a compact block sequence (`key:\n- a`).
 func entryLines(m *yaml.Node, j, indent int, lines []string) (int, int) {
 	key, val := m.Content[2*j], m.Content[2*j+1]
 	start := key.Line
@@ -443,10 +570,13 @@ func entryLines(m *yaml.Node, j, indent int, lines []string) (int, int) {
 	for n := start + 1; n <= len(lines); n++ {
 		line := lines[n-1]
 		t := strings.TrimSpace(line)
-		if t == "" || strings.HasPrefix(t, "#") {
+		if t == "" {
 			continue
 		}
 		ind := len(line) - len(strings.TrimLeft(line, " "))
+		if strings.HasPrefix(t, "#") && ind <= indent {
+			continue
+		}
 		if ind < indent {
 			break
 		}
@@ -465,9 +595,7 @@ func entryLines(m *yaml.Node, j, indent int, lines []string) (int, int) {
 // renderEntry renders `key: value` with yaml.v3 at two-space indentation, shifted to indent, and
 // appends comment (if any) to the first line — where the original entry's key-line comment sat.
 func renderEntry(key string, val *yaml.Node, indent int, comment string, cr bool) ([]string, error) {
-	root := &yaml.Node{Kind: yaml.MappingNode, Content: []*yaml.Node{
-		{Kind: yaml.ScalarNode, Tag: yamlTagStr, Value: key}, val,
-	}}
+	root := &yaml.Node{Kind: yaml.MappingNode, Content: []*yaml.Node{keyScalar(key), val}}
 	var b bytes.Buffer
 	enc := yaml.NewEncoder(&b)
 	enc.SetIndent(2)
@@ -480,7 +608,7 @@ func renderEntry(key string, val *yaml.Node, indent int, comment string, cr bool
 	lines := strings.Split(strings.TrimSuffix(b.String(), "\n"), "\n")
 	pad := strings.Repeat(" ", indent)
 	for i, l := range lines {
-		if i == 0 && comment != "" && !strings.Contains(l, comment) {
+		if i == 0 && comment != "" {
 			l += " " + comment
 		}
 		if l != "" {
@@ -497,11 +625,25 @@ func renderEntry(key string, val *yaml.Node, indent int, comment string, cr bool
 // nestValue wraps leaf in one block mapping per remaining path element.
 func nestValue(rest []string, leaf *yaml.Node) *yaml.Node {
 	for i := len(rest) - 1; i >= 0; i-- {
-		leaf = &yaml.Node{Kind: yaml.MappingNode, Content: []*yaml.Node{
-			{Kind: yaml.ScalarNode, Tag: yamlTagStr, Value: rest[i]}, leaf,
-		}}
+		leaf = &yaml.Node{Kind: yaml.MappingNode, Content: []*yaml.Node{keyScalar(rest[i]), leaf}}
 	}
 	return leaf
+}
+
+// yaml11Booleans are the plain scalars a YAML 1.1 reader (and yaml.v3 for some of them) reads as
+// booleans. yaml.v3 emits a !!str key such as `no` or `on` UNQUOTED, which another reader may
+// decode as false/true; a key we write that looks like one is double-quoted (review L4).
+var yaml11Booleans = map[string]bool{
+	"y": true, "yes": true, "n": true, "no": true, "true": true, "false": true, "on": true, "off": true,
+}
+
+// keyScalar is the node for a mapping key PatchSource writes.
+func keyScalar(key string) *yaml.Node {
+	n := &yaml.Node{Kind: yaml.ScalarNode, Tag: yamlTagStr, Value: key}
+	if yaml11Booleans[strings.ToLower(key)] {
+		n.Style = yaml.DoubleQuotedStyle
+	}
+	return n
 }
 
 // setInNode sets (leaf != nil) or removes (leaf == nil) path inside mapping node m, creating
@@ -514,7 +656,7 @@ func setInNode(m *yaml.Node, path []string, leaf *yaml.Node) error {
 		case j < 0 && leaf == nil:
 			return nil
 		case j < 0:
-			m.Content = append(m.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: yamlTagStr, Value: key}, nestValue(path[i+1:], leaf))
+			m.Content = append(m.Content, keyScalar(key), nestValue(path[i+1:], leaf))
 			return nil
 		case last && leaf == nil:
 			m.Content = append(m.Content[:2*j], m.Content[2*j+2:]...)
@@ -578,7 +720,7 @@ func pruneContainer(s *Spec, path string) {
 		s.Tools = nil
 	case SpecFieldRequirements:
 		s.Requirements = nil
-	case SpecFieldRequirements + "." + SpecFieldResourceModes:
+	case SpecFieldRequirements + "." + RequirementsFieldResourceModes:
 		if s.Requirements != nil {
 			s.Requirements.ResourceModes = nil
 		}
@@ -640,6 +782,9 @@ var (
 	ErrPatchUnsupportedShape = errors.New(ErrMsgPatchUnsupportedShape)
 	ErrPatchResultInvalid    = errors.New(ErrMsgPatchResultInvalid)
 	ErrPatchSelfCheck        = errors.New(ErrMsgPatchSelfCheck)
+	// ErrPatchInternal: PatchSource's own bookkeeping failed (an intermediate re-parse, a line
+	// range that does not fit the text, a recovered panic). Never the caller's document's fault.
+	ErrPatchInternal = errors.New(ErrMsgPatchInternal)
 )
 
 // PatchError is the cause inside every PatchSource refusal: which rule refused (Reason, one of the

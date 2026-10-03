@@ -89,10 +89,10 @@ type SpecRequirements struct {
 	// needs (code execution, informational packages, network). Valid on skill
 	// and agent documents only; see EnvironmentRequirement. Added in v0.33.0.
 	Environment *EnvironmentRequirement `yaml:"environment,omitempty" json:"environment,omitempty"`
-	// ResourceModes says, per resource KIND, whether the definition may use
-	// every resource of that kind, only the listed ones, or none at all. Added
-	// in v0.40.0 (vAudience/atlas#803). Read it through ResourceMode, never
-	// directly: an absent key is derived, not "unset". Valid on skill and agent
+	// ResourceModes is the NARROWING, per resource KIND: every resource of the
+	// kind (all), only the Resources entries of it (listed), or none. Resources
+	// itself only declares needs. Added in v0.40.0 (vAudience/atlas#803). Read it
+	// through ResourceMode: an absent key means all. Valid on skill and agent
 	// documents only — a prompt refuses it. See ResourceMode.
 	ResourceModes map[string]ResourceMode `yaml:"resource_modes,omitempty" json:"resource_modes,omitempty"`
 }
@@ -248,7 +248,7 @@ func (r *SpecRequirements) Validate() error {
 	if err := r.validateResources(); err != nil {
 		return err
 	}
-	if err := r.validateResourceModes(); err != nil {
+	if err := r.validateResourceModeVocabulary(); err != nil {
 		return err
 	}
 	return r.Environment.Validate()

@@ -27,10 +27,12 @@ func TestResourceMode_DeclaredAndDerived(t *testing.T) {
 	assert.Equal(t, ResourceModeListed, r.ResourceMode("corpus"), "declared listed")
 	assert.Equal(t, ResourceModeAll, r.ResourceMode("folder"), "absent kind, no entries → all")
 
-	// A document written before v0.40.0: no resource_modes key at all.
+	// A document written before v0.40.0: no resource_modes key at all. Its resources entries
+	// DECLARE needs and narrow nothing, so every kind is all (review M2) — a library bump must
+	// never start narrowing a working agent.
 	old, err := Parse(modesDoc("agent", "requirements:\n  resources:\n    - ref: docs\n      kind: corpus\n"))
 	require.NoError(t, err)
-	assert.Equal(t, ResourceModeListed, old.Requirements.ResourceMode("corpus"), "entries present → listed")
+	assert.Equal(t, ResourceModeAll, old.Requirements.ResourceMode("corpus"), "entries present, no mode → still all")
 	assert.Equal(t, ResourceModeAll, old.Requirements.ResourceMode("toolset"), "no entries → all")
 
 	var nilReqs *SpecRequirements
@@ -48,7 +50,7 @@ func TestResourceModes_Validation(t *testing.T) {
 		{"all with no entries", "skill", "requirements:\n  resource_modes:\n    corpus: all\n", ""},
 		{"listed with an entry", "agent", "requirements:\n  resources:\n    - ref: d\n      kind: corpus\n  resource_modes:\n    corpus: listed\n", ""},
 		{"none beside entries of the kind", "agent", "requirements:\n  resources:\n    - ref: d\n      kind: corpus\n  resource_modes:\n    corpus: none\n", ErrMsgResourceModeWithEntries},
-		{"all beside entries of the kind", "agent", "requirements:\n  resources:\n    - ref: d\n      kind: corpus\n  resource_modes:\n    corpus: all\n", ErrMsgResourceModeWithEntries},
+		{"all beside entries of the kind (entries declare need, all does not narrow)", "agent", "requirements:\n  resources:\n    - ref: d\n      kind: corpus\n  resource_modes:\n    corpus: all\n", ""},
 		{"none beside entries of another kind", "agent", "requirements:\n  resources:\n    - ref: d\n      kind: corpus\n  resource_modes:\n    folder: none\n", ""},
 		{"listed with zero entries", "agent", "requirements:\n  resource_modes:\n    corpus: listed\n", ErrMsgResourceModeListedEmpty},
 		{"listed with entries only of another kind", "agent", "requirements:\n  resources:\n    - ref: d\n      kind: folder\n  resource_modes:\n    corpus: listed\n", ErrMsgResourceModeListedEmpty},
@@ -153,8 +155,18 @@ func TestToolsConfig_ValidateAllowLists(t *testing.T) {
 		})
 	}
 
-	// Spec.Validate runs it: the duplicate is refused at Parse.
-	_, err := Parse(modesDoc("agent", "tools:\n  allow: [a, a]\n"))
+	// Parse stays TOLERANT (review H3): a stored document with a duplicate still loads, and the
+	// writer's check, ValidateStrict, is what refuses it.
+	spec, err := Parse(modesDoc("agent", "tools:\n  allow: [a, a]\n"))
+	require.NoError(t, err, "Parse must not refuse a duplicate allow entry")
+	require.NoError(t, spec.Validate())
+	err = spec.ValidateStrict()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), ErrMsgToolAllowEntryDup)
+
+	// ValidateStrict runs Validate first.
+	bad := &Spec{Tools: &ToolsConfig{Allow: []string{"a"}}}
+	err = bad.ValidateStrict()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), ErrMsgSpecNameRequired)
 }

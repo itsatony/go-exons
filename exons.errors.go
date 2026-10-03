@@ -280,8 +280,8 @@ const (
 	// requirements.resource_modes validation messages (v0.40.0, vAudience/atlas#803).
 	ErrMsgResourceModeKindForm = "requirements.resource_modes key must be a resource kind: a lowercase token (a letter, then letters, digits, '_', '.' or '-')"
 	ErrMsgResourceModeInvalid  = "requirements.resource_modes value must be: all, listed or none"
-	// ErrMsgResourceModeWithEntries names the contradiction and both ways out.
-	ErrMsgResourceModeWithEntries = "requirements.resource_modes all/none contradicts requirements.resources entries of the same kind: remove the entries, or set the mode to listed"
+	// ErrMsgResourceModeWithEntries names the contradiction (a need the mode forbids) and the ways out.
+	ErrMsgResourceModeWithEntries = "requirements.resource_modes none contradicts requirements.resources entries of the same kind: remove the entries, or set the mode to listed or all"
 	// ErrMsgResourceModeListedEmpty: listed with nothing listed reads as a narrowing and means none.
 	ErrMsgResourceModeListedEmpty = "requirements.resource_modes listed needs at least one requirements.resources entry of that kind (write none to allow no resource of it)"
 	// ErrMsgPromptNoResourceModes: a prompt binds no resources, so it has no mode to declare.
@@ -290,12 +290,18 @@ const (
 	// PatchSource refusal messages (v0.40.0). Each specific one is an ErrPatch… sentinel.
 	ErrMsgPatchRefused          = "patch refused"
 	ErrMsgPatchNoFrontmatter    = "document has no frontmatter to patch"
-	ErrMsgPatchSourceInvalid    = "document does not pass Parse, so it cannot be patched without guessing (a frontmatter that is YAML only after its tags render must quote them)"
+	ErrMsgPatchSourceInvalid    = "source document does not parse"
 	ErrMsgPatchEditInvalid      = "invalid edit"
 	ErrMsgPatchUnsupportedShape = "frontmatter shape is not editable in place"
 	ErrMsgPatchResultInvalid    = "patched document does not pass Parse/Validate"
 	ErrMsgPatchSelfCheck        = "patched document does not decode to the original with the edits applied"
 	ErrMsgPatchSelfCheckDetail  = "the decoded result differs from the expected one at"
+	ErrMsgPatchNewComment       = "the result carries a comment line the source did not have (an edited value's text was left behind)"
+	ErrMsgPatchInternal         = "patch failed internally"
+	ErrMsgPatchLineRange        = "line range outside the frontmatter text"
+	ErrMsgPatchPanic            = "recovered panic"
+	ErrMsgPatchLineBreak        = "frontmatter contains a line break other than \\n or \\r\\n (U+0085, U+2028, U+2029 or a lone \\r)"
+	ErrMsgPatchTooManyEdits     = "too many edits in one call (MaxPatchEdits)"
 	ErrMsgPatchZeroEdit         = "a zero SourceEdit — build edits with the Set… constructors"
 	ErrMsgPatchRootNotBlock     = "frontmatter root must be a non-empty block mapping"
 	ErrMsgPatchNotMapping       = "expected a mapping at"

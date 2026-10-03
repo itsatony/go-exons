@@ -95,3 +95,58 @@ func TestStrictRenderability_EnvRefusalNamesTheOption(t *testing.T) {
 	assert.True(t, strings.Contains(res.Errors()[0].Message, "WithEnvAllowlist"), res.Errors()[0].Message)
 	assert.Equal(t, TagNameEnv, res.Errors()[0].TagName)
 }
+
+// TestStrictRenderability_FollowsExecutesStrategy (review M1): the finding's severity is Execute's
+// verdict — an error only when the failure would stop the render (effective strategy throw), a
+// warning when a tag's onerror= or the engine's strategy lets Execute carry on. Every row renders.
+func TestStrictRenderability_FollowsExecutesStrategy(t *testing.T) {
+	cases := []struct {
+		name       string
+		opts       []Option
+		source     string
+		wantRefuse bool
+	}{
+		{"unknown tag, onerror=remove", nil, `{~nope.tag onerror="remove" /~}`, false},
+		{"unknown tag, onerror=default", nil, `{~nope.tag onerror="default" default="x" /~}`, false},
+		{"unknown tag, onerror=keepraw", nil, `{~nope.tag onerror="keepraw" /~}`, false},
+		{"unknown tag, onerror=log", nil, `{~nope.tag onerror="log" /~}`, false},
+		{"unknown tag, onerror=throw", nil, `{~nope.tag onerror="throw" /~}`, true},
+		{"unknown tag, misspelled onerror parses to throw", nil, `{~nope.tag onerror="remov" /~}`, true},
+		{"env not opted in, onerror=default", nil, `{~exons.env name="HOME" onerror="default" default="x" /~}`, false},
+		{"env not opted in, onerror=remove", nil, `{~exons.env name="HOME" onerror="remove" /~}`, false},
+		{"env not opted in, default= alone does not mask it", nil, `{~exons.env name="HOME" default="x" /~}`, true},
+		{"lenient engine, unknown tag", []Option{WithErrorStrategy(ErrorStrategyRemove)}, `{~nope.tag /~}`, false},
+		{"lenient engine, env not opted in", []Option{WithErrorStrategy(ErrorStrategyDefault)}, `{~exons.env name="HOME" /~}`, false},
+		{"lenient engine, tag insists on throw", []Option{WithErrorStrategy(ErrorStrategyRemove)}, `{~nope.tag onerror="throw" /~}`, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := MustNew(append([]Option{WithStrictRenderability()}, tc.opts...)...)
+			res, err := e.Validate(tc.source)
+			require.NoError(t, err)
+			_, execErr := e.Execute(context.Background(), tc.source, nil)
+
+			assert.Equal(t, tc.wantRefuse, execErr != nil, "Execute: %v", execErr)
+			assert.Equal(t, tc.wantRefuse, len(res.Errors()) > 0, "Validate errors: %v", res.Errors())
+			if !tc.wantRefuse {
+				assert.NotEmpty(t, res.Warnings(), "a tolerated failure is still reported, as a warning")
+			}
+		})
+	}
+}
+
+// TestStrictRenderability_BranchesAreJudgedAsIfReached pins the documented limit: Validate cannot
+// know which branch the data takes, so a tag in a branch Execute never enters is still reported.
+func TestStrictRenderability_BranchesAreJudgedAsIfReached(t *testing.T) {
+	e := MustNew(WithStrictRenderability())
+	for _, src := range []string{
+		`{~exons.if eval="false"~}{~nope.tag /~}{~/exons.if~}`,
+		`{~exons.for item="x" in="input.none"~}{~nope.tag /~}{~/exons.for~}`,
+	} {
+		res, err := e.Validate(src)
+		require.NoError(t, err)
+		assert.NotEmpty(t, res.Errors(), "reported as if reached: %s", src)
+		_, execErr := e.Execute(context.Background(), src, map[string]any{"input": map[string]any{"none": []any{}}})
+		assert.NoError(t, execErr, "the render never reaches it: %s", src)
+	}
+}
