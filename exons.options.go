@@ -22,6 +22,7 @@ type engineConfig struct {
 	markdownFences bool     // markdown code fences are inert regions
 	refVerbatim    bool     // {~exons.ref~} splices the referenced body as TEXT instead of rendering it
 	strictAttrs    bool     // Parse/ParseBody also refuse the error-severity issues Validate reports
+	strictRender   bool     // Validate reports what this engine can never execute at SeverityError
 }
 
 // defaultEngineConfig returns the default engine configuration.
@@ -220,5 +221,37 @@ func WithRefVerbatim() Option {
 func WithStrictAttributes() Option {
 	return func(c *engineConfig) {
 		c.strictAttrs = true
+	}
+}
+
+// WithStrictRenderability makes Engine.Validate report the tags THIS engine cannot execute
+// whatever the data (go-exons#13):
+//
+//   - a tag with no registered resolver — by default only a SeverityWarning, because a resolver
+//     can still be registered after the parse; {~exons.raw~} stays exempt;
+//   - {~exons.env~} on an engine that did not opt in to it (the v0.35.0 default), and, on an
+//     engine that did, a name= the denylist blocks or the allowlist does not cover.
+//
+// Each is reported at the severity Execute's own verdict implies: SeverityError when the failure
+// would stop the render — the effective strategy is throw (the tag's onerror= if it has one,
+// otherwise the engine's WithErrorStrategy) — and SeverityWarning when Execute would carry on
+// (onerror="default", "remove", "keepraw", "log", or a lenient engine strategy). So with it set,
+// Validate(...).Errors() is non-empty exactly when such a tag, once reached, makes Execute fail.
+//
+// ⚠ A tag inside an {~exons.if~} branch, a {~exons.for~} body or a switch case is judged AS IF
+// REACHED. Execute only fails if the render takes that branch (or the loop runs at least once),
+// which depends on the data; Validate cannot know that and reports the tag regardless.
+// ⚠ A caller rendering through ExecuteWithContext with its own context strategy is judged by the
+// engine's strategy, which is the only one Validate can see.
+//
+// ⛔ It is a SEPARATE option from WithStrictAttributes and does not change Parse. Strict
+// attributes refuses a document whose tags are malformed for ANY engine, and its consumers
+// (aigentverse among them) register resolvers after parsing; folding renderability into it would
+// make their Parse refuse every custom tag. Turn this on for an engine whose resolvers are all
+// registered before Validate runs. The environment is never read: an unset required="true"
+// variable is a data fact, not a renderability one.
+func WithStrictRenderability() Option {
+	return func(c *engineConfig) {
+		c.strictRender = true
 	}
 }

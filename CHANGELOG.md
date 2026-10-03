@@ -7,6 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-10-03
+
+DC27-inlay, for vAudience/atlas#803 (an agent's setup edited from the composer, as an edit to its
+exons definition): a narrowing per resource kind, a way to edit a stored definition without
+damaging it, a writer's strict check for the tool allow-lists, and an opt-in renderability check
+(go-exons#13). Plan: [docs/plans/DC27-inlay.md](docs/plans/DC27-inlay.md).
+
+**No behaviour change for readers.** Every document that parsed under v0.39.0 parses under
+v0.40.0, and means the same thing: `Parse` gained no refusal a stored document can hit except
+inside the new `resource_modes` key, and a document without that key is never narrowed.
+
+### Added
+
+- **`requirements.resource_modes`**: per resource kind, `all`, `listed` or `none`
+  (`ResourceMode`, `ResourceModeAll/Listed/None`, `ResourceModeVocabulary()`). It is the
+  NARROWING; `requirements.resources` stays a declaration of NEED and narrows nothing by itself.
+  Keys match `ResourceKindPattern`, at most `MaxRequirementEntries`. `Parse` refuses an
+  out-of-vocabulary or empty value, `none` beside `requirements.resources` entries of the same
+  kind (`ErrMsgResourceModeWithEntries` — a need the mode forbids), `listed` with no entry of the
+  kind (`ErrMsgResourceModeListedEmpty`), and the key on a prompt (`ErrMsgPromptNoResourceModes`;
+  the schema's prompt rule says the same). `all` beside entries is valid. Skill and agent only.
+- **`(*SpecRequirements).ResourceMode(kind)`**: the declared mode, else `all` — with or without
+  entries of the kind, so a document written before v0.40.0 is never narrowed by a bump. Nil-safe.
+- **`(*Spec).ToolMode()`**: the same three answers read from `tools.allow` (absent → `all`,
+  `[]` → `none`, a list → `listed`). Deliberately no second spelling for tools.
+- **`(*Spec).ValidateStrict()`** and **`(*ToolsConfig).Validate()`**: a WRITER's check, for a
+  registry's publish step. `Validate` plus the tool allow-lists: no empty entry
+  (`ErrMsgToolAllowEntryEmpty`), no duplicate (`ErrMsgToolAllowEntryDup`, compared verbatim), at
+  most `MaxToolAllowEntries` = 512 (`ErrMsgToolAllowTooMany`) — go-exons' own sanity bound on a
+  written list, not any runtime's ceiling. `Parse` / `Validate` do NOT run it, so a stored
+  document with a duplicate still loads. The schema states the same rules (`uniqueItems`,
+  `items.minLength: 1`, `maxItems: 512`); the agreement test declares the divergence
+  (`schemaStricterToolLists`).
+- **`PatchSource(src, edits...)`** with `SetToolsAllow`, `SetRequirementsResources`,
+  `SetResourceMode`, `SetSkills`, `SetExecutionProvider`, `SetExecutionModel`,
+  `SetExecutionReasoningEffort`, `SetDisplayName` (at most `MaxPatchEdits` = 64 per call).
+  - Every line outside the edited entries is kept byte for byte: comments, key order, blank lines,
+    unknown keys, `credentials:`, `{~…~}` values (never rendered), the body.
+  - An edited entry's lines — its key line and every line indented deeper — are replaced by the
+    re-rendered value; a comment on the key line is carried over, comments on its other lines go
+    with it — except in a multi-line FLOW-style block (`tools: {…}`), which is re-emitted whole
+    without its key-line comment. Removing a block's last key deletes the block's whole entry,
+    comments inside it included. Inserted lines use the dominant line ending; boolean-looking
+    keys are quoted. An edited entry holding a quoted scalar spanning several lines is refused.
+  - The source must pass `Parse`. The result must pass `Parse` and `ValidateStrict` (so a patch
+    to a document with a duplicate allow entry must repair it), decode to the original with the
+    edits applied, and carry no comment line the source lacked. Otherwise: no bytes, and an error
+    matching `ErrPatchRefused` plus one of `ErrPatchNoFrontmatter`, `ErrPatchSourceInvalid`,
+    `ErrPatchEditInvalid`, `ErrPatchUnsupportedShape` (also: a U+0085/U+2028/U+2029 or lone `\r`
+    line break in the frontmatter, a multi-line quoted scalar in an edited entry),
+    `ErrPatchResultInvalid` (names `ValidateStrict`), `ErrPatchSelfCheck`,
+    `ErrPatchInternal` (its own bookkeeping, including a recovered panic) — `*PatchError`, code
+    `EXONS_PATCH`. Use it instead of Parse → Serialize for a stored document: `ExportFull` drops
+    credentials and comments, and `Engine.Parse` renders frontmatter tags.
+- **`WithStrictRenderability()`** (go-exons#13, from deepr#385): `Engine.Validate` reports an
+  unknown tag (`exons.raw` still exempt) and an `{~exons.env~}` this engine refuses (not opted in,
+  or a name the denylist blocks or the allowlist does not cover) at the severity Execute's own
+  verdict implies — an error when the effective error strategy (the tag's `onerror=`, else the
+  engine's) is throw, a warning when Execute would carry on. Tags inside `if` / `for` / `switch`
+  bodies are judged as if reached. Separate from `WithStrictAttributes`; `Parse` is unchanged by it.
+- Constants: `RequirementsFieldResourceModes`, `RequirementsFieldResources`, `ToolsFieldAllow`,
+  `ToolsFieldMCPServers`, `ToolsFieldMCPServerTools`, `ExecutionFieldProvider/Model/ReasoningEffort`.
+- **`docs/tools-and-resources.md`**: `tools.functions`, `tools.mcp_servers`, `tools.allow`,
+  `requirements.mcp`, `requirements.resources[kind=mcp_server]` and `resource_modes` — which is a
+  declaration, which a narrowing, which is bound to a URL.
+
+### Changed
+
+- Schema: `requirements.resource_modes` declared; allow-list bounds; agreement corpus 81 → 105
+  rows with two new closed divergence reasons (`parserOnlyResourceModes`, `schemaStricterToolLists`).
+
+### Not built (owner ruling)
+
+- Glob syntax in `tools.allow`; a pluggable slug grammar (go-exons#1); an agent image field.
+
 ## [0.39.0] - 2026-09-30
 
 `ExecutionConfig.provider` is an open set in the published schema (#15, from aigentverse

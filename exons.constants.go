@@ -536,6 +536,26 @@ const (
 	SpecFieldRequirements = "requirements"
 )
 
+// Nested frontmatter keys named by validation messages and by PatchSource's
+// typed edit paths (v0.40.0). Each is the yaml tag of the field it names.
+const (
+	// RequirementsFieldResourceModes is the key of SpecRequirements.ResourceModes.
+	RequirementsFieldResourceModes = "resource_modes"
+	// RequirementsFieldResources is the key of SpecRequirements.Resources.
+	RequirementsFieldResources = "resources"
+	// ToolsFieldAllow is the key of ToolsConfig.Allow.
+	ToolsFieldAllow = "allow"
+	// ToolsFieldMCPServers is the key of ToolsConfig.MCPServers.
+	ToolsFieldMCPServers = "mcp_servers"
+	// ToolsFieldMCPServerTools is the key of MCPServer.Tools.
+	ToolsFieldMCPServerTools = "tools"
+	// ExecutionFieldProvider, ExecutionFieldModel and
+	// ExecutionFieldReasoningEffort are keys of execution.Config.
+	ExecutionFieldProvider        = "provider"
+	ExecutionFieldModel           = "model"
+	ExecutionFieldReasoningEffort = "reasoning_effort"
+)
+
 // DocumentType identifies the kind of document (prompt, skill, agent).
 type DocumentType string
 

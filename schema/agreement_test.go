@@ -42,6 +42,14 @@ const (
 	// schemaStricterScalar: yaml.v3 decodes a non-string scalar into a string field
 	// (`ref: 42` → "42", `kind: true` → "true"); the schema's type: string refuses it.
 	schemaStricterScalar = "schema-stricter: a non-string scalar the parser coerces into a string"
+	// parserOnlyResourceModes: a resource_modes value is checked against the
+	// resources entries of the same kind — a cross-field rule over a map key and a
+	// list's item field, which JSON Schema cannot express (v0.40.0).
+	parserOnlyResourceModes = "parser-only: resource_modes agrees with the resources entries of its kind"
+	// schemaStricterToolLists: the schema states the allow-list rules (non-empty, unique, ≤512)
+	// that a WRITER enforces with Spec.ValidateStrict; Parse stays tolerant so a stored document
+	// carrying a duplicate still loads (v0.40.0 review H3).
+	schemaStricterToolLists = "schema-stricter: tool allow-lists are checked by ValidateStrict, not Parse"
 )
 
 // divergenceDirection is which instrument is the stricter one for a reason.
@@ -59,23 +67,25 @@ const (
 // only direction it may explain. A reason not in this map is refused, so a new way
 // for the instruments to disagree has to be declared here, next to its argument.
 var divergenceVocabulary = map[string]divergenceDirection{
-	parserOnlyUniqueness: parserStricter,
-	parserOnlyInputOrder: parserStricter,
-	schemaStricterClosed: schemaStricter,
-	schemaStricterType:   schemaStricter,
-	schemaStricterNull:   schemaStricter,
-	schemaStricterScalar: schemaStricter,
+	parserOnlyUniqueness:    parserStricter,
+	parserOnlyInputOrder:    parserStricter,
+	parserOnlyResourceModes: parserStricter,
+	schemaStricterClosed:    schemaStricter,
+	schemaStricterType:      schemaStricter,
+	schemaStricterNull:      schemaStricter,
+	schemaStricterScalar:    schemaStricter,
+	schemaStricterToolLists: schemaStricter,
 }
 
 // Corpus floors. The corpus is hand-listed, so its size is the thing a careless
-// edit shrinks; each floor is the count at v0.33.0 (raised from v0.31.0's with the
+// edit shrinks; each floor is the count at v0.40.0 (raised from v0.33.0's with the resource_modes and allow-list rows; v0.33.0 raised v0.31.0's with the
 // requirements.environment rows) and is lowered only with a reason. Every declared reason must also be exercised by at least one row
 // (TestSchemaAndParserAgree's reverse axis), or the vocabulary holds dead entries.
 const (
-	agreementCorpusFloor         = 81
-	agreementAgreeRowsFloor      = 60
-	agreementParserStricterFloor = 3
-	agreementSchemaStricterFloor = 18
+	agreementCorpusFloor         = 105
+	agreementAgreeRowsFloor      = 76
+	agreementParserStricterFloor = 5
+	agreementSchemaStricterFloor = 24
 )
 
 // agreementCase is one document and the verdict EACH instrument must return for it.
@@ -100,7 +110,16 @@ func diverge(name, fm string, schemaAccepts, parserAccepts bool, reason string) 
 	return agreementCase{name: name, frontmatter: fm, wantSchema: schemaAccepts, wantParser: parserAccepts, divergence: reason}
 }
 
-func agent(extra string) string  { return agreementHead + "type: agent\n" + extra }
+func agent(extra string) string { return agreementHead + "type: agent\n" + extra }
+
+// toolNames is n distinct tool names as a flow-list body: "t0, t1, …".
+func toolNames(n int) string {
+	names := make([]string, n)
+	for i := range names {
+		names[i] = "t" + strconv.Itoa(i)
+	}
+	return strings.Join(names, ", ")
+}
 func prompt(extra string) string { return agreementHead + "type: prompt\n" + extra }
 func skill(extra string) string  { return agreementHead + "type: skill\n" + extra }
 
@@ -156,6 +175,31 @@ func agreementCorpus() []agreementCase {
 		agree("tools allow EMPTY (no tools)", agent("tools:\n  allow: []\n"), true),
 		agree("mcp server with transport and tools", agent("tools:\n  mcp_servers:\n    - name: s\n      url: https://mcp.example.com/mcp\n      transport: sse\n      tools: [search]\n"), true),
 		agree("mcp server tools EMPTY (none)", agent("tools:\n  mcp_servers:\n    - name: s\n      url: https://mcp.example.com/mcp\n      tools: []\n"), true),
+		// v0.40.0: the schema states the writer's rules (non-empty, unique, ≤ MaxToolAllowEntries);
+		// Parse does not enforce them, Spec.ValidateStrict does.
+		diverge("tools allow duplicated", agent("tools:\n  allow: [a, a]\n"), false, true, schemaStricterToolLists),
+		diverge("tools allow empty entry", agent("tools:\n  allow: [a, \"\"]\n"), false, true, schemaStricterToolLists),
+		agree("tools allow 512 entries", agent("tools:\n  allow: ["+toolNames(512)+"]\n"), true),
+		diverge("tools allow 513 entries", agent("tools:\n  allow: ["+toolNames(513)+"]\n"), false, true, schemaStricterToolLists),
+		agree("tools allow on a prompt", prompt("tools:\n  allow: [a]\n"), true),
+		diverge("mcp server tools duplicated", agent("tools:\n  mcp_servers:\n    - name: s\n      url: https://mcp.example.com/mcp\n      tools: [x, x]\n"), false, true, schemaStricterToolLists),
+		diverge("mcp server tools empty entry", agent("tools:\n  mcp_servers:\n    - name: s\n      url: https://mcp.example.com/mcp\n      tools: [\"\"]\n"), false, true, schemaStricterToolLists),
+
+		// --- requirements.resource_modes (v0.40.0, vAudience/atlas#803).
+		agree("resource_modes none for a kind with no entries", agent("requirements:\n  resource_modes:\n    corpus: none\n"), true),
+		agree("resource_modes all for a kind with no entries", skill("requirements:\n  resource_modes:\n    mcp_server: all\n"), true),
+		agree("resource_modes listed with an entry of the kind", agent("requirements:\n  resources:\n    - ref: docs\n      kind: corpus\n  resource_modes:\n    corpus: listed\n"), true),
+		agree("resource_modes none beside entries of ANOTHER kind", agent("requirements:\n  resources:\n    - ref: docs\n      kind: corpus\n  resource_modes:\n    mcp_server: none\n"), true),
+		agree("resource_modes value out of vocabulary", agent("requirements:\n  resource_modes:\n    corpus: some\n"), false),
+		agree("resource_modes value empty", agent("requirements:\n  resource_modes:\n    corpus: \"\"\n"), false),
+		agree("resource_modes kind uppercase", agent("requirements:\n  resource_modes:\n    Corpus: none\n"), false),
+		agree("resource_modes kind is a coordinate", agent("requirements:\n  resource_modes:\n    \"s3://x\": none\n"), false),
+		agree("resource_modes on a prompt", prompt("requirements:\n  resource_modes:\n    corpus: none\n"), false),
+		agree("resource_modes empty mapping on a prompt", prompt("requirements:\n  resource_modes: {}\n"), false),
+		diverge("resource_modes none beside entries of the kind", agent("requirements:\n  resources:\n    - ref: docs\n      kind: corpus\n  resource_modes:\n    corpus: none\n"), true, false, parserOnlyResourceModes),
+		agree("resource_modes all beside entries of the kind", agent("requirements:\n  resources:\n    - ref: docs\n      kind: corpus\n  resource_modes:\n    corpus: all\n"), true),
+		diverge("resource_modes listed with no entry of the kind", agent("requirements:\n  resource_modes:\n    corpus: listed\n"), true, false, parserOnlyResourceModes),
+		diverge("resource_modes null on a prompt", prompt("requirements:\n  resource_modes: ~\n"), false, true, schemaStricterNull),
 
 		// --- requirements.resources (aigentverse#80).
 		agree("resource minimal", agent("requirements:\n  resources:\n    - ref: product-docs\n      kind: corpus\n"), true),
@@ -500,6 +544,41 @@ func TestSchemaRequirementsBoundsAreTheGoConstants(t *testing.T) {
 	}
 	enumIs("code_execution", []any{"", exons.EnvironmentCodeExecutionRequired, exons.EnvironmentCodeExecutionOptional})
 	enumIs("network", []any{"", exons.EnvironmentNetworkRequired, exons.EnvironmentNetworkOptional, exons.EnvironmentNetworkNone})
+
+	modes := reqs["resource_modes"].(map[string]any)
+	if got, _ := modes["maxProperties"].(float64); int(got) != exons.MaxRequirementEntries {
+		t.Errorf("requirements.resource_modes maxProperties = %v, want exons.MaxRequirementEntries (%d)", got, exons.MaxRequirementEntries)
+	}
+	names := modes["propertyNames"].(map[string]any)
+	if got := names["pattern"]; got != exons.ResourceKindPattern {
+		t.Errorf("requirements.resource_modes propertyNames pattern = %v, want exons.ResourceKindPattern %q", got, exons.ResourceKindPattern)
+	}
+	if got, _ := names["maxLength"].(float64); int(got) != exons.MaxRequirementFieldLen {
+		t.Errorf("requirements.resource_modes propertyNames maxLength = %v, want exons.MaxRequirementFieldLen (%d)", got, exons.MaxRequirementFieldLen)
+	}
+	modeEnum := modes["additionalProperties"].(map[string]any)["enum"].([]any)
+	wantModes := make([]any, 0, len(exons.ResourceModeVocabulary()))
+	for _, m := range exons.ResourceModeVocabulary() {
+		wantModes = append(wantModes, string(m))
+	}
+	if fmt.Sprint(modeEnum) != fmt.Sprint(wantModes) {
+		t.Errorf("requirements.resource_modes enum = %v, want exons.ResourceModeVocabulary() %v", modeEnum, wantModes)
+	}
+	allowLists := map[string]map[string]any{
+		"ToolsConfig.allow": defs["ToolsConfig"].(map[string]any)["properties"].(map[string]any)["allow"].(map[string]any),
+		"MCPServer.tools":   defs["MCPServer"].(map[string]any)["properties"].(map[string]any)["tools"].(map[string]any),
+	}
+	for name, list := range allowLists {
+		if got, _ := list["maxItems"].(float64); int(got) != exons.MaxToolAllowEntries {
+			t.Errorf("%s maxItems = %v, want exons.MaxToolAllowEntries (%d)", name, got, exons.MaxToolAllowEntries)
+		}
+		if list["uniqueItems"] != true {
+			t.Errorf("%s uniqueItems = %v, want true", name, list["uniqueItems"])
+		}
+		if got, _ := list["items"].(map[string]any)["minLength"].(float64); got != 1 {
+			t.Errorf("%s items.minLength = %v, want 1", name, got)
+		}
+	}
 
 	scope := defs["RequirementScope"].(map[string]any)["enum"].([]any)
 	wantScope := []any{"", exons.RequirementScopeOrg, exons.RequirementScopeUser, exons.RequirementScopePerCall}

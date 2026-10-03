@@ -12,6 +12,10 @@ import (
 // ValidationResult contains the results of template validation.
 type ValidationResult struct {
 	issues []ValidationIssue
+	// renderability is set only by Engine.Validate on a WithStrictRenderability engine: it turns
+	// "this engine cannot execute it" findings into errors. WithStrictAttributes' walk from Parse
+	// builds its own result without it, so Parse is unchanged by the option.
+	renderability bool
 }
 
 // ValidationIssue represents a single validation finding.
@@ -79,7 +83,8 @@ func (r *ValidationResult) IsValid() bool {
 // Parse errors are returned as validation errors with SeverityError.
 func (e *Engine) Validate(source string) (*ValidationResult, error) {
 	result := &ValidationResult{
-		issues: make([]ValidationIssue, 0),
+		issues:        make([]ValidationIssue, 0),
+		renderability: e.config.strictRender,
 	}
 
 	// Markdown fence lints run before tokenization so they surface even when
@@ -152,6 +157,32 @@ func (e *Engine) validateMarkdownFences(source string, result *ValidationResult)
 	}
 }
 
+// renderabilityChecker is implemented by a resolver that can tell, from the attributes alone, that
+// Resolve will refuse whatever the data (the env resolver: disabled, denied, not allowlisted). Read
+// only under WithStrictRenderability.
+type renderabilityChecker interface {
+	CheckRenderable(attrs internal.Attributes) error
+}
+
+// renderabilitySeverity is the severity of a "this engine cannot execute the tag" finding, decided
+// exactly as Execute decides whether that failure stops the render: the tag's own onerror= wins,
+// else the engine's error strategy (WithErrorStrategy); only throw — the default, and what an
+// unrecognised onerror= parses to — stops it. Under any other strategy Execute keeps going
+// (default=, removal, raw text, a log line), so the finding is a WARNING (review M1).
+//
+// ⚠ A caller that renders through ExecuteWithContext with its OWN context strategy can differ from
+// the engine's; Validate cannot see that context and judges by the engine's.
+func (e *Engine) renderabilitySeverity(attrs internal.Attributes) ValidationSeverity {
+	strategy := e.config.errorStrategy
+	if s, ok := attrs.Get(AttrOnError); ok {
+		strategy = ParseErrorStrategy(s)
+	}
+	if strategy == ErrorStrategyThrow {
+		return SeverityError
+	}
+	return SeverityWarning
+}
+
 // validateNodes recursively validates a slice of AST nodes.
 func (e *Engine) validateNodes(nodes []internal.Node, result *ValidationResult) {
 	for _, node := range nodes {
@@ -187,10 +218,16 @@ func (e *Engine) validateTagNode(tag *internal.TagNode, result *ValidationResult
 		return
 	}
 
-	// Check if tag has a registered resolver
+	// Check if tag has a registered resolver. Under WithStrictRenderability an unknown tag is an
+	// ERROR — Execute refuses it — but only on Validate's own walk (result.renderability), never on
+	// WithStrictAttributes' walk from Parse, which must keep tolerating a resolver registered later.
 	if !e.registry.Has(tag.Name) {
+		severity := SeverityWarning
+		if result.renderability {
+			severity = e.renderabilitySeverity(tag.Attributes)
+		}
 		result.issues = append(result.issues, ValidationIssue{
-			Severity: SeverityWarning,
+			Severity: severity,
 			Message:  ErrMsgUnknownTagInTemplate,
 			Position: e.internalPosToPublic(tag.Pos()),
 			TagName:  tag.Name,
@@ -205,6 +242,18 @@ func (e *Engine) validateTagNode(tag *internal.TagNode, result *ValidationResult
 				Position: e.internalPosToPublic(tag.Pos()),
 				TagName:  tag.Name,
 			})
+		}
+		if result.renderability {
+			if checker, ok := resolver.(renderabilityChecker); ok {
+				if err := checker.CheckRenderable(tag.Attributes); err != nil {
+					result.issues = append(result.issues, ValidationIssue{
+						Severity: e.renderabilitySeverity(tag.Attributes),
+						Message:  err.Error(),
+						Position: e.internalPosToPublic(tag.Pos()),
+						TagName:  tag.Name,
+					})
+				}
+			}
 		}
 	}
 

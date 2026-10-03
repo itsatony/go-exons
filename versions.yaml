@@ -1,7 +1,15 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.39.0
+  version: 0.40.0
+# v0.40.0 (DC27-inlay, vAudience/atlas#803 + go-exons#13): requirements.resource_modes {kind: all|listed|none}
+# is the NARROWING (skill/agent only); resources stays a declaration of NEED — an absent mode is ALL even
+# with entries, so no stored document is narrowed by the bump. none beside entries / listed with none are
+# refused. Spec.ToolMode() reads tools.allow — no second spelling. Spec.ValidateStrict() (writers): allow-
+# lists non-empty, unique, <= MaxToolAllowEntries 512 — Parse stays tolerant. PatchSource(src, edits...)
+# splices typed edits into the frontmatter TEXT (never renders); result must Parse + ValidateStrict, decode
+# to original+edits and add no comment, or nothing is returned (ErrPatchRefused). WithStrictRenderability():
+# Validate reports unknown/refused-env tags at Execute's own severity (opt-in, Parse unchanged).
 # v0.39.0 (#15, aigentverse DC300-modelpick): schema ExecutionConfig.provider is an OPEN set (no enum;
 # examples = execution.SerializedProviders(), the ProviderFormat arms). A relaxation: every document
 # that validated still does. Additive API: SerializedProviders().

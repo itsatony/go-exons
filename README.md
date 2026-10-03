@@ -396,6 +396,8 @@ Go types: `SpecRequirements` with `MCPRequirement`, `CredentialRequirement` and 
 
 `requirements.environment` (`EnvironmentRequirement`, go-exons#4) lets a skill or agent say what it needs to RUN, so a registry or runtime can preflight before activation instead of failing mid-conversation. It is abstract — never a runtime, image or interpreter name; which sandbox satisfies it is the runtime's decision. Every field is optional, and **an absent field means the author said nothing** — an undeclared `network` is unknown, never "works offline"; `network: none` is the explicit statement. There is no `code_execution: none`: a definition that runs no code omits the field. `packages` entries match `EnvironmentPackagePattern` — `<ecosystem>:<name>` with ecosystem one of `python`, `node`, `r`, `ruby`, `rust`, `go`, `java`, `system` (an OS-level tool such as `system:libreoffice`), a bare name with no version specifier; at most `MaxEnvironmentPackages` (64), each at most `MaxEnvironmentPackageLen` (128), unique, verbatim. They are informational — go-exons installs nothing — and declaring any requires `code_execution`. A `type: prompt` document refuses the block (a prompt runs nothing). As everywhere in `requirements`, the parser ignores an unknown key inside `environment:` and the schema refuses it. `RequiresCodeExecution()` / `RequiresNetwork()` answer the preflight questions.
 
+`requirements.resource_modes` (v0.40.0, vAudience/atlas#803) is the **narrowing**, per resource **kind**: `all` resources of it, only the `listed` ones, or `none`. `requirements.resources` stays a declaration of what the definition **needs** and narrows nothing by itself, so a kind with no `resource_modes` key is `all` — entries or not — and no document written before v0.40.0 is narrowed by the upgrade. Read it through `SpecRequirements.ResourceMode(kind)`. `Parse` refuses `none` beside entries of the same kind (a need the mode forbids), `listed` with no entry of it, a key outside `ResourceKindPattern`, and the key on a prompt; `all` beside entries is fine. Tools get no second spelling: `Spec.ToolMode()` reads `tools.allow` (absent → `all`, `[]` → `none`, a list → `listed`). A writer runs `Spec.ValidateStrict()` before publishing: it adds the allow-list rules (non-empty, unique, at most `MaxToolAllowEntries` = 512, go-exons' own sanity bound) that `Parse` deliberately does not enforce on stored documents. Which of `tools`, `requirements.mcp`, `requirements.resources[kind=mcp_server]` and `tools.mcp_servers` to write is [docs/tools-and-resources.md](docs/tools-and-resources.md).
+
 `requirements:` survives every full export (`ExportFull`, `Serialize`, `ExportDirectory`) and is deliberately kept out of the Agent-Skills export, whose portable vocabulary is closed. Since v0.33.0 that export carries the environment in the one portable field that can: agentskills.io `compatibility` (1–500 characters). `Spec.AgentSkillsCompatibility()` composes it — the author's own `compatibility` text first and verbatim, then `EnvironmentRequirement.CompatibilitySentence()` (*"Requires code execution with packages python:openpyxl. Needs no network access."*). The author's text is **appended to, never replaced or cut**: a portable consumer that saw only the prose would miss a declared requirement, while a repeated one is merely redundant. The sentence is not appended when the author's text already contains it (so export → import → export does not grow the field), and when both together exceed 500 characters the author's text is used alone. A package list that does not fit is rendered as whole names plus *"and N more"*, never a truncated name. The composition happens at export only (`SerializeOptions.RenderCompatibility`, set by `AgentSkillsExportOptions`); full exports keep the author's field verbatim.
 
 ## Input Kinds
@@ -535,6 +537,33 @@ output, _ := spec.Serialize(exons.FullExportWithCredentials())
 // Agent Skills compatible export
 output, _ := spec.ExportToSkillMD()
 ```
+
+### Patch a stored document in place
+
+`Parse` → edit → `Serialize` damages a stored definition: `ExportFull` drops `credentials:`, any
+YAML re-encode drops comments and re-sorts keys, and `Engine.Parse` renders `{~…~}` tags in the
+frontmatter. `PatchSource` (v0.40.0) edits typed paths in the frontmatter TEXT. Every line outside
+the edited entries is kept byte for byte — comments, key order, unknown keys, credentials,
+templated values, the body:
+
+```go
+out, err := exons.PatchSource(src,
+    exons.SetToolsAllow([]string{"sql_query"}),              // nil removes the key, [] means none
+    exons.SetResourceMode("mcp_server", exons.ResourceModeNone),
+    exons.SetExecutionModel("claude-sonnet-5"),
+)
+```
+
+Edits: `SetToolsAllow`, `SetRequirementsResources`, `SetResourceMode`, `SetSkills`,
+`SetExecutionProvider` / `SetExecutionModel` / `SetExecutionReasoningEffort`, `SetDisplayName`
+(at most `MaxPatchEdits` per call). An edited entry's own lines (its key line and every deeper
+line) are replaced; a comment on its key line is carried over (not for a multi-line flow-style
+block, which is re-emitted whole), other comments inside it go with it, and removing a block's
+last key deletes the whole block. An edited entry holding a quoted scalar that spans several
+lines is refused — its continuation lines cannot be told from comments. The source must pass `Parse`; the
+result must pass `Parse` and `ValidateStrict`, decode to the original with the edits applied, and
+add no comment line, or PatchSource returns an error matching `ErrPatchRefused` (plus one
+specific `ErrPatch…` sentinel, `*PatchError` via `errors.As`) and no bytes.
 
 ### Import
 
@@ -702,6 +731,16 @@ on a library bump. Only error-severity issues are refused (an unknown tag stays 
 error strategy or `onerror=` lifts the check, and frontmatter tags — rendered through `Parse`
 during config extraction — are checked too.
 
+`Validate` judges attributes, not whether **this engine** can execute the tag: an unknown tag is a
+warning (a resolver may be registered later), and `{~exons.env~}` on an engine that never opted in
+passes — yet under the default throw strategy `Execute` fails on either once the render reaches
+it. An engine built `WithStrictRenderability()` (v0.40.0, go-exons#13) reports both in `Validate`,
+plus an env `name=` the denylist blocks or the allowlist does not cover, at the severity `Execute`
+would imply: an error when the tag's `onerror=` (else the engine's error strategy) is throw, a
+warning when `Execute` would carry on. A tag inside an `if` / `for` / `switch` body is judged as if
+reached. It is separate from `WithStrictAttributes` and does not change `Parse`; turn it on where
+every resolver is registered before `Validate` runs.
+
 ## Tool Format Export
 
 Define tools once in the spec, export to any provider's format:
@@ -735,7 +774,7 @@ The template engine is security-hardened by default:
 
 A JSON Schema for validating `.exons` YAML frontmatter ships at `schema/exons.schema.json`. Use it with VS Code's YAML extension or in CI pipelines.
 
-The schema and `Parse` are held together by a test (`schema/agreement_test.go`): a document the schema accepts is one the parser accepts, except for the rules JSON Schema cannot state (uniqueness within the requirements lists, `input_order` naming declared inputs, cross-field rules, the template grammar). The schema is deliberately stricter in four named classes: `type` is required (the parser defaults it to skill); nested objects are closed (the parser ignores unknown keys); an explicit `null` is refused (the parser decodes it to the zero value, so `constraints: ~` on a prompt parses); and a non-string scalar in a string field is refused (the parser coerces `ref: 42` to `"42"`). The test's divergence vocabulary is closed, so a fifth class has to be declared there.
+The schema and `Parse` are held together by a test (`schema/agreement_test.go`): a document the schema accepts is one the parser accepts, except for the rules JSON Schema cannot state (uniqueness within the requirements lists, `input_order` naming declared inputs, cross-field rules, the template grammar). The schema is deliberately stricter in four named classes: `type` is required (the parser defaults it to skill); nested objects are closed (the parser ignores unknown keys); an explicit `null` is refused (the parser decodes it to the zero value, so `constraints: ~` on a prompt parses); a non-string scalar in a string field is refused (the parser coerces `ref: 42` to `"42"`); and the tool allow-lists must be non-empty, unique and at most 512 long — rules a writer enforces with `Spec.ValidateStrict()` while `Parse` stays tolerant of stored documents (v0.40.0). The test's divergence vocabulary is closed, so a sixth class has to be declared there.
 
 ## Examples
 

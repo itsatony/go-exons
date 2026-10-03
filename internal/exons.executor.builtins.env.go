@@ -121,6 +121,25 @@ func (r *EnvResolver) checkAccess(name string) error {
 	return nil
 }
 
+// CheckRenderable returns the refusal Resolve would return for these attributes
+// WHATEVER the data and the environment: the tag is disabled on this engine, or
+// the name is denied or outside the allowlist. A missing name= returns nil —
+// that is Validate's finding, not this one's. It reads nothing from the
+// environment, so it can run at intake.
+//
+// It is Engine.Validate's input under WithStrictRenderability (go-exons#13).
+// Resolve runs the same two checks, in the same order, so the two cannot drift.
+func (r *EnvResolver) CheckRenderable(attrs Attributes) error {
+	if r.config.Disabled {
+		return NewBuiltinError(ErrMsgEnvDisabled, TagNameEnv)
+	}
+	name, ok := attrs.Get(AttrName)
+	if !ok {
+		return nil
+	}
+	return r.checkAccess(name)
+}
+
 // Validate checks that the required attributes are present.
 func (r *EnvResolver) Validate(attrs Attributes) error {
 	if !attrs.Has(AttrName) {
