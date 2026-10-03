@@ -162,3 +162,25 @@ func TestPatchSource_ReviewL6_EditCountIsBounded(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, strings.Contains(ErrMsgPatchTooManyEdits, "MaxPatchEdits"))
 }
+
+// The comment arm wired into PatchSource: a splice that leaves value text behind as a comment is
+// refused even when everything else about the result checks out.
+func TestPatchSource_ReviewH2_SelfCheckRefusesLeftoverComment(t *testing.T) {
+	orig := patchOneEdit
+	t.Cleanup(func() { patchOneEdit = orig })
+	patchOneEdit = func(fm []byte, e SourceEdit) ([]byte, []string, error) {
+		out, pruned, err := orig(fm, e)
+		return append(out, []byte("\n# internal codename: falcon")...), pruned, err
+	}
+	out, err := PatchSource([]byte("---\nname: a\ndescription: d\ntype: agent\n---\n"), SetDisplayName("A"))
+	requireRefused(t, out, err, ErrPatchSelfCheck)
+	assert.Contains(t, err.Error(), ErrMsgPatchNewComment)
+}
+
+// M3: a frontmatter an EARLIER edit produced that no longer parses is our fault, not the source's.
+func TestPatchSource_ReviewM3_IntermediateFailureIsInternal(t *testing.T) {
+	_, _, err := patchFrontmatter([]byte("name: [unclosed"), SetDisplayName("A"))
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrPatchInternal), "%v", err)
+	assert.False(t, errors.Is(err, ErrPatchSourceInvalid))
+}

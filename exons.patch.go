@@ -252,7 +252,7 @@ func PatchSource(src []byte, edits ...SourceEdit) (out []byte, err error) {
 		if e.invalid != "" {
 			return nil, newPatchError(ErrPatchEditInvalid, e.Path(), errors.New(e.invalid))
 		}
-		next, p, err := patchFrontmatter(fm, e)
+		next, p, err := patchOneEdit(fm, e)
 		if err != nil {
 			return nil, err
 		}
@@ -292,6 +292,10 @@ func PatchSource(src []byte, edits ...SourceEdit) (out []byte, err error) {
 	}
 	return out, nil
 }
+
+// patchOneEdit is the text edit PatchSource applies per edit. A variable only so a test can
+// simulate a splice that leaves residue and prove the self-check catches it; nothing else sets it.
+var patchOneEdit = patchFrontmatter
 
 // noNewComments refuses a result carrying a comment line the source did not have. An edit only
 // ever removes text or writes values, so a NEW comment means a value's own lines were left behind
