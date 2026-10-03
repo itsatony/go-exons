@@ -32,6 +32,7 @@ const (
 	ErrCodeMetadata   = "EXONS_METADATA"   // Metadata errors (memory, dispatch, etc.)
 	ErrCodeCatalog    = "EXONS_CATALOG"    // Catalog errors
 	ErrCodeSerialize  = "EXONS_SERIALIZE"  // Serialization errors
+	ErrCodePatch      = "EXONS_PATCH"      // PatchSource refusals (v0.40.0)
 )
 
 // Error message constants — ALL error messages must be constants (NO MAGIC STRINGS)
@@ -285,6 +286,20 @@ const (
 	ErrMsgResourceModeListedEmpty = "requirements.resource_modes listed needs at least one requirements.resources entry of that kind (write none to allow no resource of it)"
 	// ErrMsgPromptNoResourceModes: a prompt binds no resources, so it has no mode to declare.
 	ErrMsgPromptNoResourceModes = "prompt type does not support requirements.resource_modes (valid on skill and agent)"
+
+	// PatchSource refusal messages (v0.40.0). Each specific one is an ErrPatch… sentinel.
+	ErrMsgPatchRefused          = "patch refused"
+	ErrMsgPatchNoFrontmatter    = "document has no frontmatter to patch"
+	ErrMsgPatchSourceInvalid    = "document does not pass Parse, so it cannot be patched without guessing (a frontmatter that is YAML only after its tags render must quote them)"
+	ErrMsgPatchEditInvalid      = "invalid edit"
+	ErrMsgPatchUnsupportedShape = "frontmatter shape is not editable in place"
+	ErrMsgPatchResultInvalid    = "patched document does not pass Parse/Validate"
+	ErrMsgPatchSelfCheck        = "patched document does not decode to the original with the edits applied"
+	ErrMsgPatchSelfCheckDetail  = "canonical encodings differ"
+	ErrMsgPatchZeroEdit         = "a zero SourceEdit — build edits with the Set… constructors"
+	ErrMsgPatchRootNotBlock     = "frontmatter root must be a non-empty block mapping"
+	ErrMsgPatchNotMapping       = "expected a mapping at"
+	ErrMsgPatchAnchor           = "the edited entry carries a YAML anchor or alias; edit it by hand"
 
 	// Tool allow-list validation messages (v0.40.0).
 	ErrMsgToolAllowEntryEmpty = "tool allow-list entries must not be empty"
