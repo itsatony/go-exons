@@ -22,6 +22,7 @@ type engineConfig struct {
 	markdownFences bool     // markdown code fences are inert regions
 	refVerbatim    bool     // {~exons.ref~} splices the referenced body as TEXT instead of rendering it
 	strictAttrs    bool     // Parse/ParseBody also refuse the error-severity issues Validate reports
+	strictRender   bool     // Validate reports what this engine can never execute at SeverityError
 }
 
 // defaultEngineConfig returns the default engine configuration.
@@ -220,5 +221,33 @@ func WithRefVerbatim() Option {
 func WithStrictAttributes() Option {
 	return func(c *engineConfig) {
 		c.strictAttrs = true
+	}
+}
+
+// WithStrictRenderability makes Engine.Validate report, at SeverityError, the tags THIS engine can
+// never execute whatever the data (go-exons#13):
+//
+//   - a tag with no registered resolver — by default only a SeverityWarning, because a resolver
+//     can still be registered after the parse, while Execute refuses it with "unknown tag";
+//     {~exons.raw~} stays exempt;
+//   - {~exons.env~} on an engine that did not opt in to it (the v0.35.0 default), and, on an
+//     engine that did, a name= the denylist blocks or the allowlist does not cover.
+//
+// With it set, Validate(...).Errors() answers "can this template render on this engine", which is
+// what an intake gate means to ask. Without it, both cases pass Validate and refuse at every Execute.
+//
+// ⛔ It is a SEPARATE option from WithStrictAttributes and does not change Parse. Strict
+// attributes refuses a document whose tags are malformed for ANY engine, and its consumers
+// (aigentverse among them) register resolvers after parsing; folding renderability into it would
+// make their Parse refuse every custom tag. Turn this on for an engine whose resolvers are all
+// registered before Validate runs.
+//
+// It judges the DOCUMENT against the engine: no error strategy lifts it (under a lenient strategy
+// Execute would keep or remove the tag rather than fail, and Validate still reports it), and the
+// environment is never read — a required="true" variable that happens to be unset is a data fact,
+// not a renderability one.
+func WithStrictRenderability() Option {
+	return func(c *engineConfig) {
+		c.strictRender = true
 	}
 }
