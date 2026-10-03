@@ -180,6 +180,8 @@ func TestPatchSource_Shapes(t *testing.T) {
 		want     string
 	}{
 		{"compact block sequence", "tools:\n  allow:\n  - a\n  - b\n  tool_choice: auto\n", SetToolsAllow([]string{"c"}), "tools:\n  allow:\n    - c\n  tool_choice: auto\n"},
+		{"comment between compact sequence items", "skills:\n- slug: a\n# the second\n- slug: b\nx-after: 1\n", SetSkills([]SkillRef{{Slug: "c"}}), "skills:\n  - slug: c\nx-after: 1\n"},
+		{"comment between block sequence items", "tools:\n  allow:\n    - a\n  # mid\n    - b\n  tool_choice: auto\n", SetToolsAllow([]string{"c"}), "tools:\n  allow:\n    - c\n  tool_choice: auto\n"},
 		{"null parent", "tools:\n", SetToolsAllow([]string{"c"}), "tools:\n  allow:\n    - c\n"},
 		{"flow parent stays flow", "tools: {allow: [a], tool_choice: auto}\n", SetToolsAllow([]string{}), "tools: {allow: [], tool_choice: auto}\n"},
 		{"four-space indentation is the block's own", "execution:\n    model: m\n", SetExecutionProvider("p"), "execution:\n    model: m\n    provider: p\n"},
