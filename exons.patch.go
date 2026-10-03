@@ -29,6 +29,12 @@ import (
 // Parse and Spec.Validate, and (2) decode to EXACTLY the original document with the edits applied
 // in Go (the self-check), or PatchSource returns an error and no bytes.
 
+// yaml.v3 core-schema tags PatchSource reads and writes.
+const (
+	yamlTagStr  = "!!str"
+	yamlTagNull = "!!null"
+)
+
 // SourceEdit is one typed edit PatchSource applies. Build it with a Set… constructor; the zero
 // value is refused. The set of paths is closed on purpose: each one is a field a consumer has a
 // reason to edit without owning the rest of the document, and each has a Go-side twin the
@@ -459,7 +465,7 @@ func entryLines(m *yaml.Node, j, indent int, lines []string) (int, int) {
 // appends comment (if any) to the first line — where the original entry's key-line comment sat.
 func renderEntry(key string, val *yaml.Node, indent int, comment string, cr bool) ([]string, error) {
 	root := &yaml.Node{Kind: yaml.MappingNode, Content: []*yaml.Node{
-		{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}, val,
+		{Kind: yaml.ScalarNode, Tag: yamlTagStr, Value: key}, val,
 	}}
 	var b bytes.Buffer
 	enc := yaml.NewEncoder(&b)
@@ -491,7 +497,7 @@ func renderEntry(key string, val *yaml.Node, indent int, comment string, cr bool
 func nestValue(rest []string, leaf *yaml.Node) *yaml.Node {
 	for i := len(rest) - 1; i >= 0; i-- {
 		leaf = &yaml.Node{Kind: yaml.MappingNode, Content: []*yaml.Node{
-			{Kind: yaml.ScalarNode, Tag: "!!str", Value: rest[i]}, leaf,
+			{Kind: yaml.ScalarNode, Tag: yamlTagStr, Value: rest[i]}, leaf,
 		}}
 	}
 	return leaf
@@ -507,7 +513,7 @@ func setInNode(m *yaml.Node, path []string, leaf *yaml.Node) error {
 		case j < 0 && leaf == nil:
 			return nil
 		case j < 0:
-			m.Content = append(m.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}, nestValue(path[i+1:], leaf))
+			m.Content = append(m.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: yamlTagStr, Value: key}, nestValue(path[i+1:], leaf))
 			return nil
 		case last && leaf == nil:
 			m.Content = append(m.Content[:2*j], m.Content[2*j+2:]...)
@@ -546,7 +552,7 @@ func isBlockMapping(n *yaml.Node) bool {
 }
 
 func isNull(n *yaml.Node) bool {
-	return n.Kind == yaml.ScalarNode && n.Tag == "!!null"
+	return n.Kind == yaml.ScalarNode && n.Tag == yamlTagNull
 }
 
 func hasAnchorOrAlias(n *yaml.Node) bool {

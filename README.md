@@ -396,6 +396,8 @@ Go types: `SpecRequirements` with `MCPRequirement`, `CredentialRequirement` and 
 
 `requirements.environment` (`EnvironmentRequirement`, go-exons#4) lets a skill or agent say what it needs to RUN, so a registry or runtime can preflight before activation instead of failing mid-conversation. It is abstract — never a runtime, image or interpreter name; which sandbox satisfies it is the runtime's decision. Every field is optional, and **an absent field means the author said nothing** — an undeclared `network` is unknown, never "works offline"; `network: none` is the explicit statement. There is no `code_execution: none`: a definition that runs no code omits the field. `packages` entries match `EnvironmentPackagePattern` — `<ecosystem>:<name>` with ecosystem one of `python`, `node`, `r`, `ruby`, `rust`, `go`, `java`, `system` (an OS-level tool such as `system:libreoffice`), a bare name with no version specifier; at most `MaxEnvironmentPackages` (64), each at most `MaxEnvironmentPackageLen` (128), unique, verbatim. They are informational — go-exons installs nothing — and declaring any requires `code_execution`. A `type: prompt` document refuses the block (a prompt runs nothing). As everywhere in `requirements`, the parser ignores an unknown key inside `environment:` and the schema refuses it. `RequiresCodeExecution()` / `RequiresNetwork()` answer the preflight questions.
 
+`requirements.resource_modes` (v0.40.0, vAudience/atlas#803) says per resource **kind** whether the definition may use `all` resources of it, only the `listed` ones, or `none` — the third answer had no spelling before. Read it through `SpecRequirements.ResourceMode(kind)`: an absent key derives as it always meant (entries of the kind → `listed`, none → `all`). `Parse` refuses `all`/`none` beside entries of the same kind, `listed` with no entry of it, a key outside `ResourceKindPattern`, and the key on a prompt. Tools get no second spelling: `Spec.ToolMode()` reads `tools.allow` (absent → `all`, `[]` → `none`, a list → `listed`). Which of `tools`, `requirements.mcp`, `requirements.resources[kind=mcp_server]` and `tools.mcp_servers` to write is [docs/tools-and-resources.md](docs/tools-and-resources.md).
+
 `requirements:` survives every full export (`ExportFull`, `Serialize`, `ExportDirectory`) and is deliberately kept out of the Agent-Skills export, whose portable vocabulary is closed. Since v0.33.0 that export carries the environment in the one portable field that can: agentskills.io `compatibility` (1–500 characters). `Spec.AgentSkillsCompatibility()` composes it — the author's own `compatibility` text first and verbatim, then `EnvironmentRequirement.CompatibilitySentence()` (*"Requires code execution with packages python:openpyxl. Needs no network access."*). The author's text is **appended to, never replaced or cut**: a portable consumer that saw only the prose would miss a declared requirement, while a repeated one is merely redundant. The sentence is not appended when the author's text already contains it (so export → import → export does not grow the field), and when both together exceed 500 characters the author's text is used alone. A package list that does not fit is rendered as whole names plus *"and N more"*, never a truncated name. The composition happens at export only (`SerializeOptions.RenderCompatibility`, set by `AgentSkillsExportOptions`); full exports keep the author's field verbatim.
 
 ## Input Kinds
@@ -535,6 +537,28 @@ output, _ := spec.Serialize(exons.FullExportWithCredentials())
 // Agent Skills compatible export
 output, _ := spec.ExportToSkillMD()
 ```
+
+### Patch a stored document in place
+
+`Parse` → edit → `Serialize` damages a stored definition: `ExportFull` drops `credentials:`, any
+YAML re-encode drops comments and re-sorts keys, and `Engine.Parse` renders `{~…~}` tags in the
+frontmatter. `PatchSource` (v0.40.0) edits typed paths in the frontmatter TEXT and copies every
+other byte through — comments, key order, unknown keys, credentials, templated values, the body:
+
+```go
+out, err := exons.PatchSource(src,
+    exons.SetToolsAllow([]string{"sql_query"}),              // nil removes the key, [] means none
+    exons.SetResourceMode("mcp_server", exons.ResourceModeNone),
+    exons.SetExecutionModel("claude-sonnet-5"),
+)
+```
+
+Edits: `SetToolsAllow`, `SetRequirementsResources`, `SetResourceMode`, `SetSkills`,
+`SetExecutionProvider` / `SetExecutionModel` / `SetExecutionReasoningEffort`, `SetDisplayName`.
+The source must pass `Parse`; the result must pass `Parse` and `Spec.Validate` **and** decode to
+the original with the edits applied, or PatchSource returns an error matching
+`ErrPatchRefused` (plus one specific `ErrPatch…` sentinel, `*PatchError` via `errors.As`) and no
+bytes.
 
 ### Import
 
@@ -701,6 +725,13 @@ It is opt-in on purpose: a stricter default would newly refuse stored documents 
 on a library bump. Only error-severity issues are refused (an unknown tag stays a warning), no
 error strategy or `onerror=` lifts the check, and frontmatter tags — rendered through `Parse`
 during config extraction — are checked too.
+
+`Validate` judges attributes, not whether **this engine** can execute the tag: an unknown tag is a
+warning (a resolver may be registered later), and `{~exons.env~}` on an engine that never opted in
+passes — yet both refuse at every `Execute`. An engine built `WithStrictRenderability()` (v0.40.0,
+go-exons#13) reports both at error severity in `Validate`, plus an env `name=` the denylist blocks
+or the allowlist does not cover. It is separate from `WithStrictAttributes` and does not change
+`Parse`; turn it on where every resolver is registered before `Validate` runs.
 
 ## Tool Format Export
 

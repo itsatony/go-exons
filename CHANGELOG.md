@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-10-03
+
+DC27-inlay, for vAudience/atlas#803 (an agent's setup edited from the composer, as an edit to its
+exons definition): a three-way answer per resource kind, a way to edit a stored definition without
+damaging it, validated allow-lists, and an opt-in renderability check (go-exons#13). Plan:
+[docs/plans/DC27-inlay.md](docs/plans/DC27-inlay.md).
+
+### ⚠ Behaviour change
+
+- **`tools.allow` and every `tools.mcp_servers[].tools` are validated.** `Spec.Validate` (and so
+  `Parse`) now refuses an empty entry (`ErrMsgToolAllowEntryEmpty`), a duplicate entry
+  (`ErrMsgToolAllowEntryDup`, compared verbatim — `a` and `A` are different names) and a list
+  longer than `MaxToolAllowEntries` = 512 (`ErrMsgToolAllowTooMany`). Nothing validated these
+  lists before, so a stored document carrying one of those now fails to parse. **Before bumping,
+  re-validate stored definitions** (aigentverse, deepr, aigentflow). `nil` and `[]` are both still
+  valid and still mean "no narrowing" and "no tools". The schema states the same rules
+  (`uniqueItems`, `items.minLength: 1`, `maxItems: 512`); `ToolsConfig.Validate()` is public.
+
+### Added
+
+- **`requirements.resource_modes`**: a map from resource kind to `all`, `listed` or `none`
+  (`ResourceMode`, `ResourceModeAll/Listed/None`, `ResourceModes()`). Keys match
+  `ResourceKindPattern`, at most `MaxRequirementEntries`. `Parse` refuses an out-of-vocabulary or
+  empty value, `all`/`none` beside `requirements.resources` entries of the same kind
+  (`ErrMsgResourceModeWithEntries`), `listed` with no entry of the kind
+  (`ErrMsgResourceModeListedEmpty`), and the key on a prompt (`ErrMsgPromptNoResourceModes`;
+  the schema's prompt rule says the same). Valid on skill and agent.
+- **`(*SpecRequirements).ResourceMode(kind)`**: the declared mode, or — for an absent key —
+  the meaning a pre-v0.40.0 document always had (entries of the kind → `listed`, none → `all`).
+  Nil-safe.
+- **`(*Spec).ToolMode()`**: the same three answers read from `tools.allow` (absent → `all`,
+  `[]` → `none`, a list → `listed`). Deliberately no second spelling for tools.
+- **`PatchSource(src, edits...)`** with `SetToolsAllow`, `SetRequirementsResources`,
+  `SetResourceMode`, `SetSkills`, `SetExecutionProvider`, `SetExecutionModel`,
+  `SetExecutionReasoningEffort`, `SetDisplayName`. It splices the edited entries into the
+  frontmatter TEXT and copies every other byte through: comments, key order, blank lines, unknown
+  keys, `credentials:`, `{~…~}` values (never rendered), the body. The source must pass `Parse`;
+  the result must pass `Parse`/`Validate` and decode to the original with the edits applied, or
+  it returns no bytes and an error matching `ErrPatchRefused` plus one of `ErrPatchNoFrontmatter`,
+  `ErrPatchSourceInvalid`, `ErrPatchEditInvalid`, `ErrPatchUnsupportedShape`,
+  `ErrPatchResultInvalid`, `ErrPatchSelfCheck` (`*PatchError`, code `EXONS_PATCH`). Removing a
+  block's last key removes the block. Use it instead of Parse → Serialize for a stored document:
+  `ExportFull` drops credentials and comments, and `Engine.Parse` renders frontmatter tags.
+- **`WithStrictRenderability()`** (go-exons#13, from deepr#385): `Engine.Validate` reports at
+  `SeverityError` an unknown tag (otherwise a warning; `exons.raw` still exempt) and an
+  `{~exons.env~}` this engine refuses — not opted in, or a name the denylist blocks or the
+  allowlist does not cover. Separate from `WithStrictAttributes`; `Parse` is unchanged by it.
+- Constants: `SpecFieldResourceModes`, `RequirementsFieldResources`, `ToolsFieldAllow`,
+  `ToolsFieldMCPServers`, `ToolsFieldMCPServerTools`, `ExecutionFieldProvider/Model/ReasoningEffort`.
+- **`docs/tools-and-resources.md`**: `tools.functions`, `tools.mcp_servers`, `tools.allow`,
+  `requirements.mcp`, `requirements.resources[kind=mcp_server]` and `resource_modes` — which is a
+  declaration, which a narrowing, which is bound to a URL.
+
+### Changed
+
+- Schema: `requirements.resource_modes` declared; allow-list bounds; agreement corpus 81 → 105
+  rows with one new closed divergence reason (`parserOnlyResourceModes`).
+
+### Not built (owner ruling)
+
+- Glob syntax in `tools.allow`; a pluggable slug grammar (go-exons#1); an agent image field.
+
 ## [0.39.0] - 2026-09-30
 
 `ExecutionConfig.provider` is an open set in the published schema (#15, from aigentverse
