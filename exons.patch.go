@@ -637,9 +637,16 @@ func nestValue(rest []string, leaf *yaml.Node) *yaml.Node {
 // yaml11Booleans are the plain scalars a YAML 1.1 reader (and yaml.v3 for some of them) reads as
 // booleans. yaml.v3 emits a !!str key such as `no` or `on` UNQUOTED, which another reader may
 // decode as false/true; a key we write that looks like one is double-quoted (review L4).
-var yaml11Booleans = map[string]bool{
-	"y": true, "yes": true, "n": true, "no": true, "true": true, "false": true, "on": true, "off": true,
-}
+var yaml11Booleans = func() map[string]bool {
+	m := map[string]bool{}
+	for _, w := range strings.Fields(yaml11BooleanWords) {
+		m[w] = true
+	}
+	return m
+}()
+
+// yaml11BooleanWords is the YAML 1.1 boolean vocabulary, lower-case.
+const yaml11BooleanWords = "y yes n no true false on off"
 
 // keyScalar is the node for a mapping key PatchSource writes.
 func keyScalar(key string) *yaml.Node {

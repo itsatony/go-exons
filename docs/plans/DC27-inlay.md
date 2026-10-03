@@ -123,4 +123,4 @@ well as validates.
 - Agreement corpus: 105 rows (76 agree, 5 parser-stricter, 24 schema-stricter).
 - Review round 1 (3 HIGH, 3 MEDIUM, 6 LOW) fixed with a test per finding; see the commit log.
 - `make ci-local` green on the branch: build, vet, gofmt, tidy, golangci-lint v2.12.2 (0 issues),
-  race tests, total coverage 91.1 % (floor 88; root package 92.0 %).
+  race tests, total coverage 91.0 % (floor 88; root package 92.0 %), re-run after review round 1.
