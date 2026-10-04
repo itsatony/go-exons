@@ -44,6 +44,14 @@ func NeutraliseUntrusted(text string) string {
 	return internal.NeutraliseUntrusted(text)
 }
 
+// StripUntrusted removes every engine-written untrusted rendering from text — the notice line,
+// each fenced block, each back-reference — and returns what remains, trimmed: the instruction.
+// A host uses it wherever the data must not go (an agent's system frame, @-mention addressing).
+// It is exact: the neutraliser guarantees no data or label can contain the fence's glyphs.
+func StripUntrusted(text string) string {
+	return internal.StripUntrusted(text)
+}
+
 const (
 	// UntrustedNotice is the fixed line that precedes untrusted data, once per placement.
 	UntrustedNotice = internal.UntrustedNotice

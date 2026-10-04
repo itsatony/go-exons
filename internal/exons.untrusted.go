@@ -3,6 +3,7 @@ package internal
 import (
 	"bytes"
 	"encoding/json"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"unicode"
@@ -46,9 +47,10 @@ const (
 
 	// untrustedRepeatPrefix / untrustedRepeatSuffix render the SECOND and later placements of the
 	// same sealed value in one render: a pointer back to the block, never the data again, so the
-	// data appears exactly once.
-	untrustedRepeatPrefix = "(the external data from "
-	untrustedRepeatSuffix = " is shown once, above)"
+	// data appears exactly once. The label sits between the fence's own glyphs, which the
+	// neutraliser removes from every label — so StripUntrusted can match a back-reference exactly.
+	untrustedRepeatPrefix = "(⟦"
+	untrustedRepeatSuffix = "⟧: external data, shown once above)"
 
 	// untrustedDelimiterReplacement replaces any fence look-alike found inside untrusted text.
 	untrustedDelimiterReplacement = "(fence delimiter removed)"
@@ -139,6 +141,34 @@ func (u *UntrustedValue) String() string { return UntrustedPlaceholder }
 // MarshalJSON keeps the data out of any serialisation of a context.
 func (u *UntrustedValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(UntrustedPlaceholder)
+}
+
+// untrustedRendering matches every piece of text the engine writes for an untrusted value: the
+// notice line, a fenced block (opening line through closing line) and a back-reference.
+//
+// ⭐ IT IS EXACT BECAUSE THE NEUTRALISER MAKES IT EXACT. No label and no data can contain a
+// white-square bracket (rule 2 of NeutraliseUntrusted), so the opening line ends at its own ⟧, a
+// block ends at the first ⟦Ende⟧ after it, and a back-reference's label ends at its own ⟧. An
+// attacker cannot make a block end early (nothing inside can spell ⟦Ende⟧) or late.
+var untrustedRendering = regexp.MustCompile(
+	regexp.QuoteMeta(UntrustedNotice) + `\n?` +
+		`|` + regexp.QuoteMeta(untrustedOpenPrefix) + `[^⟦⟧\n]*` + regexp.QuoteMeta(untrustedOpenSuffix) + `(?s:.*?)` + regexp.QuoteMeta(UntrustedClose) +
+		`|` + regexp.QuoteMeta(untrustedRepeatPrefix) + `[^⟦⟧\n]*` + regexp.QuoteMeta(untrustedRepeatSuffix))
+
+// untrustedBlankRun collapses the blank lines a removal leaves behind.
+var untrustedBlankRun = regexp.MustCompile(`\n{3,}`)
+
+// StripUntrusted returns text with every engine-written untrusted rendering removed — the notice,
+// each fenced block and each back-reference — and the blank lines that leaves collapsed, trimmed.
+// What remains is the INSTRUCTION: a host uses it wherever the data must not go (an agent's
+// system frame, @-mention addressing). Text with no untrusted rendering is returned unchanged
+// apart from the trim.
+func StripUntrusted(text string) string {
+	if !strings.Contains(text, "⟦") {
+		return strings.TrimSpace(text)
+	}
+	out := untrustedRendering.ReplaceAllString(text, "")
+	return strings.TrimSpace(untrustedBlankRun.ReplaceAllString(out, "\n\n"))
 }
 
 // untrustedText renders an untrusted value to the text that goes inside the fence.

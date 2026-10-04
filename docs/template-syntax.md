@@ -457,6 +457,10 @@ refused (`ErrMsgUntrustedVarRead`); a loop, a condition, an expression, a `%v` o
 sees an opaque value whose rendering is `UntrustedPlaceholder`. The template's own text
 and the tag's `default=` are never mixed with the data.
 
+`StripUntrusted(text)` removes every rendering the engine wrote — notice, blocks,
+back-references — and returns the instruction that remains, for a host that must keep the
+data out of somewhere (a system frame, addressing).
+
 ## Built-in output tag: `{~exons.env~}` — OPT-IN (v0.35.0)
 
 `{~exons.env name="X" /~}` reads an environment variable of the process that renders the
