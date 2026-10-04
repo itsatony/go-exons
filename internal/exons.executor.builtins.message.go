@@ -80,11 +80,23 @@ type composingResolver interface {
 type insideMessageKey struct{}
 
 // withinMessage returns ctx marked as rendering the content of a message.
-func withinMessage(ctx context.Context) context.Context {
+func withinMessage(ctx context.Context, role string) context.Context {
 	if insideMessage(ctx) {
 		return ctx
 	}
+	ctx = context.WithValue(ctx, messageRoleKey{}, strings.ToLower(role))
 	return context.WithValue(ctx, insideMessageKey{}, true)
+}
+
+// messageRoleKey carries the role of the OUTERMOST enclosing message (the one whose markers are
+// written; a nested message's role is dropped, see Executor.executeMessage).
+type messageRoleKey struct{}
+
+// enclosingMessageRole is the role of the message ctx renders inside, or "" outside any message.
+// An untrusted value may only be placed in a USER message (see InputResolver.Resolve).
+func enclosingMessageRole(ctx context.Context) string {
+	role, _ := ctx.Value(messageRoleKey{}).(string)
+	return role
 }
 
 // insideMessage reports whether ctx is rendering the content of an enclosing message. A message
