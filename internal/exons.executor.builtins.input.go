@@ -117,6 +117,13 @@ func (r *InputResolver) Resolve(ctx context.Context, execCtx interface{}, attrs 
 	// fenced block (see exons.untrusted.go). Checked BEFORE the empty-value fallback, so a sealed
 	// empty payload still renders its (empty) fence rather than the tag's author-written default.
 	if u, ok := val.(*UntrustedValue); ok {
+		// ⛔ ONLY INTO A USER MESSAGE (or outside any message block). A system or assistant
+		// block would hand external data the authority of the frame or of the model's own words;
+		// refused, so it renders nowhere and is NOT counted as placed (a host appends it to the
+		// user message instead).
+		if role := enclosingMessageRole(ctx); role != "" && role != RoleUser {
+			return "", NewBuiltinError(ErrMsgUntrustedOutsideUserMessage, TagNameInput).WithMetadata(AttrRole, role)
+		}
 		return u.Place(), nil
 	}
 

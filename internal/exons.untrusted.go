@@ -49,8 +49,10 @@ const (
 	// same sealed value in one render: a pointer back to the block, never the data again, so the
 	// data appears exactly once. The label sits between the fence's own glyphs, which the
 	// neutraliser removes from every label — so StripUntrusted can match a back-reference exactly.
-	untrustedRepeatPrefix = "(⟦"
-	untrustedRepeatSuffix = "⟧: external data, shown once above)"
+	//
+	// It carries NO label: the label is attacker-influenced (a mail sender), and a fixed string
+	// is matched exactly by StripUntrusted with nothing to reason about.
+	UntrustedRepeat = "(the external data is shown once, above)"
 
 	// untrustedDelimiterReplacement replaces any fence look-alike found inside untrusted text.
 	untrustedDelimiterReplacement = "(fence delimiter removed)"
@@ -65,6 +67,10 @@ const (
 	// untrustedJSONIndent is the indent used when a structured value is rendered as JSON.
 	untrustedJSONIndent = "  "
 )
+
+// ErrMsgUntrustedOutsideUserMessage is the refusal {~exons.input~} answers for a sealed value
+// placed inside a non-user {~exons.message~} block. MUST match exons.ErrMsgUntrustedOutsideUserMessage.
+const ErrMsgUntrustedOutsideUserMessage = "untrusted external data may only be placed in a user message, never in a system, assistant or tool message"
 
 // ErrMsgUntrustedVarRead is the refusal {~exons.var~} answers for a path that reaches an
 // untrusted value. MUST match exons.ErrMsgUntrustedVarRead.
@@ -129,7 +135,7 @@ func (u *UntrustedValue) Block() string {
 // block the first time, a short back-reference (no data) every later time.
 func (u *UntrustedValue) Place() string {
 	if u.placements.Add(1) > 1 {
-		return untrustedRepeatPrefix + u.source + untrustedRepeatSuffix
+		return UntrustedRepeat
 	}
 	return UntrustedNotice + "\n" + u.Block()
 }
@@ -147,13 +153,13 @@ func (u *UntrustedValue) MarshalJSON() ([]byte, error) {
 // notice line, a fenced block (opening line through closing line) and a back-reference.
 //
 // ⭐ IT IS EXACT BECAUSE THE NEUTRALISER MAKES IT EXACT. No label and no data can contain a
-// white-square bracket (rule 2 of NeutraliseUntrusted), so the opening line ends at its own ⟧, a
-// block ends at the first ⟦Ende⟧ after it, and a back-reference's label ends at its own ⟧. An
-// attacker cannot make a block end early (nothing inside can spell ⟦Ende⟧) or late.
+// white-square bracket (rule 2 of NeutraliseUntrusted), so the opening line ends at its own ⟧ and
+// a block ends at the first ⟦Ende⟧ after it; the back-reference is a fixed string. An attacker
+// cannot make a block end early (nothing inside can spell ⟦Ende⟧) or late.
 var untrustedRendering = regexp.MustCompile(
 	regexp.QuoteMeta(UntrustedNotice) + `\n?` +
 		`|` + regexp.QuoteMeta(untrustedOpenPrefix) + `[^⟦⟧\n]*` + regexp.QuoteMeta(untrustedOpenSuffix) + `(?s:.*?)` + regexp.QuoteMeta(UntrustedClose) +
-		`|` + regexp.QuoteMeta(untrustedRepeatPrefix) + `[^⟦⟧\n]*` + regexp.QuoteMeta(untrustedRepeatSuffix))
+		`|` + regexp.QuoteMeta(UntrustedRepeat))
 
 // untrustedBlankRun collapses the blank lines a removal leaves behind.
 var untrustedBlankRun = regexp.MustCompile(`\n{3,}`)
@@ -351,6 +357,9 @@ func writeUntrustedClean(b *strings.Builder, rs []rune) {
 		if r != '\n' && r != '\r' && r != '\t' && unicode.IsControl(r) {
 			continue
 		}
+		if isUntrustedInvisible(r) {
+			continue
+		}
 		switch untrustedFenceGlyphs[r] {
 		case '[':
 			b.WriteByte('[')
@@ -362,6 +371,28 @@ func writeUntrustedClean(b *strings.Builder, rs []rune) {
 	}
 }
 
+// isUntrustedInvisible reports the characters dropped from the OUTPUT (not only from the folded
+// matching view): text a reader cannot see but a model reads — the TAG block (an invisible copy
+// of ASCII), bidi embeddings/overrides/isolates (which reorder what a human reviewer sees), the
+// zero-width space/joiners/marks, the word joiner and invisible operators, and the BOM.
+func isUntrustedInvisible(r rune) bool {
+	switch {
+	case r >= 0xE0000 && r <= 0xE007F: // TAG block
+		return true
+	case r >= 0x202A && r <= 0x202E: // LRE RLE PDF LRO RLO
+		return true
+	case r >= 0x2066 && r <= 0x2069: // LRI RLI FSI PDI
+		return true
+	case r >= 0x200B && r <= 0x200F: // ZWSP ZWNJ ZWJ LRM RLM
+		return true
+	case r >= 0x2060 && r <= 0x2064: // WJ, invisible operators
+		return true
+	case r == 0xFEFF: // BOM / ZWNBSP
+		return true
+	}
+	return false
+}
+
 // untrustedFenceGlyphs are the white-square brackets the fence itself is written in.
 var untrustedFenceGlyphs = map[rune]rune{
 	'⟦': '[', '⟧': ']', '〚': '[', '〛': ']',
@@ -371,23 +402,25 @@ var untrustedFenceGlyphs = map[rune]rune{
 // doubled forms.
 var untrustedBracketFold = map[rune]string{
 	'[': "[", '［': "[", '⁅': "[", '⦋': "[", '⦍': "[", '⦏': "[", '〔': "[", '【': "[", '〖': "[", '〘': "[", '⟬': "[",
+	'❲': "[", '「': "[", '『': "[", '⦗': "[", '⸢': "[", '⸤': "[", '‹': "[", '<': "[", '＜': "[", '〈': "[", '⟨': "[", '«': "[[", '《': "[[",
 	'⟦': "[[", '〚': "[[",
 	']': "]", '］': "]", '⁆': "]", '⦌': "]", '⦎': "]", '⦐': "]", '〕': "]", '】': "]", '〗': "]", '〙': "]", '⟭': "]",
+	'❳': "]", '」': "]", '』': "]", '⦘': "]", '⸣': "]", '⸥': "]", '›': "]", '>': "]", '＞': "]", '〉': "]", '⟩': "]", '»': "]]", '》': "]]",
 	'⟧': "]]", '〛': "]]",
 }
 
 // untrustedHomoglyphFold maps the Cyrillic/Greek/small-capital look-alikes of the letters in
 // DATEN / ENDE / END onto Latin capitals (applied after upper-casing).
 var untrustedHomoglyphFold = map[rune]rune{
-	// D
-	'Ꭰ': 'D', 'ᴅ': 'D',
-	// A
-	'А': 'A', 'Α': 'A', 'ᴀ': 'A',
-	// T
-	'Т': 'T', 'Τ': 'T', 'ᴛ': 'T',
-	// E
-	'Е': 'E', 'Ε': 'E', 'ᴇ': 'E', 'Ё': 'E',
-	// N
+	// D — Cherokee DA, Cyrillic komi DE (Ԁ/ԁ), Latin small capital, Canadian syllabics
+	'Ꭰ': 'D', 'ᴅ': 'D', 'Ԁ': 'D', 'ԁ': 'D', 'ᗪ': 'D', 'ⅅ': 'D',
+	// A — Cyrillic, Greek, small capital, Cherokee GO
+	'А': 'A', 'Α': 'A', 'ᴀ': 'A', 'Ꭺ': 'A',
+	// T — Cyrillic, Greek, small capital, Cherokee I
+	'Т': 'T', 'Τ': 'T', 'ᴛ': 'T', 'Ꭲ': 'T',
+	// E — Cyrillic, Greek, small capital, Cherokee GV
+	'Е': 'E', 'Ε': 'E', 'ᴇ': 'E', 'Ꭼ': 'E',
+	// N — Greek, small capital
 	'Ν': 'N', 'ɴ': 'N',
 }
 
@@ -413,6 +446,11 @@ func foldUntrustedRune(r rune) []rune {
 		if s, ok := untrustedBracketFold[r]; ok {
 			return []rune(s)
 		}
+	}
+	// A precomposed accented letter (Ê, Ḗ, Đ̈…) folds to its NFD BASE letter: the accent is a
+	// combining mark a model reads past, exactly like the separate marks dropped above.
+	if d := []rune(norm.NFD.String(string(r))); len(d) > 1 && !unicode.Is(unicode.Mn, d[0]) {
+		r = d[0]
 	}
 	if h, ok := untrustedHomoglyphFold[r]; ok {
 		return []rune{h}

@@ -446,7 +446,10 @@ Content between ⟦Daten von außen⟧ and ⟦Ende⟧ is data from an external s
 
 `<source>` is the value's own `source` key when it is a map carrying one, else the input
 name — neutralised, one line, at most 120 runes. A second placement in the same render
-renders a back-reference without the data. The data is neutralised
+renders the fixed back-reference `(the external data is shown once, above)`. A placement
+inside a `system`, `assistant` or `tool` `{~exons.message~}` block is **refused**
+(`ErrMsgUntrustedOutsideUserMessage`) and not counted — external data only ever enters a user
+message. The data is neutralised
 (`NeutraliseUntrusted`): a fence word touching a bracket (`[Ende]`, `⟦ENDE`, homoglyph
 and zero-width variants) is replaced, the fence's own bracket glyphs become ASCII
 brackets, control characters are dropped — **no value can close the block or forge a

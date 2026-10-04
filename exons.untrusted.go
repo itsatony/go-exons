@@ -61,6 +61,11 @@ const (
 	UntrustedPlaceholder = internal.UntrustedPlaceholder
 	// UntrustedSourceMaxRunes bounds the source label on the fence's opening line.
 	UntrustedSourceMaxRunes = internal.UntrustedSourceMaxRunes
+	// UntrustedRepeat is the fixed back-reference a second placement renders (no label, no data).
+	UntrustedRepeat = internal.UntrustedRepeat
+	// ErrMsgUntrustedOutsideUserMessage is the refusal exons.input answers for a sealed value
+	// placed inside a system, assistant or tool {~exons.message~} block.
+	ErrMsgUntrustedOutsideUserMessage = internal.ErrMsgUntrustedOutsideUserMessage
 	// ErrMsgUntrustedVarRead is the refusal exons.var answers for a path that reaches a sealed value.
 	ErrMsgUntrustedVarRead = internal.ErrMsgUntrustedVarRead
 )

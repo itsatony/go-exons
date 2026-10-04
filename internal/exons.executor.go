@@ -501,7 +501,7 @@ func (e *Executor) executeMessage(ctx context.Context, tag *TagNode, execCtx Con
 
 	content := ""
 	if !tag.SelfClose && len(tag.Children) > 0 {
-		childResult, err := e.executeNodes(withinMessage(ctx), tag.Children, execCtx, depth+1)
+		childResult, err := e.executeNodes(withinMessage(ctx, attrRole(tag)), tag.Children, execCtx, depth+1)
 		if err != nil {
 			return "", err
 		}
@@ -744,3 +744,9 @@ const (
 	DefaultMaxDepth      = 100
 	DefaultMaxOutputSize = 10 * 1024 * 1024 // 10MB — matches root exons.DefaultMaxOutputSize
 )
+
+// attrRole is a message tag's declared role ("" when absent; Validate already refused that).
+func attrRole(tag *TagNode) string {
+	role, _ := tag.Attributes.Get(AttrRole)
+	return role
+}

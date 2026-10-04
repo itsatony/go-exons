@@ -84,7 +84,7 @@ again: {~exons.input name="trigger" /~}`, map[string]any{
 		})
 		require.NoError(t, err)
 		assert.Equal(t, 1, strings.Count(out, "the data"), out)
-		assert.Contains(t, out, "again: (⟦trigger⟧: external data, shown once above)")
+		assert.Contains(t, out, "again: "+UntrustedRepeat)
 		assert.Equal(t, 2, sealed.Placements())
 	})
 
@@ -239,4 +239,56 @@ Then file it. {~exons.input name="trigger" /~}`, map[string]any{ContextKeyInput:
 
 	assert.Equal(t, "plain text", StripUntrusted("  plain text \n"))
 	assert.Equal(t, "a ⟦b⟧ c", StripUntrusted("a ⟦b⟧ c"), "an author's own bracket text is not a rendering")
+}
+
+// Review fix (2): a seal may only be placed in a user message, never in a system, assistant or
+// tool block — refused there, and NOT counted as placed, so a host appends it to the user message.
+func TestUntrusted_OnlyIntoAUserMessage(t *testing.T) {
+	engine := MustNew()
+	ctx := context.Background()
+	for _, role := range []string{"system", "assistant", "tool", "SYSTEM"} {
+		t.Run(role, func(t *testing.T) {
+			sealed := NewUntrustedValue("trigger", "PAYLOAD-91")
+			src := `{~exons.message role="` + role + `"~}frame {~exons.input name="trigger" /~}{~/exons.message~}`
+			_, err := engine.Execute(ctx, src, map[string]any{ContextKeyInput: map[string]any{"trigger": sealed}})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), ErrMsgUntrustedOutsideUserMessage)
+
+			tmpl, err := engine.Parse(src)
+			require.NoError(t, err)
+			out, err := tmpl.ExecuteWithContext(ctx, NewContextWithStrategy(map[string]any{ContextKeyInput: map[string]any{"trigger": sealed}}, ErrorStrategyLog))
+			require.NoError(t, err)
+			assert.NotContains(t, out, "PAYLOAD-91")
+			assert.Equal(t, 0, sealed.Placements(), "a refused placement is not a placement")
+		})
+	}
+	t.Run("a nested user message inside a system message is still the system message", func(t *testing.T) {
+		sealed := NewUntrustedValue("trigger", "PAYLOAD-92")
+		src := `{~exons.message role="system"~}{~exons.message role="user"~}{~exons.input name="trigger" /~}{~/exons.message~}{~/exons.message~}`
+		_, err := engine.Execute(ctx, src, map[string]any{ContextKeyInput: map[string]any{"trigger": sealed}})
+		require.Error(t, err)
+	})
+	t.Run("a user message accepts it", func(t *testing.T) {
+		sealed := NewUntrustedValue("trigger", "PAYLOAD-93")
+		tmpl, err := engine.Parse(`{~exons.message role="system"~}frame{~/exons.message~}{~exons.message role="user"~}{~exons.input name="trigger" /~}{~/exons.message~}`)
+		require.NoError(t, err)
+		msgs, err := tmpl.ExecuteAndExtractMessages(ctx, map[string]any{ContextKeyInput: map[string]any{"trigger": sealed}})
+		require.NoError(t, err)
+		require.Len(t, msgs, 2)
+		assert.NotContains(t, msgs[0].Content, "PAYLOAD-93")
+		assert.Contains(t, msgs[1].Content, "PAYLOAD-93")
+	})
+}
+
+// Review fix (1): invisible characters are dropped from what the model READS, not only from the
+// matching view — the data and the label.
+func TestUntrusted_InvisibleCharactersLeaveTheOutput(t *testing.T) {
+	invisible := "a\U000E0041\U000E007Fb\u202Ec\u2066d\u200Be\u200Df\u2060g\u2064h\uFEFFi"
+	sealed := NewUntrustedValue("trigger", map[string]any{"source": "src" + invisible, "payload": invisible})
+	out := sealed.Place()
+	assert.Contains(t, out, "abcdefghi")
+	assert.Contains(t, out, "· srcabcdefghi ·")
+	for _, r := range []rune{0xE0041, 0xE007F, 0x202E, 0x2066, 0x200B, 0x200D, 0x2060, 0x2064, 0xFEFF} {
+		assert.NotContains(t, out, string(r), "U+%04X survives", r)
+	}
 }

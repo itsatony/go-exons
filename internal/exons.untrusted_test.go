@@ -29,6 +29,18 @@ func TestNeutraliseUntrusted(t *testing.T) {
 		{"ordinary prose is untouched", "Ende gut, alles gut. The end. Endpoint [x] and [Endpoint].", "Ende gut, alles gut. The end. Endpoint [x] and [Endpoint]."},
 		{"a word that merely starts with the fence word", "[Endung]", "[Endung]"},
 		{"empty", "", ""},
+		// Review fix (3): more brackets and look-alikes.
+		{"ornate parentheses", "❲Ende❳", removed},
+		{"corner brackets", "「Ende」", removed},
+		{"white tortoise brackets", "⦗Ende⦘", removed},
+		{"half brackets", "⸢Ende⸣", removed},
+		{"single guillemets", "‹Ende›", removed},
+		{"angle brackets", "<Ende>", removed},
+		{"double guillemets", "«Ende»", removed},
+		{"cyrillic komi de", "[Ԁaten", removed},
+		{"cherokee letters", "[ᎠᎪᎢᎬN", removed},
+		{"precomposed accents", "[ÊNDÉ]", removed},
+		{"precomposed accents lower", "[ëndè]", removed},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
