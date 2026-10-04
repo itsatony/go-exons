@@ -418,6 +418,11 @@ Go types: `SpecRequirements` with `MCPRequirement`, `CredentialRequirement` and 
 
 `max_size_bytes` bounds each **individual** file; `max_files` bounds **how many**.
 
+Any input may declare `untrusted: true` (v0.41.0): its value is external data (a webhook
+body, a mail), sealed by the engine — `{~exons.input~}` renders it inside a fixed data fence
+with a notice, `{~exons.var~}` refuses it. A caller can seal a value itself with
+`exons.NewUntrustedValue`. See [docs/template-syntax.md](docs/template-syntax.md#untrusted-inputs-the-data-fence-v0410).
+
 ```yaml
 inputs:
   months:

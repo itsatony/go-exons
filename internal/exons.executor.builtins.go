@@ -72,6 +72,13 @@ func (r *VarResolver) Resolve(ctx context.Context, execCtx interface{}, attrs At
 		return "", NewBuiltinError(ErrMsgMissingNameAttr, TagNameVar)
 	}
 
+	// An untrusted value is refused here, whatever the path: the value itself, or any path
+	// THROUGH it (`trigger.payload`, `input.trigger.payload`). exons.var renders without the
+	// fence, so letting it read a sealed value would be the bypass the seal exists to prevent.
+	if untrustedOnPath(accessor, name) {
+		return "", NewBuiltinError(ErrMsgUntrustedVarRead, TagNameVar).WithMetadata(MetaKeyPath, name)
+	}
+
 	// Try to get the value
 	val, found := accessor.Get(name)
 	if !found {
@@ -301,3 +308,20 @@ const (
 	// ErrFmtCauseSuffix appends a builtin error's cause to its message.
 	ErrFmtCauseSuffix = ": %v"
 )
+
+// untrustedOnPath reports whether the dot-path, or any prefix of it, resolves to an untrusted
+// value. A prefix matters because a sealed value has no traversable fields: `trigger.payload`
+// would otherwise answer "not found" — true, and a far worse diagnostic than the refusal.
+func untrustedOnPath(accessor ContextAccessor, path string) bool {
+	for i := 0; i <= len(path); i++ {
+		if i < len(path) && path[i:i+1] != PathSeparator {
+			continue
+		}
+		if v, ok := accessor.Get(path[:i]); ok {
+			if _, sealed := v.(*UntrustedValue); sealed {
+				return true
+			}
+		}
+	}
+	return false
+}

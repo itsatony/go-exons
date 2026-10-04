@@ -239,6 +239,10 @@
         "max_files": {
           "type": "integer",
           "description": "Maximum NUMBER of files for a file-upload input — a separate limit from max_size_bytes, which bounds each file. Absent means unspecified."
+        },
+        "untrusted": {
+          "type": "boolean",
+          "description": "The input carries data from OUTSIDE (a webhook body, an inbound mail). Its value is sealed: exons.input places it inside the fixed data fence, exons.var refuses to read it."
         }
       }
     },

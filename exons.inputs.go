@@ -75,6 +75,12 @@ func (t *Template) contextWithInputs(ctx context.Context, execCtx *Context) *Con
 	bound, hasBinding := execCtx.Get(ContextKeyInput)
 	binding, ok := asBindingMap(bound)
 	if hasBinding && bound != nil && !ok {
+		// Rule 1 — but a DECLARED-untrusted name is still sealed in the flat grammar. Leaving the
+		// document's own `input` variable alone is a compatibility promise; leaving an untrusted
+		// value readable by {~exons.var~} would be a hole.
+		if flat, changed := sealFlatUntrusted(execCtx, inputs, nil); changed {
+			return execCtx.withData(flat)
+		}
 		return execCtx // rule 1
 	}
 
@@ -93,12 +99,42 @@ func (t *Template) contextWithInputs(ctx context.Context, execCtx *Context) *Con
 	// there, not in two call sites that would then have to agree by memory.
 	merged := mergeInputBinding(binding, inputs)
 
-	data := execCtx.Data() // already a deep copy of the direct data
+	data, _ := sealFlatUntrusted(execCtx, inputs, merged) // already a deep copy of the direct data
 	if data == nil {
 		data = make(map[string]any, 1)
 	}
 	data[ContextKeyInput] = merged
 	return execCtx.withData(data)
+}
+
+// sealFlatUntrusted returns a copy of the context's direct data in which every input the document
+// DECLARES `untrusted: true` is sealed under its FLAT name too — the {~exons.var name="x"~}
+// grammar reads the caller's data map directly, and a seal on `input.x` alone would leave `x`
+// readable. When merged is given, the flat name shares the input root's seal (one value, one
+// placement count); otherwise the flat value is sealed on its own. changed reports whether
+// anything was sealed.
+func sealFlatUntrusted(execCtx *Context, inputs map[string]*InputDef, merged map[string]any) (map[string]any, bool) {
+	data := execCtx.Data()
+	changed := false
+	for name, def := range inputs {
+		if def == nil || !def.Untrusted {
+			continue
+		}
+		flat, present := execCtx.Get(name)
+		if !present {
+			continue
+		}
+		if data == nil {
+			data = make(map[string]any, 1)
+		}
+		if sealed, ok := merged[name].(*UntrustedValue); ok {
+			data[name] = sealed
+		} else {
+			data[name] = NewUntrustedValue(name, flat)
+		}
+		changed = true
+	}
+	return data, changed
 }
 
 // mergeInputBinding applies rules 2, 3 and 4 above to one binding against one declaration set.
@@ -118,6 +154,14 @@ func mergeInputBinding(binding map[string]any, inputs map[string]*InputDef) map[
 			continue // rule 2
 		}
 		merged[name] = deepCopyValue(def.Default) // rules 3 and 4
+	}
+	// A declared `untrusted: true` input is SEALED, bound value or default alike, so every path
+	// that reaches it — {~exons.input~} (the fence), {~exons.var~} (refused), a loop, an
+	// expression (an opaque value) — sees the seal and never the data. See exons.untrusted.go.
+	for name, def := range inputs {
+		if def != nil && def.Untrusted {
+			merged[name] = NewUntrustedValue(name, merged[name])
+		}
 	}
 	return merged
 }

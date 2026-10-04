@@ -161,6 +161,15 @@ type InputDef struct {
 	// distinct limit from MaxSizeBytes, which bounds each file individually. Zero
 	// means unspecified.
 	MaxFiles int `yaml:"max_files,omitempty" json:"max_files,omitempty"`
+
+	// Untrusted declares that this input carries data from OUTSIDE — a webhook body, an inbound
+	// mail — rather than text the author or the user wrote. Its value is sealed before the
+	// render (NewUntrustedValue): {~exons.input~} places it inside the fixed data fence
+	// (UntrustedNotice, ⟦Daten von außen · … ⟧ … ⟦Ende⟧), {~exons.var~} refuses to read it, and
+	// every other path sees an opaque placeholder. A caller can seal a value the document did
+	// NOT declare untrusted by binding NewUntrustedValue itself; this flag is for the document
+	// that knows its own input is external.
+	Untrusted bool `yaml:"untrusted,omitempty" json:"untrusted,omitempty"`
 }
 
 // InputOption is a single selectable value for a select/multiselect InputDef,

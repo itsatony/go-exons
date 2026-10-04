@@ -113,6 +113,13 @@ func (r *InputResolver) Resolve(ctx context.Context, execCtx interface{}, attrs 
 		return "", newInputNotDeclaredError(name, declaredInputNames(accessor), ShouldShowHint(attrs))
 	}
 
+	// An untrusted value has exactly one rendering, and this is it: the fixed notice and the
+	// fenced block (see exons.untrusted.go). Checked BEFORE the empty-value fallback, so a sealed
+	// empty payload still renders its (empty) fence rather than the tag's author-written default.
+	if u, ok := val.(*UntrustedValue); ok {
+		return u.Place(), nil
+	}
+
 	if isEmptyInputValue(val) {
 		if defaultVal, hasDefault := attrs.Get(AttrDefault); hasDefault {
 			return defaultVal, nil
