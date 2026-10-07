@@ -868,14 +868,17 @@
       "type": "object",
       "description": "How this document should SOUND when it is read aloud (text-to-speech). go-exons stores the declaration; producing audio is the consumer's job. Distinct from execution.audio, which parameterises an execution whose OUTPUT is audio: this block says how an agent's text should be voiced, whatever produced it.",
       "additionalProperties": false,
+      "required": ["provider", "model"],
       "properties": {
         "provider": {
           "type": "string",
-          "description": "TTS provider identifier (e.g. 'openai', 'elevenlabs'). Deliberately NOT the ExecutionConfig.provider vocabulary, which names LLM providers and carries no TTS-only vendor."
+          "description": "TTS provider identifier (e.g. 'openai', 'elevenlabs'). Deliberately NOT the ExecutionConfig.provider vocabulary, which names LLM providers and carries no TTS-only vendor. Non-blank (checked by Spec.ValidateStrict, the writer's gate, since v0.43.0; Parse stays tolerant).",
+          "pattern": "\\S"
         },
         "model": {
           "type": "string",
-          "description": "TTS model identifier (e.g. 'gpt-4o-mini-tts', 'eleven_multilingual_v2'). Without it a voice name has no namespace."
+          "description": "TTS model identifier (e.g. 'gpt-4o-mini-tts', 'eleven_multilingual_v2'). Without it a voice name has no namespace. Non-blank (checked by Spec.ValidateStrict since v0.43.0).",
+          "pattern": "\\S"
         },
         "voice": {
           "type": "string",

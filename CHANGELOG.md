@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-10-07
+
+vAudience/atlas#849: a consumer that edits the source (atlas's agent editor) can now write the
+agent's **read-aloud voice** — the `speech:` block — the way v0.42.0 let it write `media:` and
+`realtime:`, without re-serializing the document.
+
+### Added
+
+- **`SetSpeech(sc *SpeechConfig) SourceEdit`** for `PatchSource`: replaces the whole `speech:` block
+  with `sc`; `nil` removes it (a no-op when absent). Byte-stable like every other edit: comments, key
+  order, neighbours, credentials and the body are copied through; a comment on the `speech:` key line
+  is kept. The block is replaced WHOLE, so a caller changing only the voice passes a copy of the
+  document's own `Spec.Speech` (instructions, region, speed… survive that way).
+- **`SpeechConfig.Validate()`**: a present block names a non-blank `provider` AND `model`; `voice`,
+  `voice_id` and the rest stay optional. Same error messages as media/realtime
+  (`ErrMsgEngineProviderRequired`, `ErrMsgEngineModelRequired`), with the value `speech`.
+
+### Changed
+
+- ⚠ **`Spec.ValidateStrict()` now runs `SpeechConfig.Validate()`** — the writer's gate, and
+  `PatchSource`'s check on its RESULT. `Parse` and `Spec.Validate` are unchanged: a stored document
+  with a half-filled `speech:` (e.g. only a `voice`) still loads, but **any** `PatchSource` edit to it
+  is refused (`ErrPatchResultInvalid`) until it is repaired — and `SetSpeech` repairs it. No such
+  document was found (`examples/`, atlas's agent seeds).
+- **Schema:** `$defs/SpeechConfig` gains `required: [provider, model]` and non-blank patterns; the
+  agreement corpus gains 4 rows under the existing `schemaStricterEngineRefs` divergence.
+- The engine error messages now read "a media/realtime/speech engine block requires …".
+
 ## [0.42.0] - 2026-10-07
 
 go-exons#20 (from vAudience/atlas#849): an agent document can name its **default media engines** —

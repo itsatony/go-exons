@@ -43,6 +43,7 @@ and prompts — safe to author by hand and by LLMs.
 | — | 0.39.0 | Schema `ExecutionConfig.provider` is an open set; `execution.SerializedProviders()` (#15) | shipped 2026-09-30 |
 | DC27-inlay | 0.40.0 | `requirements.resource_modes` (the narrowing per kind; resources stays a declaration) + `ToolMode()`; `PatchSource` edits a stored definition in place (credentials, comments, templated values, unknown keys untouched); `Spec.ValidateStrict()` for writers (allow-lists), Parse unchanged; `WithStrictRenderability()` at Execute's severity (go-exons#13); docs/tools-and-resources.md (vAudience/atlas#803) | built 2026-10-03 |
 | — | 0.42.0 | Typed `media:` (`image`/`video`/`audio`) and `realtime:` default-engine blocks beside `speech:`; schema + `ValidateStrict` (non-blank provider and model) + `PatchSource` edits `SetMediaModel`/`SetRealtime` (go-exons#20, vAudience/atlas#849) | shipped 2026-10-07 |
+| — | 0.43.0 | `PatchSource` edit `SetSpeech(sc)` (nil removes); `speech:` joins the writer-side engine rule (`ValidateStrict`: non-blank provider and model; schema `required`) (vAudience/atlas#849) | shipped 2026-10-07 |
 
 ## DC11-verbatim — Syntax safety (0.15.0)
 
