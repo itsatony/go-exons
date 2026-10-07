@@ -50,11 +50,12 @@ const (
 	// that a WRITER enforces with Spec.ValidateStrict; Parse stays tolerant so a stored document
 	// carrying a duplicate still loads (v0.40.0 review H3).
 	schemaStricterToolLists = "schema-stricter: tool allow-lists are checked by ValidateStrict, not Parse"
-	// schemaStricterEngineRefs: a present media.* / realtime block must name a non-blank
+	// schemaStricterEngineRefs: a present media.* / realtime / speech block must name a non-blank
 	// provider and model. The schema states it; Spec.ValidateStrict enforces it for writers;
 	// Parse does not, because before v0.42.0 these blocks were inert Extensions and a
-	// stored half-filled one must still load (go-exons#20).
-	schemaStricterEngineRefs = "schema-stricter: media/realtime provider+model are checked by ValidateStrict, not Parse"
+	// stored half-filled one must still load (go-exons#20); speech joined in v0.43.0
+	// (unchecked since v0.27.0, so the same reasoning holds).
+	schemaStricterEngineRefs = "schema-stricter: media/realtime/speech provider+model are checked by ValidateStrict, not Parse"
 )
 
 // divergenceDirection is which instrument is the stricter one for a reason.
@@ -84,14 +85,14 @@ var divergenceVocabulary = map[string]divergenceDirection{
 }
 
 // Corpus floors. The corpus is hand-listed, so its size is the thing a careless
-// edit shrinks; each floor is the count at v0.42.0 (raised with the media/realtime rows; v0.40.0 raised from v0.33.0's with the resource_modes and allow-list rows; v0.33.0 raised v0.31.0's with the
+// edit shrinks; each floor is the count at v0.43.0 (raised with the speech rows; v0.42.0 with the media/realtime rows; v0.40.0 raised from v0.33.0's with the resource_modes and allow-list rows; v0.33.0 raised v0.31.0's with the
 // requirements.environment rows) and is lowered only with a reason. Every declared reason must also be exercised by at least one row
 // (TestSchemaAndParserAgree's reverse axis), or the vocabulary holds dead entries.
 const (
-	agreementCorpusFloor         = 117
-	agreementAgreeRowsFloor      = 83
+	agreementCorpusFloor         = 121
+	agreementAgreeRowsFloor      = 85
 	agreementParserStricterFloor = 5
-	agreementSchemaStricterFloor = 29
+	agreementSchemaStricterFloor = 31
 )
 
 // agreementCase is one document and the verdict EACH instrument must return for it.
@@ -204,6 +205,12 @@ func agreementCorpus() []agreementCase {
 		diverge("realtime without provider", agent("realtime: {model: gpt-realtime-2.1, voice: marin}\n"), false, true, schemaStricterEngineRefs),
 		diverge("media unknown sub-block", agent("media:\n  hologram: {provider: x, model: y}\n"), false, true, schemaStricterClosed),
 		diverge("realtime unknown key", agent("realtime: {provider: openai, model: gpt-realtime-2.1, pitch: 3}\n"), false, true, schemaStricterClosed),
+
+		// --- speech engine rule (v0.43.0, vAudience/atlas#849): same rule as realtime.
+		agree("speech provider model voice", agent("speech: {provider: openai, model: gpt-4o-mini-tts, voice: sage}\n"), true),
+		agree("speech without voice", agent("speech: {provider: openai, model: gpt-4o-mini-tts}\n"), true),
+		diverge("speech only a voice", agent("speech: {voice: sage}\n"), false, true, schemaStricterEngineRefs),
+		diverge("speech blank model", agent("speech: {provider: openai, model: \" \"}\n"), false, true, schemaStricterEngineRefs),
 
 		// --- requirements.resource_modes (v0.40.0, vAudience/atlas#803).
 		agree("resource_modes none for a kind with no entries", agent("requirements:\n  resource_modes:\n    corpus: none\n"), true),

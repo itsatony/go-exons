@@ -1,7 +1,11 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.42.0
+  version: 0.43.0
+# v0.43.0 (vAudience/atlas#849): PatchSource gains SetSpeech(sc) (nil removes the speech: block; replaced WHOLE
+# like SetRealtime). SpeechConfig.Validate (non-blank provider+model; voice optional) runs from ValidateStrict
+# (writers, and PatchSource's RESULT), NOT Parse — a stored half-filled speech: block still loads, but any patch
+# must repair it. Schema SpeechConfig gains required [provider, model] + non-blank patterns (schemaStricterEngineRefs).
 # v0.42.0 (go-exons#20, vAudience/atlas#849): typed DEFAULT-ENGINE blocks beside speech:. media: {image,
 # video, audio} each a MediaModelRef {provider, model, voice?}; realtime: RealtimeConfig {provider, model,
 # voice?}. Spec.Media / Spec.Realtime consume their keys from Extensions, sit in knownSpecFields and are

@@ -229,6 +229,23 @@ func SetRealtime(rc *RealtimeConfig) SourceEdit {
 	return e
 }
 
+// SetSpeech replaces the whole speech: (read-aloud, text-to-speech) block with sc. nil REMOVES it.
+// A block with a blank provider or model is refused on the RESULT (Spec.ValidateStrict); voice and
+// every other field are optional. The block is replaced WHOLE, as SetRealtime replaces realtime: — a
+// caller that edits only the voice and wants to keep instructions, region, speed… passes a copy of
+// the document's own Spec.Speech with that field changed. v0.43.0 (vAudience/atlas#849).
+func SetSpeech(sc *SpeechConfig) SourceEdit {
+	cp := sc.Clone()
+	e := SourceEdit{
+		path: []string{SpecFieldSpeech}, remove: cp == nil,
+		apply: func(s *Spec) { s.Speech = cp.Clone() },
+	}
+	if cp != nil {
+		e.value = *cp
+	}
+	return e
+}
+
 func copyStrings(in []string) []string {
 	if in == nil {
 		return nil

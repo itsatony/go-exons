@@ -1,11 +1,13 @@
 package exons
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 
+	cuserr "github.com/itsatony/go-cuserr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -183,4 +185,119 @@ func TestShippedExampleDocumentParses(t *testing.T) {
 	assert.Equal(t, "marin", spec.Realtime.Voice)
 	require.NoError(t, spec.ValidateStrict())
 	assert.NotNil(t, spec.Safety, "…and still declares the blocks it declared before")
+}
+
+// TestSpeechEngineRefIsCheckedByValidateStrictNotParse pins WHERE the v0.43.0 rule
+// lives: Parse keeps loading a half-filled speech block (it was unchecked from
+// v0.27.0 to v0.42.0, so refusing it on read would lose a stored agent on a library
+// bump); ValidateStrict — the writer's gate — refuses it.
+func TestSpeechEngineRefIsCheckedByValidateStrictNotParse(t *testing.T) {
+	head := "---\nname: a\ndescription: d\ntype: agent\n"
+	cases := map[string]struct {
+		fm  string
+		msg string
+	}{
+		"only a voice":       {"speech: {voice: sage}\n", ErrMsgEngineProviderRequired},
+		"without model":      {"speech: {provider: openai, voice: sage}\n", ErrMsgEngineModelRequired},
+		"blank provider":     {"speech: {provider: \" \", model: gpt-4o-mini-tts}\n", ErrMsgEngineProviderRequired},
+		"blank model (tab)":  {"speech: {provider: openai, model: \"\\t\"}\n", ErrMsgEngineModelRequired},
+		"empty mapping":      {"speech: {}\n", ErrMsgEngineProviderRequired},
+		"instructions alone": {"speech: {instructions: warm}\n", ErrMsgEngineProviderRequired},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			spec, err := Parse([]byte(head + tc.fm + "---\nbody\n"))
+			require.NoError(t, err, "Parse stays tolerant")
+			require.NoError(t, spec.Validate(), "Validate stays tolerant")
+			err = spec.ValidateStrict()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.msg)
+			var ce *cuserr.CustomError
+			require.True(t, errors.As(err, &ce))
+			path, ok := ce.GetMetadata(MetaKeyValue)
+			require.True(t, ok)
+			assert.Equal(t, SpecFieldSpeech, path, "the error names the speech block, not media/realtime")
+		})
+	}
+
+	t.Run("full block, no voice, and absent are valid", func(t *testing.T) {
+		spec, err := Parse([]byte(speechDoc))
+		require.NoError(t, err)
+		require.NoError(t, spec.ValidateStrict())
+		spec, err = Parse([]byte(head + "speech: {provider: openai, model: gpt-4o-mini-tts}\n---\nbody\n"))
+		require.NoError(t, err)
+		require.NoError(t, spec.ValidateStrict(), "voice is optional")
+		assert.NoError(t, (*SpeechConfig)(nil).Validate())
+	})
+}
+
+// TestPatchSource_SetSpeech: a consumer that edits the source (atlas's agent editor)
+// can set, replace and remove the read-aloud block without re-serializing the
+// document — every neighbour, comment and the body stay byte for byte.
+func TestPatchSource_SetSpeech(t *testing.T) {
+	base := "---\nname: a\ndescription: d\ntype: agent\n# keep me\nexecution:\n  model: m # inline\nrealtime:\n  provider: openai\n  model: gpt-realtime-2.1\ncustom_ext: {x: 1}\n---\nbody\n"
+
+	got := mustPatch(t, base, SetSpeech(&SpeechConfig{Provider: "openai", Model: "gpt-4o-mini-tts", Voice: "sage"}))
+	assert.Equal(t, "---\nname: a\ndescription: d\ntype: agent\n# keep me\nexecution:\n  model: m # inline\nrealtime:\n  provider: openai\n  model: gpt-realtime-2.1\ncustom_ext: {x: 1}\n"+
+		"speech:\n  provider: openai\n  model: gpt-4o-mini-tts\n  voice: sage\n---\nbody\n", got)
+
+	spec, err := Parse([]byte(got))
+	require.NoError(t, err)
+	assert.Equal(t, &SpeechConfig{Provider: "openai", Model: "gpt-4o-mini-tts", Voice: "sage"}, spec.Speech)
+
+	// Replace in place: a document that already carries speech keeps its position, and
+	// the rest of the block's fields are whatever the caller passed (whole replacement).
+	withSpeech := "---\nname: a\ndescription: d\ntype: agent\nspeech: # the read-aloud voice\n  provider: openai\n  model: gpt-4o-mini-tts\n  voice: sage\n  instructions: warm\n  region: eu\n# after\ntools:\n  allow: [x]\n---\nbody\n"
+	keep, err := Parse([]byte(withSpeech))
+	require.NoError(t, err)
+	next := keep.Speech.Clone()
+	next.Voice = "nova"
+	got2 := mustPatch(t, withSpeech, SetSpeech(next))
+	assert.Equal(t, "---\nname: a\ndescription: d\ntype: agent\nspeech: # the read-aloud voice\n  provider: openai\n  model: gpt-4o-mini-tts\n  voice: nova\n  instructions: warm\n  region: eu\n# after\ntools:\n  allow: [x]\n---\nbody\n", got2)
+
+	// Voice optional: a block without one is accepted.
+	got3 := mustPatch(t, base, SetSpeech(&SpeechConfig{Provider: "openai", Model: "gpt-4o-mini-tts"}))
+	spec, err = Parse([]byte(got3))
+	require.NoError(t, err)
+	assert.Empty(t, spec.Speech.Voice)
+
+	// Removal restores the original bytes exactly; removing an absent block is a no-op.
+	assert.Equal(t, base, mustPatch(t, got, SetSpeech(nil)))
+	assert.Equal(t, base, mustPatch(t, base, SetSpeech(nil)))
+	assert.Equal(t, "---\nname: a\ndescription: d\ntype: agent\n# after\ntools:\n  allow: [x]\n---\nbody\n",
+		mustPatch(t, withSpeech, SetSpeech(nil)))
+
+	// The caller's value is copied at construction: mutating it afterwards changes nothing.
+	sc := &SpeechConfig{Provider: "openai", Model: "gpt-4o-mini-tts", Voice: "sage"}
+	edit := SetSpeech(sc)
+	sc.Voice = "mutated"
+	assert.Contains(t, mustPatch(t, base, edit), "voice: sage")
+}
+
+func TestPatchSource_SpeechRefusals(t *testing.T) {
+	agentDoc := "---\nname: a\ndescription: d\ntype: agent\n---\nbody\n"
+	for name, sc := range map[string]*SpeechConfig{
+		"without model":    {Provider: "openai", Voice: "sage"},
+		"without provider": {Model: "gpt-4o-mini-tts"},
+		"only a voice":     {Voice: "sage"},
+		"blank model":      {Provider: "openai", Model: "  "},
+	} {
+		t.Run(name, func(t *testing.T) {
+			out, err := PatchSource([]byte(agentDoc), SetSpeech(sc))
+			require.Error(t, err)
+			assert.Nil(t, out)
+			assert.True(t, errors.Is(err, ErrPatchRefused))
+			assert.True(t, errors.Is(err, ErrPatchResultInvalid), "%v", err)
+		})
+	}
+
+	// A stored document with a half-filled speech block still LOADS, but any patch must
+	// repair it (ValidateStrict runs on the result) — and SetSpeech does.
+	half := "---\nname: a\ndescription: d\ntype: agent\nspeech:\n  voice: sage\n---\nbody\n"
+	_, err := Parse([]byte(half))
+	require.NoError(t, err)
+	_, err = PatchSource([]byte(half), SetDisplayName("A"))
+	require.ErrorIs(t, err, ErrPatchResultInvalid)
+	fixed := mustPatch(t, half, SetSpeech(&SpeechConfig{Provider: "openai", Model: "gpt-4o-mini-tts", Voice: "sage"}))
+	assert.Contains(t, fixed, "provider: openai")
 }

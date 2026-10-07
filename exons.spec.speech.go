@@ -17,13 +17,19 @@ package exons
 // audio as an execution result reads that one. A silent fallback would make one
 // key's meaning depend on which consumer happened to read it.
 //
-// DECLARATION-ONLY, AND THERE IS DELIBERATELY NO Validate(). go-exons stores
-// declarations; a consumer resolves them. The bounds that exist (speed 0.25-4.0,
-// the output_format vocabulary) are stated in schema/exons.schema.json, which is
-// the published contract for editors and CI. A Go refusal would additionally be a
-// NARROWING shipped in a minor release: before v0.27.0 a `speech:` block landed
-// inertly in Spec.Extensions, so a document carrying one already parses and
-// validates today, and refusing it now would break a document that works.
+// DECLARATION-ONLY: go-exons stores declarations; a consumer resolves them. The
+// bounds that are not checked in Go (speed 0.25-4.0, the output_format vocabulary)
+// are stated in schema/exons.schema.json, the published contract for editors and CI.
+//
+// ⚠ WHERE THE NON-EMPTY RULE LIVES (v0.43.0, vAudience/atlas#849). A present block
+// must name a provider AND a model — without a model a voice has no namespace.
+// SpeechConfig.Validate refuses it, and only Spec.ValidateStrict (the writer's gate,
+// which PatchSource runs on its RESULT) calls it; Parse and Spec.Validate do NOT.
+// Before v0.27.0 a `speech:` block landed inertly in Spec.Extensions and until
+// v0.43.0 nothing checked it, so refusing a half-filled one on READ would lose a
+// stored document on nothing more than a library bump. Same rule as the media and
+// realtime blocks (v0.42.0) and the tool allow-lists (v0.40.0): Parse tolerant,
+// writers strict. Voice, voice_id and everything else stay optional.
 type SpeechConfig struct {
 	// Provider is the TTS vendor (e.g. "openai", "elevenlabs"). It is NOT drawn
 	// from the ExecutionConfig provider vocabulary — that set names LLM providers
@@ -76,4 +82,14 @@ func (sc *SpeechConfig) Clone() *SpeechConfig {
 	}
 	clone := *sc
 	return &clone
+}
+
+// Validate refuses a present speech block that does not name both a provider and
+// a model (non-blank). A nil SpeechConfig is valid. Called by Spec.ValidateStrict,
+// never by Parse — see the type comment. v0.43.0.
+func (sc *SpeechConfig) Validate() error {
+	if sc == nil {
+		return nil
+	}
+	return validateEngineRef(SpecFieldSpeech, sc.Provider, sc.Model)
 }
