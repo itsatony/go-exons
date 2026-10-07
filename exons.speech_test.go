@@ -177,5 +177,10 @@ func TestShippedExampleDocumentParses(t *testing.T) {
 	// but decoded its blocks somewhere unexpected would still satisfy NoError.
 	require.NotNil(t, spec.Speech, "the reference document declares a speech block")
 	assert.Equal(t, "sage", spec.Speech.Voice)
+	require.NotNil(t, spec.Media, "the reference document declares a media block (v0.42.0)")
+	assert.Equal(t, "gpt-image-2", spec.Media.Image.Model)
+	require.NotNil(t, spec.Realtime, "the reference document declares a realtime block (v0.42.0)")
+	assert.Equal(t, "marin", spec.Realtime.Voice)
+	require.NoError(t, spec.ValidateStrict())
 	assert.NotNil(t, spec.Safety, "…and still declares the blocks it declared before")
 }

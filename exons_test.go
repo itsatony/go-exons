@@ -1525,6 +1525,8 @@ func TestKnownSpecFields_MatchesSpecStruct(t *testing.T) {
 		Registry:          &RegistrySpec{},
 		Safety:            &SafetyConfig{},
 		Speech:            &SpeechConfig{Voice: "sage"},
+		Media:             &MediaConfig{Image: &MediaModelRef{Provider: "openai", Model: "gpt-image-2"}},
+		Realtime:          &RealtimeConfig{Provider: "openai", Model: "gpt-realtime-2.1"},
 		Requirements:      &SpecRequirements{MCP: []MCPRequirement{{Capability: "dns-management"}}},
 		RecommendedAgents: []string{"@vai/mary"},
 		DisplayName:       "Test Doc",

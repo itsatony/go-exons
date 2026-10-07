@@ -114,6 +114,16 @@ type Spec struct {
 	// moving the value. TestTranscriptionStaysInExtensions pins that.
 	Speech *SpeechConfig `yaml:"speech,omitempty" json:"speech,omitempty"`
 
+	// Media declares the default media-generation engines (image, video,
+	// audio/music) — the model a consumer uses when a media call names none.
+	// See MediaConfig. v0.42.0 (go-exons#20).
+	Media *MediaConfig `yaml:"media,omitempty" json:"media,omitempty"`
+
+	// Realtime declares the default realtime (live voice call) engine and voice.
+	// See RealtimeConfig: it is not `speech:`, and there is no fallback between
+	// the two. v0.42.0 (go-exons#20).
+	Realtime *RealtimeConfig `yaml:"realtime,omitempty" json:"realtime,omitempty"`
+
 	// Extensions — catch-all for unknown YAML keys
 	Extensions map[string]any `yaml:",inline" json:"extensions,omitempty"`
 
@@ -353,8 +363,10 @@ func (s *Spec) Validate() error {
 }
 
 // ValidateStrict runs Validate and then the checks a WRITER applies before it publishes or stores
-// a document, which Parse deliberately does not: today, the tool allow-lists
-// (ToolsConfig.Validate — non-empty, unique, at most MaxToolAllowEntries).
+// a document, which Parse deliberately does not: the tool allow-lists
+// (ToolsConfig.Validate — non-empty, unique, at most MaxToolAllowEntries) and, since
+// v0.42.0, the media/realtime engine blocks (MediaConfig.Validate, RealtimeConfig.Validate
+// — a present block names a non-empty provider and model).
 //
 // ⛔ Parse stays tolerant on purpose (v0.40.0 review H3): a reader that refused a stored document
 // over a duplicate allow entry would lose an agent that works, on nothing more than a library bump.
@@ -364,7 +376,17 @@ func (s *Spec) ValidateStrict() error {
 	if err := s.Validate(); err != nil {
 		return err
 	}
-	return s.Tools.Validate()
+	if err := s.Tools.Validate(); err != nil {
+		return err
+	}
+	// v0.42.0: a present media/realtime engine block names a provider and a model.
+	// Writer-side only, for the reason the allow-lists are: before v0.42.0 these
+	// blocks were inert Extensions, and Parse refusing a half-filled one would lose
+	// a stored document on nothing more than a library bump.
+	if err := s.Media.Validate(); err != nil {
+		return err
+	}
+	return s.Realtime.Validate()
 }
 
 // ValidateOptional performs validation only if the spec has enough fields to
@@ -530,6 +552,8 @@ func (s *Spec) Clone() *Spec {
 	clone.Registry = s.Registry.Clone()
 	clone.Safety = s.Safety.Clone()
 	clone.Speech = s.Speech.Clone()
+	clone.Media = s.Media.Clone()
+	clone.Realtime = s.Realtime.Clone()
 
 	// Clone extensions
 	if s.Extensions != nil {

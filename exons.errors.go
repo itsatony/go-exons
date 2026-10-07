@@ -278,6 +278,7 @@ const (
 	ErrMsgPromptNoEnvironment = "prompt type does not support requirements.environment (valid on skill and agent)"
 
 	// requirements.resource_modes validation messages (v0.40.0, vAudience/atlas#803).
+	ErrMsgMediaKindInvalid     = "media key must be one of: image, video, audio"
 	ErrMsgResourceModeKindForm = "requirements.resource_modes key must be a resource kind: a lowercase token (a letter, then letters, digits, '_', '.' or '-')"
 	ErrMsgResourceModeInvalid  = "requirements.resource_modes value must be: all, listed or none"
 	// ErrMsgResourceModeWithEntries names the contradiction (a need the mode forbids) and the ways out.
@@ -293,7 +294,7 @@ const (
 	ErrMsgPatchSourceInvalid    = "source document does not parse"
 	ErrMsgPatchEditInvalid      = "invalid edit"
 	ErrMsgPatchUnsupportedShape = "frontmatter shape is not editable in place"
-	ErrMsgPatchResultInvalid    = "patched document fails Parse or Spec.ValidateStrict (which adds the tool allow-list rules: non-empty, unique, at most MaxToolAllowEntries)"
+	ErrMsgPatchResultInvalid    = "patched document fails Parse or Spec.ValidateStrict (which adds the tool allow-list rules — non-empty, unique, at most MaxToolAllowEntries — and a non-empty provider and model on every media/realtime engine block)"
 	ErrMsgPatchSelfCheck        = "patched document does not decode to the original with the edits applied"
 	ErrMsgPatchSelfCheckDetail  = "the decoded result differs from the expected one at"
 	ErrMsgPatchMultiLineQuoted  = "the edited entry holds a quoted scalar spanning several lines; edit it by hand"
@@ -374,6 +375,8 @@ const (
 	ErrMsgRegistryNamespace      = "registry namespace must match slug pattern"
 	ErrMsgRegistryOrigin         = "registry origin must be: internal, external, or unknown"
 	ErrMsgSafetyGuardrails       = "safety guardrails must be: enabled or disabled"
+	ErrMsgEngineProviderRequired = "a media/realtime engine block requires a non-empty provider"
+	ErrMsgEngineModelRequired    = "a media/realtime engine block requires a non-empty model"
 	ErrMsgVerifyRefAndExpect     = "verification cannot have both ref and expect"
 	ErrMsgVerifyRegexInvalid     = "verification output_matches_regex is not a valid regex"
 	ErrMsgMemoryReadScopeInvalid = "memory read_scopes entry must match slug pattern"

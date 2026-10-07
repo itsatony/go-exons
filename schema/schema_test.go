@@ -116,7 +116,7 @@ func TestSchemaHasProperties(t *testing.T) {
 		"messages", "context", "credentials", "credential",
 		"requirements",
 		"memory", "dispatch", "verifications", "registry", "safety",
-		"speech", "transcription",
+		"speech", "transcription", "media", "realtime",
 	}
 	for _, prop := range expectedProps {
 		if _, exists := props[prop]; !exists {
@@ -142,6 +142,7 @@ func TestSchemaHasDefs(t *testing.T) {
 		"MemorySpec", "DispatchSpec", "VerificationCase", "VerificationExpect",
 		"RegistrySpec", "SafetyConfig",
 		"SpeechConfig", "TranscriptionConfig", "VocabularyBias", "BiasTerm",
+		"MediaConfig", "MediaModelRef", "RealtimeConfig",
 		"ExecutionConfig", "ThinkingConfig", "ResponseFormat",
 		"JSONSchemaSpec", "EnumConstraint", "GuidedDecoding",
 		"ImageConfig", "AudioConfig", "EmbeddingConfig",

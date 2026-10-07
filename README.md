@@ -357,9 +357,13 @@ Metadata describes agent behavior beyond prompts. These fields live at the YAML 
 | `registry` | skill, agent | Namespace, origin (internal/external/unknown), version |
 | `safety` | all | Guardrails, deny-tools, require-confirmation lists |
 | `speech` | all | How the document should SOUND when read aloud: TTS provider/model, voice, free-text delivery `instructions`, region |
+| `media` | all | Default media-generation engines when a call names none: `image`, `video`, `audio` (music/sound), each `{provider, model, voice?}` |
+| `realtime` | all | Default realtime (live voice call) engine: `{provider, model, voice?}` |
 | `transcription` | all | How audio should be turned INTO text. **Schema-declared, not a Go field** — see below |
 
-Go types: `MemorySpec`, `DispatchSpec`, `VerificationCase`, `RegistrySpec`, `SafetyConfig` — all with `Clone()` and `Validate()`; plus `SpeechConfig`, which has `Clone()` and deliberately no `Validate()` (go-exons stores the declaration, the schema states the bounds, and a Go refusal would narrow what already parses).
+Go types: `MemorySpec`, `DispatchSpec`, `VerificationCase`, `RegistrySpec`, `SafetyConfig` — all with `Clone()` and `Validate()`; plus `SpeechConfig`, which has `Clone()` and deliberately no `Validate()` (go-exons stores the declaration, the schema states the bounds, and a Go refusal would narrow what already parses). `MediaConfig` (`Image`, `Video`, `Audio *MediaModelRef`), `MediaModelRef` and `RealtimeConfig` (`Provider`, `Model`, `Voice`) have `Clone()` and `Validate()`, but their `Validate()` runs from `Spec.ValidateStrict()` (the writer's gate), never from `Parse`: a present sub-block must name a non-blank provider and model, and before v0.42.0 these blocks were inert extensions, so refusing a half-filled one on read would lose a stored agent. `PatchSource` edits them in place with `SetMediaModel(kind, ref)` and `SetRealtime(rc)` (nil removes).
+
+`media:` is not `execution.image` / `execution.audio` either: those carry the settings of an execution whose output is media (size, speed, format) and no model; `media:` names which engine a media tool reaches for by default. `realtime:` is the model you talk to in a live call, and `speech:` voices text already produced; their voices live in different engines' namespaces, so there is no fallback between them. go-exons stores these defaults; a consumer resolves them and still applies its own residency and governance checks.
 
 `speech:` is not `execution.audio`. `execution.*` parameterises the call that produces the document's output, so `execution.audio` is for an agent whose output *is* audio; `speech:` says how text this document produced should be read back. There is deliberately no fallback between them.
 
