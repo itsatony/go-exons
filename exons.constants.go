@@ -522,6 +522,11 @@ const (
 	SpecFieldRegistry      = "registry"
 	SpecFieldSafety        = "safety"
 	SpecFieldSpeech        = "speech"
+	// SpecFieldMedia and SpecFieldRealtime (v0.42.0, go-exons#20) name the default
+	// media-generation and realtime-voice engine blocks. Both are in knownSpecFields
+	// AND emitted by buildSerializeMap — the SpecFieldRequirements trap below.
+	SpecFieldMedia    = "media"
+	SpecFieldRealtime = "realtime"
 
 	// SpecFieldRequirements names the block Spec.Requirements decodes.
 	//
@@ -554,6 +559,11 @@ const (
 	ExecutionFieldProvider        = "provider"
 	ExecutionFieldModel           = "model"
 	ExecutionFieldReasoningEffort = "reasoning_effort"
+	// MediaFieldImage, MediaFieldVideo and MediaFieldAudio are the keys of
+	// MediaConfig (v0.42.0).
+	MediaFieldImage = "image"
+	MediaFieldVideo = "video"
+	MediaFieldAudio = "audio"
 )
 
 // DocumentType identifies the kind of document (prompt, skill, agent).

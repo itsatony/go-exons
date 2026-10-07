@@ -151,6 +151,8 @@ var knownSpecFields = map[string]bool{
 	SpecFieldRegistry:          true,
 	SpecFieldSafety:            true,
 	SpecFieldSpeech:            true,
+	SpecFieldMedia:             true,
+	SpecFieldRealtime:          true,
 	SpecFieldRequirements:      true,
 }
 
@@ -290,6 +292,14 @@ func (s *Spec) buildSerializeMap(opts *SerializeOptions) map[string]any {
 		}
 		if s.Speech != nil {
 			m[SpecFieldSpeech] = s.Speech
+		}
+		// v0.42.0: typed fields consume their key from Extensions, so a field no
+		// export writes is a value that survives Parse and dies at Serialize.
+		if s.Media != nil {
+			m[SpecFieldMedia] = s.Media
+		}
+		if s.Realtime != nil {
+			m[SpecFieldRealtime] = s.Realtime
 		}
 		// ⚠ REQUIREMENTS IS EMITTED HERE BECAUSE IT NEVER WAS. See
 		// SpecFieldRequirements: a typed field that no export writes is a value

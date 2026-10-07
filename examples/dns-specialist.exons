@@ -87,6 +87,11 @@ speech:
   instructions: "Precise and calm. Slow down for record values."
   region: eu
 
+# Default engines when a media or live-voice call names none (v0.42.0).
+media:
+  image: { provider: openai, model: gpt-image-2 }
+realtime: { provider: openai, model: gpt-realtime-2.1, voice: marin }
+
 safety:
   guardrails: enabled
   require_confirmation_for: [dns_delete_record]

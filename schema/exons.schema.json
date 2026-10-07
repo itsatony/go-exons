@@ -127,6 +127,12 @@
     "speech": {
       "$ref": "#/$defs/SpeechConfig"
     },
+    "media": {
+      "$ref": "#/$defs/MediaConfig"
+    },
+    "realtime": {
+      "$ref": "#/$defs/RealtimeConfig"
+    },
     "transcription": {
       "$ref": "#/$defs/TranscriptionConfig"
     }
@@ -901,6 +907,69 @@
         "region": {
           "type": "string",
           "description": "Jurisdiction or provider region the audio may be produced in (e.g. 'eu', 'us', 'eu-central-1', 'europe-west4'). Free-form on purpose: the value is provider-interpreted, and an enum would refuse values that work today."
+        }
+      }
+    },
+    "MediaConfig": {
+      "type": "object",
+      "description": "The document's DEFAULT media-generation engines: the model a consumer uses when an image, video or audio/music generation call names none itself. go-exons stores the declaration; a consumer resolves it, and a default is never exempt from the consumer's residency or governance checks. Distinct from execution.image / execution.audio, which parameterise an execution whose OUTPUT is media and carry no model. Every sub-block is optional; a present one names a provider and a model (checked by Spec.ValidateStrict, the writer's gate — Parse stays tolerant, because before v0.42.0 this block was an inert extension).",
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "$ref": "#/$defs/MediaModelRef",
+          "description": "Default image-generation engine (e.g. provider 'openai', model 'gpt-image-2')."
+        },
+        "video": {
+          "$ref": "#/$defs/MediaModelRef",
+          "description": "Default video-generation engine (e.g. provider 'google', model 'veo-3')."
+        },
+        "audio": {
+          "$ref": "#/$defs/MediaModelRef",
+          "description": "Default audio/music-generation engine (e.g. provider 'elevenlabs', model 'music-v1'). Not text-to-speech: reading text aloud is speech."
+        }
+      }
+    },
+    "MediaModelRef": {
+      "type": "object",
+      "description": "One engine: a provider and a model in that provider's namespace. Free-form on purpose — not the ExecutionConfig.provider vocabulary, which names LLM providers and carries no media-only vendor.",
+      "additionalProperties": false,
+      "required": ["provider", "model"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "Vendor identifier (e.g. 'openai', 'google', 'elevenlabs'). Non-blank.",
+          "pattern": "\\S"
+        },
+        "model": {
+          "type": "string",
+          "description": "Model identifier in the provider's namespace (e.g. 'gpt-image-2', 'veo-3'). Non-blank.",
+          "pattern": "\\S"
+        },
+        "voice": {
+          "type": "string",
+          "description": "Optional voice name in the provider's namespace, for an engine that takes one."
+        }
+      }
+    },
+    "RealtimeConfig": {
+      "type": "object",
+      "description": "The document's default REALTIME (live voice call) engine and voice: the speech-to-speech model you talk to. Distinct from speech, which voices text the document already produced; there is deliberately no fallback between the two, because their voices live in different engines' namespaces. A present block names a provider and a model (checked by Spec.ValidateStrict, the writer's gate; Parse stays tolerant).",
+      "additionalProperties": false,
+      "required": ["provider", "model"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "Realtime vendor identifier (e.g. 'openai'). Non-blank.",
+          "pattern": "\\S"
+        },
+        "model": {
+          "type": "string",
+          "description": "Realtime model identifier (e.g. 'gpt-realtime-2.1'). Non-blank.",
+          "pattern": "\\S"
+        },
+        "voice": {
+          "type": "string",
+          "description": "Voice name in the provider's namespace (e.g. 'marin'). Optional: absent means the consumer's default voice for the model."
         }
       }
     },

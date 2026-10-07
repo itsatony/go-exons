@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-10-07
+
+go-exons#20 (from vAudience/atlas#849): an agent document can name its **default media engines** —
+the image, video and audio/music model a media tool reaches for when a call names none — and its
+**default realtime (live voice call) engine and voice**, beside the existing `speech:` (TTS) block.
+
+```yaml
+media:
+  image: { provider: openai, model: gpt-image-2 }
+  video: { provider: google, model: veo-3 }
+  audio: { provider: elevenlabs, model: music-v1 }
+realtime: { provider: openai, model: gpt-realtime-2.1, voice: marin }
+```
+
+### Added
+
+- **`Spec.Media *MediaConfig`** (`media:`) with optional `Image`, `Video`, `Audio *MediaModelRef`;
+  **`MediaModelRef{Provider, Model, Voice}`** (voice optional). **`Spec.Realtime *RealtimeConfig`**
+  (`realtime:`) `{Provider, Model, Voice}` (voice optional). All with `Clone()`; `MediaConfig.IsEmpty()`.
+  Constants `SpecFieldMedia`, `SpecFieldRealtime`, `MediaFieldImage/Video/Audio`.
+- **Validation:** a present sub-block (or `realtime:` block) must name a non-blank `provider` AND
+  `model` (`ErrMsgEngineProviderRequired`, `ErrMsgEngineModelRequired`). `MediaConfig.Validate()` and
+  `RealtimeConfig.Validate()` run from **`Spec.ValidateStrict()`** — the writer's gate — and **not**
+  from `Parse`/`Spec.Validate`: before 0.42.0 these blocks were inert `Extensions`, so refusing a
+  half-filled one on read would lose a stored agent on a library bump (the 0.40.0 allow-list rule).
+  `media: {}` is valid.
+- **Schema:** `media` / `realtime` properties, `$defs/MediaConfig`, `MediaModelRef`, `RealtimeConfig`
+  (closed objects; `provider`/`model` required and non-blank). The agreement corpus gains 12 rows and
+  one declared divergence, `schemaStricterEngineRefs` (the schema states what `ValidateStrict` enforces).
+- **`PatchSource` edits:** `SetMediaModel(kind, ref)` (kind ∈ image/video/audio; nil removes the
+  sub-block and prunes an emptied `media:`) and `SetRealtime(rc)` (nil removes). A blank provider or
+  model is refused on the RESULT (`ErrPatchResultInvalid`), an unknown kind as `ErrPatchEditInvalid`.
+- Serialization: both blocks are in `knownSpecFields` and emitted by `buildSerializeMap` under
+  `IncludeMetadata` (so `ExportFull` round-trips them byte-stably and the Agent-Skills card carries
+  neither). `examples/dns-specialist.exons` declares both.
+
+### Changed
+
+- ⚠ **One narrowing, stated:** a `media:` or `realtime:` value that is not a mapping (e.g.
+  `media: openai`) used to sit in `Extensions` and now fails `Parse`. Nested unknown keys follow the
+  repo rule: ignored by the parser, refused by the schema.
+- **Consumers reading `Extensions["media"]` / `Extensions["realtime"]`** now find them empty — the
+  typed fields consume the keys. None was found (go-vaibstract, vaichat2, atlas, aigentverse searched).
+
+`speech:` is unchanged and stays the TTS default; there is deliberately no fallback between
+`speech.voice` and `realtime.voice` (different engines' namespaces).
+
 ## [0.41.0] - 2026-10-04
 
 U1 of vAudience/atlas#819 (routines and triggers): **untrusted inputs**. A value that came from

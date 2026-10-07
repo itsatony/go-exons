@@ -179,6 +179,56 @@ func SetDisplayName(name string) SourceEdit {
 	}
 }
 
+// SetMediaModel sets media.<kind> — kind is MediaFieldImage, MediaFieldVideo or MediaFieldAudio —
+// to ref, replacing the whole sub-block. nil REMOVES the key (and media: itself when that empties
+// it). Any other kind is refused. A ref with a blank provider or model is refused on the RESULT
+// (Spec.ValidateStrict), as every writer-side rule is. v0.42.0 (go-exons#20).
+func SetMediaModel(kind string, ref *MediaModelRef) SourceEdit {
+	cp := ref.Clone()
+	e := SourceEdit{
+		path: []string{SpecFieldMedia, kind}, remove: cp == nil,
+		apply: func(s *Spec) {
+			if s.Media == nil {
+				if cp == nil {
+					return
+				}
+				s.Media = &MediaConfig{}
+			}
+			switch kind {
+			case MediaFieldImage:
+				s.Media.Image = cp
+			case MediaFieldVideo:
+				s.Media.Video = cp
+			case MediaFieldAudio:
+				s.Media.Audio = cp
+			}
+		},
+	}
+	if cp != nil {
+		e.value = *cp
+	}
+	switch kind {
+	case MediaFieldImage, MediaFieldVideo, MediaFieldAudio:
+	default:
+		e.invalid = ErrMsgMediaKindInvalid
+	}
+	return e
+}
+
+// SetRealtime replaces the whole realtime: block with rc. nil REMOVES it. A block with a blank
+// provider or model is refused on the RESULT (Spec.ValidateStrict). v0.42.0 (go-exons#20).
+func SetRealtime(rc *RealtimeConfig) SourceEdit {
+	cp := rc.Clone()
+	e := SourceEdit{
+		path: []string{SpecFieldRealtime}, remove: cp == nil,
+		apply: func(s *Spec) { s.Realtime = cp.Clone() },
+	}
+	if cp != nil {
+		e.value = *cp
+	}
+	return e
+}
+
 func copyStrings(in []string) []string {
 	if in == nil {
 		return nil
@@ -813,6 +863,8 @@ func pruneContainer(s *Spec, path string) {
 		}
 	case SpecFieldExecution:
 		s.Execution = nil
+	case SpecFieldMedia:
+		s.Media = nil
 	}
 }
 

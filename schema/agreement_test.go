@@ -50,6 +50,11 @@ const (
 	// that a WRITER enforces with Spec.ValidateStrict; Parse stays tolerant so a stored document
 	// carrying a duplicate still loads (v0.40.0 review H3).
 	schemaStricterToolLists = "schema-stricter: tool allow-lists are checked by ValidateStrict, not Parse"
+	// schemaStricterEngineRefs: a present media.* / realtime block must name a non-blank
+	// provider and model. The schema states it; Spec.ValidateStrict enforces it for writers;
+	// Parse does not, because before v0.42.0 these blocks were inert Extensions and a
+	// stored half-filled one must still load (go-exons#20).
+	schemaStricterEngineRefs = "schema-stricter: media/realtime provider+model are checked by ValidateStrict, not Parse"
 )
 
 // divergenceDirection is which instrument is the stricter one for a reason.
@@ -67,25 +72,26 @@ const (
 // only direction it may explain. A reason not in this map is refused, so a new way
 // for the instruments to disagree has to be declared here, next to its argument.
 var divergenceVocabulary = map[string]divergenceDirection{
-	parserOnlyUniqueness:    parserStricter,
-	parserOnlyInputOrder:    parserStricter,
-	parserOnlyResourceModes: parserStricter,
-	schemaStricterClosed:    schemaStricter,
-	schemaStricterType:      schemaStricter,
-	schemaStricterNull:      schemaStricter,
-	schemaStricterScalar:    schemaStricter,
-	schemaStricterToolLists: schemaStricter,
+	parserOnlyUniqueness:     parserStricter,
+	parserOnlyInputOrder:     parserStricter,
+	parserOnlyResourceModes:  parserStricter,
+	schemaStricterClosed:     schemaStricter,
+	schemaStricterType:       schemaStricter,
+	schemaStricterNull:       schemaStricter,
+	schemaStricterScalar:     schemaStricter,
+	schemaStricterToolLists:  schemaStricter,
+	schemaStricterEngineRefs: schemaStricter,
 }
 
 // Corpus floors. The corpus is hand-listed, so its size is the thing a careless
-// edit shrinks; each floor is the count at v0.40.0 (raised from v0.33.0's with the resource_modes and allow-list rows; v0.33.0 raised v0.31.0's with the
+// edit shrinks; each floor is the count at v0.42.0 (raised with the media/realtime rows; v0.40.0 raised from v0.33.0's with the resource_modes and allow-list rows; v0.33.0 raised v0.31.0's with the
 // requirements.environment rows) and is lowered only with a reason. Every declared reason must also be exercised by at least one row
 // (TestSchemaAndParserAgree's reverse axis), or the vocabulary holds dead entries.
 const (
-	agreementCorpusFloor         = 105
-	agreementAgreeRowsFloor      = 76
+	agreementCorpusFloor         = 117
+	agreementAgreeRowsFloor      = 83
 	agreementParserStricterFloor = 5
-	agreementSchemaStricterFloor = 24
+	agreementSchemaStricterFloor = 29
 )
 
 // agreementCase is one document and the verdict EACH instrument must return for it.
@@ -184,6 +190,20 @@ func agreementCorpus() []agreementCase {
 		agree("tools allow on a prompt", prompt("tools:\n  allow: [a]\n"), true),
 		diverge("mcp server tools duplicated", agent("tools:\n  mcp_servers:\n    - name: s\n      url: https://mcp.example.com/mcp\n      tools: [x, x]\n"), false, true, schemaStricterToolLists),
 		diverge("mcp server tools empty entry", agent("tools:\n  mcp_servers:\n    - name: s\n      url: https://mcp.example.com/mcp\n      tools: [\"\"]\n"), false, true, schemaStricterToolLists),
+
+		// --- media / realtime engine defaults (v0.42.0, go-exons#20).
+		agree("media all three sub-blocks", agent("media:\n  image: {provider: openai, model: gpt-image-2}\n  video: {provider: google, model: veo-3}\n  audio: {provider: elevenlabs, model: music-v1, voice: rachel}\n"), true),
+		agree("media empty mapping", agent("media: {}\n"), true),
+		agree("realtime with voice", agent("realtime: {provider: openai, model: gpt-realtime-2.1, voice: marin}\n"), true),
+		agree("realtime without voice", agent("realtime: {provider: openai, model: gpt-realtime-2.1}\n"), true),
+		agree("media on a prompt", prompt("media:\n  image: {provider: openai, model: gpt-image-2}\n"), true),
+		agree("media not a mapping", agent("media: openai\n"), false),
+		agree("realtime not a mapping", agent("realtime: [openai]\n"), false),
+		diverge("media image without model", agent("media:\n  image: {provider: openai}\n"), false, true, schemaStricterEngineRefs),
+		diverge("media video blank provider", agent("media:\n  video: {provider: \" \", model: veo-3}\n"), false, true, schemaStricterEngineRefs),
+		diverge("realtime without provider", agent("realtime: {model: gpt-realtime-2.1, voice: marin}\n"), false, true, schemaStricterEngineRefs),
+		diverge("media unknown sub-block", agent("media:\n  hologram: {provider: x, model: y}\n"), false, true, schemaStricterClosed),
+		diverge("realtime unknown key", agent("realtime: {provider: openai, model: gpt-realtime-2.1, pitch: 3}\n"), false, true, schemaStricterClosed),
 
 		// --- requirements.resource_modes (v0.40.0, vAudience/atlas#803).
 		agree("resource_modes none for a kind with no entries", agent("requirements:\n  resource_modes:\n    corpus: none\n"), true),
