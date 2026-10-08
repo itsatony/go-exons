@@ -253,20 +253,30 @@
       }
     },
     "InputOption": {
-      "type": "object",
-      "description": "A single selectable value for an Options-consuming input kind.",
-      "additionalProperties": false,
-      "required": ["value"],
-      "properties": {
-        "value": {
+      "description": "A single selectable value for an Options-consuming input kind: a bare non-blank string (the value, with no label — since v0.44.0) or a {value, label} object.",
+      "oneOf": [
+        {
           "type": "string",
-          "description": "The stored value."
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "The stored value; the label falls back to it."
         },
-        "label": {
-          "type": "string",
-          "description": "Human-facing label; falls back to value when empty."
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["value"],
+          "properties": {
+            "value": {
+              "type": "string",
+              "description": "The stored value."
+            },
+            "label": {
+              "type": "string",
+              "description": "Human-facing label; falls back to value when empty."
+            }
+          }
         }
-      }
+      ]
     },
     "OutputDef": {
       "type": "object",

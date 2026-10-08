@@ -44,6 +44,7 @@ and prompts — safe to author by hand and by LLMs.
 | DC27-inlay | 0.40.0 | `requirements.resource_modes` (the narrowing per kind; resources stays a declaration) + `ToolMode()`; `PatchSource` edits a stored definition in place (credentials, comments, templated values, unknown keys untouched); `Spec.ValidateStrict()` for writers (allow-lists), Parse unchanged; `WithStrictRenderability()` at Execute's severity (go-exons#13); docs/tools-and-resources.md (vAudience/atlas#803) | built 2026-10-03 |
 | — | 0.42.0 | Typed `media:` (`image`/`video`/`audio`) and `realtime:` default-engine blocks beside `speech:`; schema + `ValidateStrict` (non-blank provider and model) + `PatchSource` edits `SetMediaModel`/`SetRealtime` (go-exons#20, vAudience/atlas#849) | shipped 2026-10-07 |
 | — | 0.43.0 | `PatchSource` edit `SetSpeech(sc)` (nil removes); `speech:` joins the writer-side engine rule (`ValidateStrict`: non-blank provider and model; schema `required`) (vAudience/atlas#849) | shipped 2026-10-07 |
+| — | 0.44.0 | A select option may be a bare string (`options: [a, b]`); a frontmatter YAML error names the document line, the key path and — for an unquoted `": "` — the fix (vAudience/aigentverse#258) | 2026-10-08 |
 
 ## DC11-verbatim — Syntax safety (0.15.0)
 

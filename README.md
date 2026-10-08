@@ -440,11 +440,18 @@ inputs:
     accept: ["application/pdf"]
     max_size_bytes: 10485760
     max_files: 3
+  ton:
+    type: select
+    options: [sachlich, locker, begeistert]   # a bare string is the value (v0.44.0)
   owners:
     type: associate
     options:        [{ value: region }]
     associate_with: [{ value: analyst }]
 ```
+
+An option is a `{value, label}` mapping or — since v0.44.0 — a bare non-blank string, which
+is the value with no label (the label falls back to the value). `Serialize` writes a bare
+string back in the mapping form (`- value: sachlich`), which every older reader accepts.
 
 **The kind vocabulary is advisory and open.** `Spec.Validate()` does not inspect an
 input's *kind* at all — go-exons *declares*, the executing system *validates*. An

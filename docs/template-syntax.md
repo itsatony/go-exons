@@ -675,8 +675,8 @@ presentation only, consumers fall back to the input key when it is empty):
 | Modifier | Applies to | Meaning |
 |---|---|---|
 | `description` | any | Human-facing help text. |
-| `options` | `select`, `multiselect`, `sort`, `associate` | Selectable values (`{value, label}`). Order is significant for `sort`. |
-| `associate_with` | `associate` | The right-hand set. |
+| `options` | `select`, `multiselect`, `sort`, `associate` | Selectable values: `{value, label}`, or (v0.44.0) a bare non-blank string, which is the value with no label (`options: [sachlich, locker]`). Order is significant for `sort`. |
+| `associate_with` | `associate` | The right-hand set (same two shapes as `options`). |
 | `accept` | `file-upload` | Media types or extensions (`application/pdf`, `.csv`), verbatim in the spirit of the HTML `accept` attribute. Empty means the author declared no restriction — not that any file is safe. |
 | `max_size_bytes` | `file-upload` | Caps an **individual** file. Zero means unspecified. |
 | `max_files` | `file-upload` | Caps **how many** files. Zero means unspecified. |

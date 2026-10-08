@@ -230,7 +230,7 @@ func ParseYAMLSpec(yamlData string) (*Spec, error) {
 
 	var spec Spec
 	if err := yaml.Unmarshal([]byte(yamlData), &spec); err != nil {
-		return nil, NewFrontmatterParseError(err)
+		return nil, NewFrontmatterParseErrorAt(err, yamlData, 1)
 	}
 	return &spec, nil
 }

@@ -252,6 +252,12 @@ const (
 	MetaKeyStatus       = "status"          // Deployment status value
 	MetaKeyProvider     = "provider"        // LLM provider name
 	MetaKeyMaxLength    = "max_length"      // Maximum allowed length for field validation
+	// MetaKeyFrontmatterKey is the dotted path of the frontmatter key nearest at or above
+	// a YAML parse error's line, e.g. "inputs.ton.options" (v0.44.0).
+	MetaKeyFrontmatterKey = "frontmatter_key"
+	// MetaKeyFrontmatterLine is the line yaml.v3 reported, relative to the frontmatter
+	// text; MetaKeyLine on the same error is the DOCUMENT line (v0.44.0).
+	MetaKeyFrontmatterLine = "frontmatter_line"
 )
 
 // Escape sequence constants

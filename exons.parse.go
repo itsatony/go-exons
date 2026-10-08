@@ -31,12 +31,19 @@ func Parse(data []byte) (*Spec, error) {
 		}, nil
 	}
 
-	// Skip opening delimiter and newline
+	// Skip opening delimiter and newline. fmFirstLine is the DOCUMENT line the
+	// frontmatter text starts on, so a yaml.v3 error line (relative to that text) can be
+	// reported as a document line. The BOM/space/tab trim above removes no newline, so it
+	// shifts no line: the text starts on line 2 when the delimiter's newline was
+	// consumed, and on line 1 when anything else followed `---` on its own line.
 	afterOpening := content[len(YAMLFrontmatterDelimiter):]
+	fmFirstLine := 1
 	if len(afterOpening) > 0 && afterOpening[0] == '\n' {
 		afterOpening = afterOpening[1:]
+		fmFirstLine = 2
 	} else if len(afterOpening) > 1 && afterOpening[0] == '\r' && afterOpening[1] == '\n' {
 		afterOpening = afterOpening[2:]
+		fmFirstLine = 2
 	}
 
 	// Find closing delimiter
@@ -68,7 +75,7 @@ func Parse(data []byte) (*Spec, error) {
 	// Parse YAML frontmatter into Spec
 	var spec Spec
 	if err := yaml.Unmarshal([]byte(fmYAML), &spec); err != nil {
-		return nil, NewFrontmatterParseError(err)
+		return nil, NewFrontmatterParseErrorAt(err, fmYAML, fmFirstLine)
 	}
 
 	// Set the body
