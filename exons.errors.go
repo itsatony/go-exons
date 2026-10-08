@@ -155,6 +155,33 @@ const (
 	ErrMsgFrontmatterEmpty         = "empty YAML frontmatter"
 	ErrMsgLegacyJSONConfigDetected = "legacy JSON config block detected - please migrate to YAML frontmatter with --- delimiters"
 
+	// Frontmatter parse-error enrichment (v0.44.0, vAudience/aigentverse#258). The
+	// location is PREPENDED to the cause, after ErrMsgFrontmatterParse, so a consumer
+	// matching "failed to parse YAML frontmatter" still matches. The fix sentence is
+	// added only for the one yaml.v3 message whose cause and remedy are unambiguous.
+	ErrFmtFrontmatterAtLine        = "line %d"
+	ErrFmtFrontmatterYAMLLine      = " (frontmatter line %d)"
+	ErrFmtFrontmatterAtKey         = ", key %q"
+	ErrFmtFrontmatterUnquotedColon = "the value of %q contains \": \" — wrap it in quotes, or write it as a block scalar (%s: >-)"
+	ErrFmtFrontmatterIndentHint    = "; or, if line %d starts a new key, fix its indentation"
+	// yamlMsgMappingValues is yaml.v3's message for a ": " inside a plain scalar.
+	yamlMsgMappingValues = "mapping values are not allowed in this context"
+
+	// Select option shape messages (v0.44.0, vAudience/aigentverse#258). The YAML ones are
+	// yaml.TypeError entries and so start with yaml.v3's own "line N: " prefix.
+	ErrFmtOptionEmptyScalar = "line %d: an option written as a bare string must not be empty — write the value (- sachlich) or a mapping (- {value: sachlich, label: Sachlich})"
+	ErrFmtOptionShape       = "line %d: an option must be a string or a {value, label} mapping, not a %s — e.g. - sachlich or - {value: sachlich, label: Sachlich}"
+	ErrMsgOptionEmptyJSON   = "an option written as a bare string must not be empty"
+	ErrMsgOptionShapeJSON   = `an option must be a JSON string or a {"value", "label"} object`
+
+	// yaml node kind names for author-facing messages.
+	yamlKindSequence = "sequence"
+	yamlKindMapping  = "mapping"
+	yamlKindScalar   = "scalar"
+	yamlKindAlias    = "alias"
+	yamlKindDocument = "document"
+	yamlKindUnknown  = "node of unknown kind"
+
 	// Message tag messages
 	ErrMsgMessageMissingRole      = "missing required 'role' attribute"
 	ErrMsgMessageInvalidRole      = "invalid role - must be system, user, assistant, or tool"
@@ -715,7 +742,9 @@ func NewFrontmatterError(msg string, pos Position, cause error) error {
 		WithMetadata(MetaKeyOffset, strconv.Itoa(pos.Offset))
 }
 
-// NewFrontmatterParseError creates an error for YAML frontmatter parsing failures
+// NewFrontmatterParseError creates an error for YAML frontmatter parsing failures.
+// It has no source to locate the failure in; Parse and ParseYAMLSpec use
+// NewFrontmatterParseErrorAt, which adds the document line, the key and the fix.
 func NewFrontmatterParseError(cause error) error {
 	return cuserr.WrapStdError(cause, ErrCodeConfig, ErrMsgFrontmatterParse)
 }

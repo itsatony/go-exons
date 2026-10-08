@@ -1,7 +1,13 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.43.0
+  version: 0.44.0
+# v0.44.0 (vAudience/aigentverse#258): InputOption gains UnmarshalYAML/UnmarshalJSON — a select option may be a
+# bare string (`options: [a, b]`, also associate_with) = {Value: s}, Label empty; an empty/blank bare string is
+# refused (the mapping form's `value: ""` still parses, byte-identical). No Marshal side: Serialize writes the
+# mapping form back. Schema $defs/InputOption = oneOf [non-blank string, object]. Frontmatter YAML errors are
+# located: NewFrontmatterParseErrorAt names the DOCUMENT line, the key path and, for "mapping values are not
+# allowed", the fix (quote it / `key: >-`); code, "failed to parse YAML frontmatter" prefix and yaml cause kept.
 # v0.43.0 (vAudience/atlas#849): PatchSource gains SetSpeech(sc) (nil removes the speech: block; replaced WHOLE
 # like SetRealtime). SpeechConfig.Validate (non-blank provider+model; voice optional) runs from ValidateStrict
 # (writers, and PatchSource's RESULT), NOT Parse — a stored half-filled speech: block still loads, but any patch

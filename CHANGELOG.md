@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-10-08
+
+vAudience/aigentverse#258 (from nexus2_issue_reports#25 and #28): two frontmatter failures an
+authoring agent could not correct itself from, because the message named a Go type or nothing at all.
+Refs vAudience/aigentverse#258.
+
+### Added
+
+- **A select option may be written as a bare string.** `options: [sachlich, locker, begeistert]`
+  (flow or block list, freely mixed with `{value, label}` mappings) decodes to
+  `InputOption{Value: s}` with an **empty `Label`** — the documented fallback already shows the
+  value, and the entry re-serialises short. `InputOption` gains `UnmarshalYAML` and its JSON twin
+  `UnmarshalJSON` (a JSON string or an object; `null` stays a no-op). The same type backs
+  `associate_with`, which takes both shapes too. Before, the whole `Parse` failed with
+  `cannot unmarshal !!str `sachlich` into exons.InputOption`.
+- **A frontmatter YAML error names where and what.** `NewFrontmatterParseErrorAt(cause, frontmatter,
+  firstLine)`, used by `Parse` and `ParseYAMLSpec`, reports the **document** line (yaml.v3 counts
+  from the first line after `---`; a BOM or leading spaces shift nothing), yaml's own line when it
+  differs, the dotted path of the nearest key at or above it, and — for `mapping values are not
+  allowed in this context` only — the fix:
+
+  ```
+  EXONS_CONFIG: failed to parse YAML frontmatter: line 4 (frontmatter line 3), key "description":
+  the value of "description" contains ": " — wrap it in quotes, or write it as a block scalar
+  (description: >-): yaml: line 3: mapping values are not allowed in this context
+  ```
+
+  When the `": "` sits on a continuation line, the message adds that the line may instead be a
+  mis-indented new key. The error carries `MetaKeyLine` (document line) and the new
+  `MetaKeyFrontmatterLine` and `MetaKeyFrontmatterKey`.
+
+### Changed
+
+- An option written as a bare string must be **non-blank**; `""` or whitespace is refused with a
+  line-numbered message. This is stricter than the mapping form on purpose: `{value: ""}` still
+  parses exactly as before, because stored documents must keep loading. A list of lists (or any
+  other non-scalar, non-mapping entry) now reads `an option must be a string or a {value, label}
+  mapping, not a sequence — e.g. …`.
+- **Schema:** `$defs/InputOption` is `oneOf` a non-blank string or the unchanged object. The
+  agreement corpus gains 9 rows (a number entry and a null entry diverge under the existing
+  `schemaStricterScalar` / `schemaStricterNull` reasons).
+
+### Compatibility
+
+- Every document that parsed still parses to the same `Spec`. The error **code** (`EXONS_CONFIG`),
+  the message **prefix** (`failed to parse YAML frontmatter`) and the **cause** (the unmodified
+  yaml.v3 error; `errors.As` to `*yaml.TypeError` still works) are unchanged; the location is
+  inserted between prefix and cause. An error without a line is wrapped exactly as before.
+- There is deliberately **no** `MarshalYAML`/`MarshalJSON`: `Serialize` writes a parsed bare string
+  back as `- value: sachlich`, so a consumer that reads frontmatter itself never meets the new shape
+  in output written by this library — only in documents authored by hand.
+
 ## [0.43.0] - 2026-10-07
 
 vAudience/atlas#849: a consumer that edits the source (atlas's agent editor) can now write the

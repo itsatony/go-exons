@@ -85,14 +85,14 @@ var divergenceVocabulary = map[string]divergenceDirection{
 }
 
 // Corpus floors. The corpus is hand-listed, so its size is the thing a careless
-// edit shrinks; each floor is the count at v0.43.0 (raised with the speech rows; v0.42.0 with the media/realtime rows; v0.40.0 raised from v0.33.0's with the resource_modes and allow-list rows; v0.33.0 raised v0.31.0's with the
+// edit shrinks; each floor is the count at v0.44.0 (raised with the bare-string option rows; v0.43.0 with the speech rows; v0.42.0 with the media/realtime rows; v0.40.0 raised from v0.33.0's with the resource_modes and allow-list rows; v0.33.0 raised v0.31.0's with the
 // requirements.environment rows) and is lowered only with a reason. Every declared reason must also be exercised by at least one row
 // (TestSchemaAndParserAgree's reverse axis), or the vocabulary holds dead entries.
 const (
-	agreementCorpusFloor         = 121
-	agreementAgreeRowsFloor      = 85
+	agreementCorpusFloor         = 130
+	agreementAgreeRowsFloor      = 92
 	agreementParserStricterFloor = 5
-	agreementSchemaStricterFloor = 31
+	agreementSchemaStricterFloor = 33
 )
 
 // agreementCase is one document and the verdict EACH instrument must return for it.
@@ -310,6 +310,17 @@ registry:
 		agree("environment empty packages without code_execution", skill("requirements:\n  environment:\n    packages: []\n"), true),
 		diverge("environment with an unknown key", skill("requirements:\n  environment:\n    image: python:3.12-slim\n"), false, true, schemaStricterClosed),
 		diverge("environment null on a prompt", prompt("requirements:\n  environment: ~\n"), false, true, schemaStricterNull),
+
+		// --- select options (v0.44.0, vAudience/aigentverse#258): a bare string is the value.
+		agree("options as a flow list of strings", prompt("inputs:\n  ton:\n    type: select\n    options: [sachlich, locker, begeistert]\n"), true),
+		agree("options as a block list of strings", prompt("inputs:\n  ton:\n    type: select\n    options:\n      - sachlich\n      - locker\n"), true),
+		agree("options mixing strings and mappings", prompt("inputs:\n  ton:\n    type: select\n    options: [sachlich, {value: locker, label: Locker}]\n"), true),
+		agree("associate_with as strings", prompt("inputs:\n  o:\n    type: associate\n    options: [region]\n    associate_with: [analyst, reviewer]\n"), true),
+		agree("option as an empty string", prompt("inputs:\n  ton:\n    type: select\n    options: [a, \"\"]\n"), false),
+		agree("option as a blank string", prompt("inputs:\n  ton:\n    type: select\n    options: [a, \"  \"]\n"), false),
+		agree("option as a nested list", prompt("inputs:\n  ton:\n    type: select\n    options: [[a, b]]\n"), false),
+		diverge("option as a number", prompt("inputs:\n  ton:\n    type: select\n    options: [1, 2]\n"), false, true, schemaStricterScalar),
+		diverge("option as a null entry", prompt("inputs:\n  ton:\n    type: select\n    options: [a, ~]\n"), false, true, schemaStricterNull),
 
 		// --- a parser-only cross-field rule, so the divergence vocabulary is exercised.
 		diverge("input_order names an undeclared input", agent("inputs:\n  a:\n    type: string\ninput_order: [b]\n"), true, false, parserOnlyInputOrder),
