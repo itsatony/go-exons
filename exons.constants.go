@@ -499,8 +499,8 @@ const (
 	SpecFieldSample        = "sample"
 	SpecFieldContentFormat = "content_format"
 
-	// SpecFieldRecommendedAgents is the frontmatter key for a prompt's authored
-	// agent association (Spec.RecommendedAgents).
+	// SpecFieldRecommendedAgents is the frontmatter key for a prompt's (or a
+	// mosaic's) authored agent association (Spec.RecommendedAgents).
 	SpecFieldRecommendedAgents = "recommended_agents"
 
 	// go-exons extension fields

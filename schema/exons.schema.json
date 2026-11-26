@@ -38,7 +38,7 @@
     },
     "recommended_agents": {
       "type": "array",
-      "description": "Agent slugs a prompt is authored for (\"made for @org/name\"). A curatorial association, never resolved or validated.",
+      "description": "Agent slugs a prompt or a mosaic is authored for (\"made for @org/name\"). A curatorial association, never resolved or validated.",
       "items": { "type": "string" }
     },
     "execution": {

@@ -1,7 +1,8 @@
 manifest_version: "1.0"
 project:
   name: go-exons
-  version: 0.44.0
+  version: 0.44.1
+# v0.44.1 (vAudience/aigentverse#487): docs only - recommended_agents is a prompt's or a mosaic's (schema + Spec doc).
 # v0.44.0 (vAudience/aigentverse#258): InputOption gains UnmarshalYAML/UnmarshalJSON — a select option may be a
 # bare string (`options: [a, b]`, also associate_with) = {Value: s}, Label empty; an empty/blank bare string is
 # refused (the mapping form's `value: ""` still parses, byte-identical). No Marshal side: Serialize writes the
