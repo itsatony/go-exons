@@ -74,8 +74,8 @@ type Spec struct {
 	// covers every declared input exactly once, ordered or not) and this field is not.
 	InputOrder []string `yaml:"input_order,omitempty" json:"input_order,omitempty"`
 
-	// RecommendedAgents lists the agent slugs a prompt is authored for ("made for
-	// @org/name"). A curatorial association surfaced by consumers (e.g. a chat UI
+	// RecommendedAgents lists the agent slugs a prompt (or an aigentverse mosaic
+	// recipe) is authored for ("made for @org/name"). A curatorial association surfaced by consumers (e.g. a chat UI
 	// filtering prompts by the active coworker); never resolved or validated here —
 	// the slugs are verbatim author-declared strings. Empty for unassociated prompts.
 	RecommendedAgents []string `yaml:"recommended_agents,omitempty" json:"recommended_agents,omitempty"`

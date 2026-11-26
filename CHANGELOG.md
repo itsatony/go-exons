@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.1] - 2026-11-26
+
+vAudience/aigentverse#487: documentation only. `recommended_agents` is described as "a prompt's or a mosaic's" in
+`schema/exons.schema.json` and on `Spec.RecommendedAgents`; aigentverse made the key an official contract on mosaics
+(aigentverse#465). No behaviour change: the schema never forbade the key on a mosaic.
+
 ## [0.44.0] - 2026-10-08
 
 vAudience/aigentverse#258 (from nexus2_issue_reports#25 and #28): two frontmatter failures an
